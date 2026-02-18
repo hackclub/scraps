@@ -2,10 +2,11 @@
 	import { onMount } from 'svelte';
 	import HeartButton from '$lib/components/HeartButton.svelte';
 	import ShopItemModal from '$lib/components/ShopItemModal.svelte';
+	import LootboxModal from '$lib/components/LootboxModal.svelte';
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
 	import { API_URL } from '$lib/config';
 	import { getUser } from '$lib/auth-client';
-	import { X, Spool, PackageCheck, Clock } from '@lucide/svelte';
+	import { X, Spool, PackageCheck, Clock, Package } from '@lucide/svelte';
 	import {
 		shopItemsStore,
 		shopLoading,
@@ -22,10 +23,33 @@
 		return Math.round((scraps / (PHI * MULTIPLIER)) * 10) / 10;
 	}
 
+	interface LootboxItemData {
+		shopItemId: number;
+		percentage: number;
+		itemName: string;
+		itemImage: string;
+		itemPrice: number;
+		itemCount: number;
+	}
+
+	interface LootboxData {
+		id: number;
+		name: string;
+		image: string;
+		description: string;
+		price: number;
+		category: string;
+		items: LootboxItemData[];
+		heartCount: number;
+		userHearted: boolean;
+	}
+
 	let selectedCategories = $state<Set<string>>(new Set());
 	let sortBy = $state<'default' | 'favorites' | 'probability' | 'cost'>('probability');
 
 	let selectedItem = $state<ShopItem | null>(null);
+	let selectedLootbox = $state<LootboxData | null>(null);
+	let lootboxes = $state<LootboxData[]>([]);
 	let winningOrderId = $state<number | null>(null);
 	let winningItemName = $state<string | null>(null);
 	let pendingOrders = $state<{ orderId: number; itemName: string }[]>([]);
@@ -42,6 +66,12 @@
 				if (trimmed) allCategories.add(trimmed);
 			});
 		});
+		lootboxes.forEach((lb) => {
+			lb.category.split(',').forEach((cat) => {
+				const trimmed = cat.trim();
+				if (trimmed) allCategories.add(trimmed);
+			});
+		});
 		return Array.from(allCategories).sort();
 	});
 
@@ -50,6 +80,17 @@
 			? $shopItemsStore
 			: $shopItemsStore.filter((item) =>
 					item.category
+						.split(',')
+						.map((c) => c.trim())
+						.some((cat) => selectedCategories.has(cat))
+				)
+	);
+
+	let filteredLootboxes = $derived(
+		selectedCategories.size === 0
+			? lootboxes
+			: lootboxes.filter((lb) =>
+					lb.category
 						.split(',')
 						.map((c) => c.trim())
 						.some((cat) => selectedCategories.has(cat))
@@ -106,6 +147,19 @@
 		return 'bg-red-100';
 	}
 
+	async function fetchLootboxes() {
+		try {
+			const response = await fetch(`${API_URL}/shop/lootboxes`, {
+				credentials: 'include'
+			});
+			if (response.ok) {
+				lootboxes = await response.json();
+			}
+		} catch (e) {
+			console.error('Failed to fetch lootboxes:', e);
+		}
+	}
+
 	async function checkPendingOrders() {
 		try {
 			const response = await fetch(`${API_URL}/shop/orders/pending-address`, {
@@ -143,6 +197,13 @@
 		selectedItem = null;
 	}
 
+	function handleLootboxWin(orderId: number, wonItemName: string) {
+		winningOrderId = orderId;
+		winningItemName = wonItemName;
+		selectedLootbox = null;
+		fetchLootboxes();
+	}
+
 	function handleAddressComplete() {
 		fetchShopItems(true);
 		winningOrderId = null;
@@ -158,6 +219,7 @@
 	onMount(async () => {
 		await getUser();
 		fetchShopItems();
+		fetchLootboxes();
 		checkPendingOrders();
 	});
 
@@ -173,6 +235,25 @@
 			}
 		} catch (error) {
 			console.error('Failed to toggle heart:', error);
+		}
+	}
+
+	async function toggleLootboxHeart(lootboxId: number) {
+		try {
+			const response = await fetch(`${API_URL}/shop/lootboxes/${lootboxId}/heart`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			if (response.ok) {
+				const data = await response.json();
+				lootboxes = lootboxes.map((lb) =>
+					lb.id === lootboxId
+						? { ...lb, userHearted: data.hearted, heartCount: data.heartCount }
+						: lb
+				);
+			}
+		} catch (error) {
+			console.error('Failed to toggle lootbox heart:', error);
 		}
 	}
 </script>
@@ -260,11 +341,89 @@
 		<div class="py-12 text-center">
 			<p class="text-gray-600">{$t.shop.loadingItems}</p>
 		</div>
-	{:else if $shopItemsStore.length === 0}
+	{:else if $shopItemsStore.length === 0 && lootboxes.length === 0}
 		<div class="py-12 text-center">
 			<p class="text-gray-600">{$t.shop.noItemsAvailable}</p>
 		</div>
 	{:else}
+		<!-- Lootboxes Section -->
+		{#if filteredLootboxes.length > 0}
+			<div class="mb-8">
+				<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+					{#each filteredLootboxes as lb (lb.id)}
+						{@const inStockCount = lb.items.filter((i) => i.itemCount > 0).length}
+						{@const allOutOfStock = inStockCount === 0}
+						<button
+							onclick={() => (selectedLootbox = lb)}
+							class="relative cursor-pointer overflow-hidden rounded-2xl border-4 border-black p-4 text-left transition-all hover:border-dashed {allOutOfStock
+								? 'bg-gray-100'
+								: ''}"
+						>
+							{#if allOutOfStock}
+								<div class="absolute top-0 right-0 z-20">
+									<div
+										class="translate-x-6 translate-y-3 rotate-45 transform bg-red-600 px-8 py-1 text-xs font-bold text-white shadow-md"
+									>
+										{$t.shop.soldOut}
+									</div>
+								</div>
+							{/if}
+							<div class="relative {allOutOfStock ? 'opacity-50 grayscale' : ''}">
+								<img src={lb.image} alt={lb.name} class="mb-4 h-32 w-full object-contain" />
+								<span
+									class="absolute top-0 right-0 flex items-center gap-1 rounded-full border-2 border-purple-600 bg-purple-100 px-2 py-1 text-xs font-bold text-purple-700"
+								>
+									<Package size={12} />
+									{$t.lootbox.badge}
+								</span>
+							</div>
+							<div class={allOutOfStock ? 'opacity-50' : ''}>
+								<h3 class="mb-1 text-xl font-bold">{lb.name}</h3>
+								<p class="mb-2 text-sm text-gray-600">{lb.description}</p>
+								<div class="mb-3">
+									<span class="flex items-center gap-1 text-lg font-bold"
+										><Spool size={18} />{lb.price}</span
+									>
+									<span class="mt-1 flex items-center gap-1 text-xs text-gray-500"
+										><Clock size={14} />~{estimateHours(lb.price)}h</span
+									>
+									<span class="mt-1 block text-xs text-gray-500"
+										>{lb.items.length} {$t.lootbox.items}</span
+									>
+									<div class="mt-2 flex flex-wrap gap-1">
+										{#each lb.category
+											.split(',')
+											.map((c) => c.trim())
+											.filter(Boolean) as cat}
+											<span class="rounded-full bg-gray-100 px-2 py-1 text-xs">{cat}</span>
+										{/each}
+									</div>
+								</div>
+								<div class="flex items-center justify-between">
+									<span
+										class="text-xs {allOutOfStock
+											? 'font-bold text-red-500'
+											: 'text-gray-500'}"
+										>{allOutOfStock
+											? $t.lootbox.allItemsOutOfStock
+											: `${inStockCount} ${$t.shop.left}`}</span
+									>
+									<HeartButton
+										count={lb.heartCount}
+										hearted={lb.userHearted}
+										onclick={(e) => {
+											e.stopPropagation();
+											toggleLootboxHeart(lb.id);
+										}}
+									/>
+								</div>
+							</div>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
 		<!-- Items Grid -->
 		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
 			{#each sortedItems as item (item.id)}
@@ -340,6 +499,14 @@
 		onClose={() => (selectedItem = null)}
 		onTryLuck={handleTryLuck}
 		onConsolation={handleConsolation}
+	/>
+{/if}
+
+{#if selectedLootbox}
+	<LootboxModal
+		lootbox={selectedLootbox}
+		onClose={() => (selectedLootbox = null)}
+		onWin={handleLootboxWin}
 	/>
 {/if}
 

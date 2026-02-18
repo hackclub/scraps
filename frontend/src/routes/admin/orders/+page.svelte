@@ -278,16 +278,16 @@
 						<div class="min-w-0 flex-1">
 							<div class="mb-1 flex items-center gap-2">
 								<h3 class="text-lg font-bold">{order.itemName}</h3>
-								<span class="text-gray-500">×{order.quantity}</span>
+								<span class="text-gray-500">&times;{order.quantity}</span>
 							</div>
 
 							<div class="mb-2 flex flex-wrap items-center gap-2">
 								<a href="/admin/users/{order.userId}" class="text-sm font-bold hover:underline">
 									@{order.username}
 								</a>
-								<span class="text-gray-400">•</span>
+								<span class="text-gray-400">&bull;</span>
 								<span class="text-sm text-gray-500">{formatDate(order.createdAt)}</span>
-								<span class="text-gray-400">•</span>
+								<span class="text-gray-400">&bull;</span>
 								<span class="text-sm font-bold">{order.totalPrice} scraps</span>
 							</div>
 
@@ -305,10 +305,20 @@
 									class="rounded-full border-2 px-2 py-0.5 text-xs font-bold {order.orderType ===
 									'win'
 										? 'border-purple-600 bg-purple-100 text-purple-700'
-										: 'border-gray-600 bg-gray-100 text-gray-700'}"
+										: order.orderType === 'lootbox_win'
+											? 'border-indigo-600 bg-indigo-100 text-indigo-700'
+											: 'border-gray-600 bg-gray-100 text-gray-700'}"
 								>
 									{order.orderType}
 								</span>
+
+								{#if order.notes?.startsWith('[Lootbox:')}
+									<span
+										class="rounded-full border-2 border-indigo-600 bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-700"
+									>
+										{$t.lootbox.badge}
+									</span>
+								{/if}
 
 								{#if order.isFulfilled}
 									<span
@@ -351,7 +361,7 @@
 										{/if}
 									</div>
 								</div>
-							{:else if order.orderType === 'win'}
+							{:else if order.orderType === 'win' || order.orderType === 'lootbox_win'}
 								<div class="mt-2 rounded-lg border border-yellow-300 bg-yellow-100 p-2">
 									<p class="text-xs font-bold text-yellow-700">no shipping address provided</p>
 								</div>
@@ -416,16 +426,16 @@
 							<div class="min-w-0 flex-1">
 								<div class="mb-1 flex items-center gap-2">
 									<h3 class="text-lg font-bold text-gray-500">{order.itemName}</h3>
-									<span class="text-gray-400">×{order.quantity}</span>
+									<span class="text-gray-400">&times;{order.quantity}</span>
 								</div>
 
 								<div class="mb-2 flex flex-wrap items-center gap-2">
 									<a href="/admin/users/{order.userId}" class="text-sm font-bold text-gray-500 hover:underline">
 										@{order.username}
 									</a>
-									<span class="text-gray-300">•</span>
+									<span class="text-gray-300">&bull;</span>
 									<span class="text-sm text-gray-400">{formatDate(order.createdAt)}</span>
-									<span class="text-gray-300">•</span>
+									<span class="text-gray-300">&bull;</span>
 									<span class="text-sm font-bold text-gray-500">{order.totalPrice} scraps</span>
 								</div>
 							</div>

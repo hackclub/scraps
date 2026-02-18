@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Plus, Pencil, Trash2, X, Spool } from '@lucide/svelte';
+	import { Plus, Pencil, Trash2, X, Spool, Package } from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { t } from '$lib/i18n';
@@ -22,6 +22,28 @@
 		updatedAt: string;
 	}
 
+	interface LootboxItem {
+		lootboxId: number;
+		shopItemId: number;
+		percentage: number;
+		itemName: string;
+		itemImage: string;
+		itemPrice: number;
+		itemCount: number;
+	}
+
+	interface Lootbox {
+		id: number;
+		name: string;
+		image: string;
+		description: string;
+		price: number;
+		category: string;
+		items: LootboxItem[];
+		createdAt: string;
+		updatedAt: string;
+	}
+
 	interface User {
 		id: number;
 		role: string;
@@ -29,9 +51,11 @@
 
 	let user = $state<User | null>(null);
 	let items = $state<ShopItem[]>([]);
+	let lootboxes = $state<Lootbox[]>([]);
 	let loading = $state(true);
 	let saving = $state(false);
 
+	// Item modal state
 	let showModal = $state(false);
 	let editingItem = $state<ShopItem | null>(null);
 
@@ -49,15 +73,31 @@
 	let formError = $state<string | null>(null);
 	let errorModal = $state<string | null>(null);
 
+	// Lootbox modal state
+	let showLootboxModal = $state(false);
+	let editingLootbox = $state<Lootbox | null>(null);
+	let lbName = $state('');
+	let lbImage = $state('');
+	let lbDescription = $state('');
+	let lbPrice = $state(0);
+	let lbCategory = $state('');
+	let lbSelectedItems = $state<{ shopItemId: number; percentage: number }[]>([]);
+	let lbError = $state<string | null>(null);
+	let lbSaving = $state(false);
+
+	let deleteConfirmId = $state<number | null>(null);
+	let deleteLootboxConfirmId = $state<number | null>(null);
+
 	const PHI = (1 + Math.sqrt(5)) / 2;
 	const SCRAPS_PER_HOUR = PHI * 10;
 	const DOLLARS_PER_HOUR = 5;
 	const SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 
+	let lbPercentageSum = $derived(lbSelectedItems.reduce((sum, i) => sum + i.percentage, 0));
+
 	function calculatePricing(monetaryValue: number, stockCount: number) {
 		const price = Math.round(monetaryValue * SCRAPS_PER_DOLLAR);
 
-		// Rarity based on price and stock
 		const priceRarityFactor = Math.max(0, 1 - monetaryValue / 100);
 		const stockRarityFactor = Math.min(1, stockCount / 20);
 		const baseProbability = Math.max(
@@ -65,9 +105,7 @@
 			Math.min(80, Math.round((priceRarityFactor * 0.4 + stockRarityFactor * 0.6) * 80))
 		);
 
-		// Roll cost = price * (baseProbability / 100) - fixed
 		const rollCost = Math.max(1, Math.round(price * (baseProbability / 100)));
-		// Total budget = 1.5x price, upgrade budget = 1.5x price - rollCost
 		const upgradeBudget = Math.max(0, price * 1.5 - rollCost);
 		const probabilityGap = 100 - baseProbability;
 
@@ -107,7 +145,6 @@
 		formCount = value;
 		recalculatePricing();
 	}
-	let deleteConfirmId = $state<number | null>(null);
 
 	onMount(async () => {
 		user = await getUser();
@@ -116,7 +153,7 @@
 			return;
 		}
 
-		await fetchItems();
+		await Promise.all([fetchItems(), fetchLootboxes()]);
 	});
 
 	async function fetchItems() {
@@ -135,6 +172,20 @@
 		}
 	}
 
+	async function fetchLootboxes() {
+		try {
+			const response = await fetch(`${API_URL}/admin/lootboxes`, {
+				credentials: 'include'
+			});
+			if (response.ok) {
+				lootboxes = await response.json();
+			}
+		} catch (e) {
+			console.error('Failed to fetch lootboxes:', e);
+		}
+	}
+
+	// Item modal functions
 	function openCreateModal() {
 		editingItem = null;
 		formName = '';
@@ -245,6 +296,160 @@
 			deleteConfirmId = null;
 		}
 	}
+
+	// Lootbox modal functions
+	function openCreateLootboxModal() {
+		editingLootbox = null;
+		lbName = '';
+		lbImage = '';
+		lbDescription = '';
+		lbPrice = 0;
+		lbCategory = '';
+		lbSelectedItems = [];
+		lbError = null;
+		showLootboxModal = true;
+	}
+
+	function openEditLootboxModal(lb: Lootbox) {
+		editingLootbox = lb;
+		lbName = lb.name;
+		lbImage = lb.image;
+		lbDescription = lb.description;
+		lbPrice = lb.price;
+		lbCategory = lb.category;
+		lbSelectedItems = lb.items.map((i) => ({
+			shopItemId: i.shopItemId,
+			percentage: i.percentage
+		}));
+		lbError = null;
+		showLootboxModal = true;
+	}
+
+	function closeLootboxModal() {
+		showLootboxModal = false;
+		editingLootbox = null;
+	}
+
+	function toggleLootboxItem(shopItemId: number) {
+		const exists = lbSelectedItems.find((i) => i.shopItemId === shopItemId);
+		if (exists) {
+			lbSelectedItems = lbSelectedItems.filter((i) => i.shopItemId !== shopItemId);
+		} else {
+			lbSelectedItems = [...lbSelectedItems, { shopItemId, percentage: 0 }];
+		}
+	}
+
+	function autoFillPercentages() {
+		if (lbSelectedItems.length === 0) return;
+
+		const selectedShopItems = lbSelectedItems.map((si) => {
+			const item = items.find((i) => i.id === si.shopItemId);
+			return { ...si, price: item?.price ?? 1 };
+		});
+
+		// Inversely proportional to price
+		const weights = selectedShopItems.map((i) => 1 / Math.max(1, i.price));
+		const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+		let percentages = weights.map((w) => Math.max(1, Math.round((w / totalWeight) * 100)));
+		let total = percentages.reduce((sum, p) => sum + p, 0);
+
+		// Adjust rounding: add/subtract from the largest item
+		if (total !== 100) {
+			const maxIdx = percentages.indexOf(Math.max(...percentages));
+			percentages[maxIdx] += 100 - total;
+		}
+
+		lbSelectedItems = lbSelectedItems.map((si, idx) => ({
+			...si,
+			percentage: percentages[idx]
+		}));
+	}
+
+	function updateLbItemPercentage(shopItemId: number, value: number) {
+		lbSelectedItems = lbSelectedItems.map((i) =>
+			i.shopItemId === shopItemId ? { ...i, percentage: value } : i
+		);
+	}
+
+	async function handleLootboxSubmit() {
+		if (!lbName.trim() || !lbImage.trim() || !lbDescription.trim() || !lbCategory.trim()) {
+			lbError = 'All fields are required';
+			return;
+		}
+
+		if (lbPrice < 1) {
+			lbError = 'Price must be at least 1';
+			return;
+		}
+
+		if (lbSelectedItems.length < 2) {
+			lbError = $t.lootbox.atLeast2Items;
+			return;
+		}
+
+		if (lbPercentageSum !== 100) {
+			lbError = $t.lootbox.mustSumTo100;
+			return;
+		}
+
+		lbSaving = true;
+		lbError = null;
+
+		try {
+			const url = editingLootbox
+				? `${API_URL}/admin/lootboxes/${editingLootbox.id}`
+				: `${API_URL}/admin/lootboxes`;
+
+			const response = await fetch(url, {
+				method: editingLootbox ? 'PUT' : 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({
+					name: lbName,
+					image: lbImage,
+					description: lbDescription,
+					price: lbPrice,
+					category: lbCategory,
+					items: lbSelectedItems
+				})
+			});
+
+			if (response.ok) {
+				closeLootboxModal();
+				await fetchLootboxes();
+			} else {
+				const data = await response.json();
+				lbError = data.error || 'Failed to save lootbox';
+			}
+		} catch (e) {
+			lbError = 'Failed to save lootbox';
+		} finally {
+			lbSaving = false;
+		}
+	}
+
+	async function confirmDeleteLootbox() {
+		if (!deleteLootboxConfirmId) return;
+
+		try {
+			const response = await fetch(`${API_URL}/admin/lootboxes/${deleteLootboxConfirmId}`, {
+				method: 'DELETE',
+				credentials: 'include'
+			});
+			if (response.ok) {
+				await fetchLootboxes();
+			} else {
+				const data = await response.json();
+				errorModal = data.error || 'Failed to delete lootbox';
+			}
+		} catch (e) {
+			console.error('Failed to delete lootbox:', e);
+			errorModal = 'Failed to delete lootbox';
+		} finally {
+			deleteLootboxConfirmId = null;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -257,13 +462,22 @@
 			<h1 class="mb-2 text-4xl font-bold md:text-5xl">{$t.nav.shop}</h1>
 			<p class="text-lg text-gray-600">{$t.admin.manageShopItemsAndInventory}</p>
 		</div>
-		<button
-			onclick={openCreateModal}
-			class="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white transition-all duration-200 hover:bg-gray-800"
-		>
-			<Plus size={20} />
-			{$t.admin.addItem}
-		</button>
+		<div class="flex gap-2">
+			<button
+				onclick={openCreateLootboxModal}
+				class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-6 py-3 font-bold transition-all duration-200 hover:border-dashed"
+			>
+				<Package size={20} />
+				{$t.lootbox.createLootbox}
+			</button>
+			<button
+				onclick={openCreateModal}
+				class="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white transition-all duration-200 hover:bg-gray-800"
+			>
+				<Plus size={20} />
+				{$t.admin.addItem}
+			</button>
+		</div>
 	</div>
 
 	<div class="mb-8 rounded-2xl border-4 border-black p-4">
@@ -282,11 +496,73 @@
 		</div>
 	</div>
 
+	<!-- Lootboxes Section -->
+	{#if lootboxes.length > 0}
+		<div class="mb-8">
+			<h2 class="mb-4 text-2xl font-bold">{$t.lootbox.lootbox}s ({lootboxes.length})</h2>
+			<div class="grid gap-4">
+				{#each lootboxes as lb}
+					<div class="flex items-center gap-4 rounded-2xl border-4 border-black bg-purple-50 p-4">
+						<img
+							src={lb.image}
+							alt={lb.name}
+							class="h-20 w-20 shrink-0 rounded-lg border-2 border-black object-cover"
+						/>
+						<div class="min-w-0 flex-1">
+							<div class="flex items-center gap-2">
+								<h3 class="text-xl font-bold">{lb.name}</h3>
+								<span
+									class="rounded-full border-2 border-purple-600 bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-700"
+									>{$t.lootbox.badge}</span
+								>
+							</div>
+							<p class="truncate text-sm text-gray-600">{lb.description}</p>
+							<div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
+								<span class="flex items-center gap-1 font-bold"><Spool size={16} />{lb.price}</span>
+								{#each lb.category
+									.split(',')
+									.map((c) => c.trim())
+									.filter(Boolean) as cat}
+									<span class="rounded-full bg-gray-100 px-2 py-0.5">{cat}</span>
+								{/each}
+								<span class="text-gray-500"
+									>{lb.items.length} {$t.lootbox.items}</span
+								>
+								<span class="text-gray-500">•</span>
+								<span class="text-xs text-gray-500">
+									{#each lb.items as lbItem, i}
+										{lbItem.itemName} ({lbItem.percentage}%){i < lb.items.length - 1 ? ', ' : ''}
+									{/each}
+								</span>
+							</div>
+						</div>
+						<div class="flex shrink-0 gap-2">
+							<button
+								onclick={() => openEditLootboxModal(lb)}
+								class="cursor-pointer rounded-lg border-4 border-black p-2 transition-all duration-200 hover:border-dashed"
+							>
+								<Pencil size={18} />
+							</button>
+							<button
+								onclick={() => (deleteLootboxConfirmId = lb.id)}
+								class="cursor-pointer rounded-lg border-4 border-red-600 p-2 text-red-600 transition-all duration-200 hover:bg-red-50"
+							>
+								<Trash2 size={18} />
+							</button>
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
+
+	<!-- Items Section -->
 	{#if loading}
 		<div class="py-12 text-center text-gray-500">{$t.common.loading}</div>
 	{:else if items.length === 0}
 		<div class="py-12 text-center text-gray-500">{$t.refinery.noItemsAvailable}</div>
 	{:else}
+		<h2 class="mb-4 text-2xl font-bold">{$t.lootbox.items} ({items.length})</h2>
 		<div class="grid gap-4">
 			{#each items as item}
 				<div class="flex items-center gap-4 rounded-2xl border-4 border-black p-4">
@@ -337,6 +613,7 @@
 	{/if}
 </div>
 
+<!-- Item Create/Edit Modal -->
 {#if showModal}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
 		<div
@@ -426,7 +703,7 @@
 							total: {Math.round(totalCost)} scraps ({upgradesNeeded} upgrades + roll) · budget: {Math.round(
 								maxBudget
 							)} (1.5×)
-							{#if totalCost > maxBudget}· ⚠️ over budget!{/if}
+							{#if totalCost > maxBudget}· over budget!{/if}
 						</p>
 					{/if}
 				</div>
@@ -535,6 +812,192 @@
 	</div>
 {/if}
 
+<!-- Lootbox Create/Edit Modal -->
+{#if showLootboxModal}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div
+			class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border-4 border-black bg-white p-6"
+		>
+			<div class="mb-6 flex items-center justify-between">
+				<h2 class="text-2xl font-bold">
+					{editingLootbox ? $t.lootbox.editLootbox : $t.lootbox.createLootbox}
+				</h2>
+				<button
+					onclick={closeLootboxModal}
+					class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
+				>
+					<X size={20} />
+				</button>
+			</div>
+
+			{#if lbError}
+				<div class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm text-red-600">
+					{lbError}
+				</div>
+			{/if}
+
+			<div class="space-y-4">
+				<div>
+					<label for="lb-name" class="mb-1 block text-sm font-bold">name</label>
+					<input
+						id="lb-name"
+						type="text"
+						bind:value={lbName}
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="lb-image" class="mb-1 block text-sm font-bold">image URL</label>
+					<input
+						id="lb-image"
+						type="text"
+						bind:value={lbImage}
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="lb-description" class="mb-1 block text-sm font-bold">description</label>
+					<textarea
+						id="lb-description"
+						bind:value={lbDescription}
+						rows="2"
+						class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					></textarea>
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="lb-price" class="mb-1 block text-sm font-bold">{$t.lootbox.price} (scraps)</label>
+						<input
+							id="lb-price"
+							type="number"
+							bind:value={lbPrice}
+							min="1"
+							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="lb-category" class="mb-1 block text-sm font-bold">categories</label>
+						<input
+							id="lb-category"
+							type="text"
+							bind:value={lbCategory}
+							placeholder="lootbox, stickers"
+							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+					</div>
+				</div>
+
+				<!-- Item Selection -->
+				<div>
+					<div class="mb-2 flex items-center justify-between">
+						<label class="block text-sm font-bold">{$t.lootbox.selectItems}</label>
+						<button
+							onclick={autoFillPercentages}
+							disabled={lbSelectedItems.length < 2}
+							class="cursor-pointer rounded-full border-4 border-black px-3 py-1 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{$t.lootbox.autoFill}
+						</button>
+					</div>
+
+					<div class="max-h-60 overflow-y-auto rounded-lg border-2 border-black p-2">
+						{#if items.length === 0}
+							<p class="py-4 text-center text-sm text-gray-500">{$t.refinery.noItemsAvailable}</p>
+						{:else}
+							{#each items as item}
+								{@const isSelected = lbSelectedItems.some((i) => i.shopItemId === item.id)}
+								{@const selectedItem = lbSelectedItems.find((i) => i.shopItemId === item.id)}
+								<div
+									class="flex items-center gap-3 rounded-lg p-2 {isSelected
+										? 'bg-purple-50'
+										: 'hover:bg-gray-50'}"
+								>
+									<input
+										type="checkbox"
+										checked={isSelected}
+										onchange={() => toggleLootboxItem(item.id)}
+										class="h-4 w-4 cursor-pointer"
+									/>
+									<img
+										src={item.image}
+										alt={item.name}
+										class="h-8 w-8 shrink-0 rounded object-cover"
+									/>
+									<span class="flex-1 text-sm font-medium">{item.name}</span>
+									<span class="flex items-center gap-1 text-xs text-gray-500"
+										><Spool size={12} />{item.price}</span
+									>
+									{#if isSelected && selectedItem}
+										<div class="flex items-center gap-1">
+											<input
+												type="number"
+												value={selectedItem.percentage}
+												oninput={(e) =>
+													updateLbItemPercentage(
+														item.id,
+														parseInt(e.currentTarget.value) || 0
+													)}
+												min="1"
+												max="99"
+												class="w-16 rounded border-2 border-black px-2 py-1 text-center text-sm focus:border-dashed focus:outline-none"
+											/>
+											<span class="text-sm font-bold">%</span>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						{/if}
+					</div>
+
+					<!-- Percentage total -->
+					{#if lbSelectedItems.length > 0}
+						<div class="mt-2 flex items-center justify-between text-sm">
+							<span class="text-gray-500"
+								>{lbSelectedItems.length} {$t.lootbox.items} selected</span
+							>
+							<span
+								class="font-bold {lbPercentageSum === 100
+									? 'text-green-600'
+									: 'text-red-600'}"
+							>
+								{$t.lootbox.totalPercentage}: {lbPercentageSum}%
+								{#if lbPercentageSum !== 100}
+									({$t.lootbox.mustSumTo100})
+								{/if}
+							</span>
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<div class="mt-6 flex gap-3">
+				<button
+					onclick={closeLootboxModal}
+					disabled={lbSaving}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:opacity-50"
+				>
+					{$t.common.cancel}
+				</button>
+				<button
+					onclick={handleLootboxSubmit}
+					disabled={lbSaving}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
+				>
+					{lbSaving
+						? $t.common.saving
+						: editingLootbox
+							? $t.common.save
+							: $t.common.create}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Delete Item Confirm -->
 {#if deleteConfirmId}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -568,6 +1031,41 @@
 	</div>
 {/if}
 
+<!-- Delete Lootbox Confirm -->
+{#if deleteLootboxConfirmId}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={(e) => e.target === e.currentTarget && (deleteLootboxConfirmId = null)}
+		onkeydown={(e) => e.key === 'Escape' && (deleteLootboxConfirmId = null)}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
+			<h2 class="mb-4 text-2xl font-bold">{$t.admin.confirmDelete}</h2>
+			<p class="mb-6 text-gray-600">
+				are you sure you want to delete this lootbox? <span class="mt-2 block text-red-600"
+					>this action cannot be undone.</span
+				>
+			</p>
+			<div class="flex gap-3">
+				<button
+					onclick={() => (deleteLootboxConfirmId = null)}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
+				>
+					{$t.common.cancel}
+				</button>
+				<button
+					onclick={confirmDeleteLootbox}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed"
+				>
+					{$t.common.delete}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Error Modal -->
 {#if errorModal}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"

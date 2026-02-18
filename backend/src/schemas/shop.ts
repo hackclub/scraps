@@ -80,3 +80,41 @@ export const refinerySpendingHistoryTable = pgTable('refinery_spending_history',
 	cost: integer().notNull(),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 })
+
+export const lootboxesTable = pgTable('lootboxes', {
+	id: integer().primaryKey().generatedAlwaysAsIdentity(),
+	name: varchar().notNull(),
+	image: varchar().notNull(),
+	description: varchar().notNull(),
+	price: integer().notNull(),
+	category: varchar().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at').defaultNow().notNull()
+})
+
+export const lootboxItemsTable = pgTable('lootbox_items', {
+	id: integer().primaryKey().generatedAlwaysAsIdentity(),
+	lootboxId: integer('lootbox_id').notNull().references(() => lootboxesTable.id),
+	shopItemId: integer('shop_item_id').notNull().references(() => shopItemsTable.id),
+	percentage: integer().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+})
+
+export const lootboxRollsTable = pgTable('lootbox_rolls', {
+	id: integer().primaryKey().generatedAlwaysAsIdentity(),
+	userId: integer('user_id').notNull().references(() => usersTable.id),
+	lootboxId: integer('lootbox_id').notNull().references(() => lootboxesTable.id),
+	wonShopItemId: integer('won_shop_item_id').notNull().references(() => shopItemsTable.id),
+	boostedShopItemId: integer('boosted_shop_item_id').notNull().references(() => shopItemsTable.id),
+	rolled: integer().notNull(),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+})
+
+export const lootboxHeartsTable = pgTable('lootbox_hearts', {
+	id: integer().primaryKey().generatedAlwaysAsIdentity(),
+	userId: integer('user_id').notNull().references(() => usersTable.id),
+	lootboxId: integer('lootbox_id').notNull().references(() => lootboxesTable.id),
+	createdAt: timestamp('created_at').defaultNow().notNull()
+}, (table) => [
+	unique().on(table.userId, table.lootboxId)
+])

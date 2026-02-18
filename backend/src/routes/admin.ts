@@ -4,7 +4,7 @@ import { db } from '../db'
 import { usersTable, userBonusesTable } from '../schemas/users'
 import { projectsTable } from '../schemas/projects'
 import { reviewsTable } from '../schemas/reviews'
-import { shopItemsTable, shopOrdersTable, shopHeartsTable, shopRollsTable, refineryOrdersTable, shopPenaltiesTable, refinerySpendingHistoryTable } from '../schemas/shop'
+import { shopItemsTable, shopOrdersTable, shopHeartsTable, shopRollsTable, refineryOrdersTable, shopPenaltiesTable, refinerySpendingHistoryTable, lootboxesTable, lootboxItemsTable, lootboxRollsTable, lootboxHeartsTable } from '../schemas/shop'
 import { newsTable } from '../schemas/news'
 import { projectActivityTable } from '../schemas/activity'
 import { getUserFromSession } from '../lib/auth'
@@ -1415,6 +1415,7 @@ admin.delete('/shop/items/:id', async ({ params, headers, status }) => {
         const itemId = parseInt(params.id)
 
         // Delete all related records first (cascade manually)
+        await db.delete(lootboxItemsTable).where(eq(lootboxItemsTable.shopItemId, itemId))
         await db.delete(shopHeartsTable).where(eq(shopHeartsTable.shopItemId, itemId))
         await db.delete(shopRollsTable).where(eq(shopRollsTable.shopItemId, itemId))
         await db.delete(refineryOrdersTable).where(eq(refineryOrdersTable.shopItemId, itemId))
@@ -1428,6 +1429,235 @@ admin.delete('/shop/items/:id', async ({ params, headers, status }) => {
     } catch (err) {
         console.error(err)
         return status(500, { error: 'Failed to delete shop item' })
+    }
+})
+
+// Lootbox admin endpoints (admin only)
+admin.get('/lootboxes', async ({ headers, status }) => {
+    try {
+        const user = await requireAdmin(headers as Record<string, string>)
+        if (!user) {
+            return status(401, { error: 'Unauthorized' })
+        }
+
+        const lootboxes = await db
+            .select()
+            .from(lootboxesTable)
+            .orderBy(desc(lootboxesTable.createdAt))
+
+        const lootboxIds = lootboxes.map(lb => lb.id)
+        if (lootboxIds.length === 0) return []
+
+        const items = await db
+            .select({
+                lootboxId: lootboxItemsTable.lootboxId,
+                shopItemId: lootboxItemsTable.shopItemId,
+                percentage: lootboxItemsTable.percentage,
+                itemName: shopItemsTable.name,
+                itemImage: shopItemsTable.image,
+                itemPrice: shopItemsTable.price,
+                itemCount: shopItemsTable.count
+            })
+            .from(lootboxItemsTable)
+            .innerJoin(shopItemsTable, eq(lootboxItemsTable.shopItemId, shopItemsTable.id))
+            .where(inArray(lootboxItemsTable.lootboxId, lootboxIds))
+
+        const itemsByLootbox = new Map<number, typeof items>()
+        for (const item of items) {
+            const existing = itemsByLootbox.get(item.lootboxId) ?? []
+            existing.push(item)
+            itemsByLootbox.set(item.lootboxId, existing)
+        }
+
+        return lootboxes.map(lb => ({
+            ...lb,
+            items: itemsByLootbox.get(lb.id) ?? []
+        }))
+    } catch (err) {
+        console.error(err)
+        return status(500, { error: 'Failed to fetch lootboxes' })
+    }
+})
+
+admin.post('/lootboxes', async ({ headers, body, status }) => {
+    const user = await requireAdmin(headers as Record<string, string>)
+    if (!user) {
+        return status(401, { error: 'Unauthorized' })
+    }
+
+    const { name, image, description, price, category, items } = body as {
+        name: string
+        image: string
+        description: string
+        price: number
+        category: string
+        items: { shopItemId: number; percentage: number }[]
+    }
+
+    if (!name?.trim() || !image?.trim() || !description?.trim() || !category?.trim()) {
+        return status(400, { error: 'All fields are required' })
+    }
+
+    if (typeof price !== 'number' || price < 1) {
+        return status(400, { error: 'Invalid price' })
+    }
+
+    if (!Array.isArray(items) || items.length < 2) {
+        return status(400, { error: 'At least 2 items are required' })
+    }
+
+    const totalPercentage = items.reduce((sum, i) => sum + i.percentage, 0)
+    if (totalPercentage !== 100) {
+        return status(400, { error: 'Percentages must sum to 100' })
+    }
+
+    for (const item of items) {
+        if (!Number.isInteger(item.percentage) || item.percentage < 1) {
+            return status(400, { error: 'Each item must have a percentage of at least 1' })
+        }
+    }
+
+    try {
+        const result = await db.transaction(async (tx) => {
+            const shopItemIds = items.map(i => i.shopItemId)
+            const existingItems = await tx
+                .select({ id: shopItemsTable.id })
+                .from(shopItemsTable)
+                .where(inArray(shopItemsTable.id, shopItemIds))
+
+            if (existingItems.length !== shopItemIds.length) {
+                throw { type: 'invalid_items' }
+            }
+
+            const [lootbox] = await tx
+                .insert(lootboxesTable)
+                .values({
+                    name: name.trim(),
+                    image: image.trim(),
+                    description: description.trim(),
+                    price,
+                    category: category.trim()
+                })
+                .returning()
+
+            await tx.insert(lootboxItemsTable).values(
+                items.map(i => ({
+                    lootboxId: lootbox.id,
+                    shopItemId: i.shopItemId,
+                    percentage: i.percentage
+                }))
+            )
+
+            return lootbox
+        })
+
+        return { success: true, id: result.id }
+    } catch (err) {
+        const e = err as { type?: string }
+        if (e.type === 'invalid_items') {
+            return status(400, { error: 'One or more items do not exist' })
+        }
+        console.error(err)
+        return status(500, { error: 'Failed to create lootbox' })
+    }
+})
+
+admin.put('/lootboxes/:id', async ({ params, headers, body, status }) => {
+    try {
+        const user = await requireAdmin(headers as Record<string, string>)
+        if (!user) {
+            return status(401, { error: 'Unauthorized' })
+        }
+
+        const lootboxId = parseInt(params.id)
+        const { name, image, description, price, category, items } = body as {
+            name?: string
+            image?: string
+            description?: string
+            price?: number
+            category?: string
+            items?: { shopItemId: number; percentage: number }[]
+        }
+
+        const updateData: Record<string, unknown> = { updatedAt: new Date() }
+        if (name !== undefined) updateData.name = name.trim()
+        if (image !== undefined) updateData.image = image.trim()
+        if (description !== undefined) updateData.description = description.trim()
+        if (price !== undefined) updateData.price = price
+        if (category !== undefined) updateData.category = category.trim()
+
+        await db.transaction(async (tx) => {
+            const updated = await tx
+                .update(lootboxesTable)
+                .set(updateData)
+                .where(eq(lootboxesTable.id, lootboxId))
+                .returning()
+
+            if (!updated[0]) {
+                throw { type: 'not_found' }
+            }
+
+            if (items) {
+                if (items.length < 2) {
+                    throw { type: 'too_few_items' }
+                }
+
+                const totalPercentage = items.reduce((sum, i) => sum + i.percentage, 0)
+                if (totalPercentage !== 100) {
+                    throw { type: 'invalid_percentages' }
+                }
+
+                const shopItemIds = items.map(i => i.shopItemId)
+                const existingItems = await tx
+                    .select({ id: shopItemsTable.id })
+                    .from(shopItemsTable)
+                    .where(inArray(shopItemsTable.id, shopItemIds))
+
+                if (existingItems.length !== shopItemIds.length) {
+                    throw { type: 'invalid_items' }
+                }
+
+                await tx.delete(lootboxItemsTable).where(eq(lootboxItemsTable.lootboxId, lootboxId))
+                await tx.insert(lootboxItemsTable).values(
+                    items.map(i => ({
+                        lootboxId,
+                        shopItemId: i.shopItemId,
+                        percentage: i.percentage
+                    }))
+                )
+            }
+        })
+
+        return { success: true }
+    } catch (err) {
+        const e = err as { type?: string }
+        if (e.type === 'not_found') return status(404, { error: 'Lootbox not found' })
+        if (e.type === 'too_few_items') return status(400, { error: 'At least 2 items required' })
+        if (e.type === 'invalid_percentages') return status(400, { error: 'Percentages must sum to 100' })
+        if (e.type === 'invalid_items') return status(400, { error: 'One or more items do not exist' })
+        console.error(err)
+        return status(500, { error: 'Failed to update lootbox' })
+    }
+})
+
+admin.delete('/lootboxes/:id', async ({ params, headers, status }) => {
+    try {
+        const user = await requireAdmin(headers as Record<string, string>)
+        if (!user) {
+            return status(401, { error: 'Unauthorized' })
+        }
+
+        const lootboxId = parseInt(params.id)
+
+        await db.delete(lootboxItemsTable).where(eq(lootboxItemsTable.lootboxId, lootboxId))
+        await db.delete(lootboxRollsTable).where(eq(lootboxRollsTable.lootboxId, lootboxId))
+        await db.delete(lootboxHeartsTable).where(eq(lootboxHeartsTable.lootboxId, lootboxId))
+        await db.delete(lootboxesTable).where(eq(lootboxesTable.id, lootboxId))
+
+        return { success: true }
+    } catch (err) {
+        console.error(err)
+        return status(500, { error: 'Failed to delete lootbox' })
     }
 })
 

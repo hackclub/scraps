@@ -1,7 +1,7 @@
 import { Elysia } from 'elysia'
-import { eq, sql, and, desc, isNull, ne, or, gt } from 'drizzle-orm'
+import { eq, sql, and, desc, isNull, ne, or, gt, inArray } from 'drizzle-orm'
 import { db } from '../db'
-import { shopItemsTable, shopHeartsTable, shopOrdersTable, shopRollsTable, refineryOrdersTable, shopPenaltiesTable, refinerySpendingHistoryTable } from '../schemas/shop'
+import { shopItemsTable, shopHeartsTable, shopOrdersTable, shopRollsTable, refineryOrdersTable, shopPenaltiesTable, refinerySpendingHistoryTable, lootboxesTable, lootboxItemsTable, lootboxRollsTable, lootboxHeartsTable } from '../schemas/shop'
 import { usersTable } from '../schemas/users'
 import { getUserFromSession } from '../lib/auth'
 import { getUserScrapsBalance, canAfford, calculateRollCost } from '../lib/scraps'
@@ -1190,6 +1190,354 @@ shop.post('/items/:id/refinery/undo-all', async ({ params, headers }) => {
 	} catch (e) {
 		console.error('[SHOP] refinery undo-all failed:', e)
 		return { error: 'Failed to undo refinery upgrades' }
+	}
+})
+
+// Lootbox public endpoints
+
+shop.get('/lootboxes', async ({ headers }) => {
+	const user = await getUserFromSession(headers as Record<string, string>)
+
+	const lootboxes = await db
+		.select()
+		.from(lootboxesTable)
+
+	if (lootboxes.length === 0) return []
+
+	const lootboxIds = lootboxes.map(lb => lb.id)
+
+	const items = await db
+		.select({
+			lootboxId: lootboxItemsTable.lootboxId,
+			shopItemId: lootboxItemsTable.shopItemId,
+			percentage: lootboxItemsTable.percentage,
+			itemName: shopItemsTable.name,
+			itemImage: shopItemsTable.image,
+			itemPrice: shopItemsTable.price,
+			itemCount: shopItemsTable.count
+		})
+		.from(lootboxItemsTable)
+		.innerJoin(shopItemsTable, eq(lootboxItemsTable.shopItemId, shopItemsTable.id))
+		.where(inArray(lootboxItemsTable.lootboxId, lootboxIds))
+
+	const heartCounts = await db
+		.select({
+			lootboxId: lootboxHeartsTable.lootboxId,
+			count: sql<number>`COUNT(*)`
+		})
+		.from(lootboxHeartsTable)
+		.where(inArray(lootboxHeartsTable.lootboxId, lootboxIds))
+		.groupBy(lootboxHeartsTable.lootboxId)
+
+	const heartCountMap = new Map(heartCounts.map(h => [h.lootboxId, Number(h.count)]))
+
+	let userHeartedIds = new Set<number>()
+	if (user) {
+		const userHearts = await db
+			.select({ lootboxId: lootboxHeartsTable.lootboxId })
+			.from(lootboxHeartsTable)
+			.where(eq(lootboxHeartsTable.userId, user.id))
+
+		userHeartedIds = new Set(userHearts.map(h => h.lootboxId))
+	}
+
+	const itemsByLootbox = new Map<number, typeof items>()
+	for (const item of items) {
+		const existing = itemsByLootbox.get(item.lootboxId) ?? []
+		existing.push(item)
+		itemsByLootbox.set(item.lootboxId, existing)
+	}
+
+	return lootboxes.map(lb => ({
+		...lb,
+		items: itemsByLootbox.get(lb.id) ?? [],
+		heartCount: heartCountMap.get(lb.id) ?? 0,
+		userHearted: userHeartedIds.has(lb.id)
+	}))
+})
+
+shop.get('/lootboxes/:id', async ({ params, headers }) => {
+	const user = await getUserFromSession(headers as Record<string, string>)
+	const lootboxId = parseInt(params.id)
+
+	const lootboxes = await db
+		.select()
+		.from(lootboxesTable)
+		.where(eq(lootboxesTable.id, lootboxId))
+		.limit(1)
+
+	if (lootboxes.length === 0) {
+		return { error: 'Lootbox not found' }
+	}
+
+	const lootbox = lootboxes[0]
+
+	const items = await db
+		.select({
+			shopItemId: lootboxItemsTable.shopItemId,
+			percentage: lootboxItemsTable.percentage,
+			itemName: shopItemsTable.name,
+			itemImage: shopItemsTable.image,
+			itemPrice: shopItemsTable.price,
+			itemCount: shopItemsTable.count
+		})
+		.from(lootboxItemsTable)
+		.innerJoin(shopItemsTable, eq(lootboxItemsTable.shopItemId, shopItemsTable.id))
+		.where(eq(lootboxItemsTable.lootboxId, lootboxId))
+
+	const heartCountResult = await db
+		.select({ count: sql<number>`COUNT(*)` })
+		.from(lootboxHeartsTable)
+		.where(eq(lootboxHeartsTable.lootboxId, lootboxId))
+
+	const heartCount = Number(heartCountResult[0]?.count) || 0
+
+	let userHearted = false
+	if (user) {
+		const heart = await db
+			.select()
+			.from(lootboxHeartsTable)
+			.where(and(
+				eq(lootboxHeartsTable.userId, user.id),
+				eq(lootboxHeartsTable.lootboxId, lootboxId)
+			))
+			.limit(1)
+		userHearted = heart.length > 0
+	}
+
+	return {
+		...lootbox,
+		items,
+		heartCount,
+		userHearted
+	}
+})
+
+shop.post('/lootboxes/:id/heart', async ({ params, headers }) => {
+	const user = await getUserFromSession(headers as Record<string, string>)
+	if (!user) {
+		return { error: 'Unauthorized' }
+	}
+
+	const lootboxId = parseInt(params.id)
+	if (!Number.isInteger(lootboxId)) {
+		return { error: 'Invalid lootbox id' }
+	}
+
+	const lootbox = await db
+		.select()
+		.from(lootboxesTable)
+		.where(eq(lootboxesTable.id, lootboxId))
+		.limit(1)
+
+	if (lootbox.length === 0) {
+		return { error: 'Lootbox not found' }
+	}
+
+	const result = await db.execute(sql`
+		WITH del AS (
+			DELETE FROM lootbox_hearts
+			WHERE user_id = ${user.id} AND lootbox_id = ${lootboxId}
+			RETURNING 1
+		),
+		ins AS (
+			INSERT INTO lootbox_hearts (user_id, lootbox_id)
+			SELECT ${user.id}, ${lootboxId}
+			WHERE NOT EXISTS (SELECT 1 FROM del)
+			ON CONFLICT DO NOTHING
+			RETURNING 1
+		)
+		SELECT EXISTS(SELECT 1 FROM ins) AS hearted
+	`)
+
+	const hearted = (result.rows[0] as { hearted: boolean })?.hearted ?? false
+
+	const countResult = await db
+		.select({ count: sql<number>`COUNT(*)` })
+		.from(lootboxHeartsTable)
+		.where(eq(lootboxHeartsTable.lootboxId, lootboxId))
+
+	const heartCount = Number(countResult[0]?.count) || 0
+
+	return { hearted, heartCount }
+})
+
+shop.post('/lootboxes/:id/roll', async ({ params, body, headers }) => {
+	const user = await getUserFromSession(headers as Record<string, string>)
+	if (!user) {
+		return { error: 'Unauthorized' }
+	}
+
+	const lootboxId = parseInt(params.id)
+	if (!Number.isInteger(lootboxId)) {
+		return { error: 'Invalid lootbox id' }
+	}
+
+	const { boostedShopItemId } = body as { boostedShopItemId: number }
+	if (!Number.isInteger(boostedShopItemId)) {
+		return { error: 'Must select an item to boost' }
+	}
+
+	const lootboxes = await db
+		.select()
+		.from(lootboxesTable)
+		.where(eq(lootboxesTable.id, lootboxId))
+		.limit(1)
+
+	if (lootboxes.length === 0) {
+		return { error: 'Lootbox not found' }
+	}
+
+	const lootbox = lootboxes[0]
+
+	const userPhoneResult = await db
+		.select({ phone: usersTable.phone })
+		.from(usersTable)
+		.where(eq(usersTable.id, user.id))
+		.limit(1)
+
+	const userPhone = userPhoneResult[0]?.phone || null
+
+	try {
+		const result = await db.transaction(async (tx) => {
+			await tx.execute(sql`SELECT 1 FROM users WHERE id = ${user.id} FOR UPDATE`)
+
+			const affordable = await canAfford(user.id, lootbox.price, tx)
+			if (!affordable) {
+				const { balance } = await getUserScrapsBalance(user.id, tx)
+				throw { type: 'insufficient_funds', balance, cost: lootbox.price }
+			}
+
+			const lootboxItems = await tx
+				.select({
+					shopItemId: lootboxItemsTable.shopItemId,
+					percentage: lootboxItemsTable.percentage,
+					itemName: shopItemsTable.name,
+					itemImage: shopItemsTable.image,
+					itemCount: shopItemsTable.count
+				})
+				.from(lootboxItemsTable)
+				.innerJoin(shopItemsTable, eq(lootboxItemsTable.shopItemId, shopItemsTable.id))
+				.where(eq(lootboxItemsTable.lootboxId, lootboxId))
+
+			const boostedItem = lootboxItems.find(i => i.shopItemId === boostedShopItemId)
+			if (!boostedItem) {
+				throw { type: 'invalid_boost', message: 'Boosted item is not in this lootbox' }
+			}
+
+			// Filter to in-stock items only
+			const inStockItems = lootboxItems.filter(i => i.itemCount > 0)
+			if (inStockItems.length === 0) {
+				throw { type: 'all_out_of_stock' }
+			}
+
+			if (boostedItem.itemCount <= 0) {
+				throw { type: 'boost_out_of_stock' }
+			}
+
+			// Calculate adjusted percentages:
+			// 1. Start with base percentages for in-stock items only
+			// 2. Double the boosted item's percentage
+			// 3. Normalize so all sum to 100
+			let adjustedItems = inStockItems.map(i => ({
+				...i,
+				adjustedPercentage: i.shopItemId === boostedShopItemId
+					? i.percentage * 2
+					: i.percentage
+			}))
+
+			const totalAdjusted = adjustedItems.reduce((sum, i) => sum + i.adjustedPercentage, 0)
+			adjustedItems = adjustedItems.map(i => ({
+				...i,
+				adjustedPercentage: (i.adjustedPercentage / totalAdjusted) * 100
+			}))
+
+			// Roll 1-100 and map to weighted ranges
+			const rolled = Math.random() * 100
+			let cumulative = 0
+			let wonItem = adjustedItems[adjustedItems.length - 1] // fallback to last item
+
+			for (const item of adjustedItems) {
+				cumulative += item.adjustedPercentage
+				if (rolled < cumulative) {
+					wonItem = item
+					break
+				}
+			}
+
+			// Decrement won item stock
+			await tx
+				.update(shopItemsTable)
+				.set({
+					count: sql`${shopItemsTable.count} - 1`,
+					updatedAt: new Date()
+				})
+				.where(eq(shopItemsTable.id, wonItem.shopItemId))
+
+			// Create shop order with lootbox prefix in notes
+			const [order] = await tx
+				.insert(shopOrdersTable)
+				.values({
+					userId: user.id,
+					shopItemId: wonItem.shopItemId,
+					quantity: 1,
+					pricePerItem: lootbox.price,
+					totalPrice: lootbox.price,
+					shippingAddress: null,
+					phone: userPhone,
+					status: 'pending',
+					orderType: 'lootbox_win',
+					notes: `[Lootbox: ${lootbox.name}] Won from lootbox #${lootbox.id}`
+				})
+				.returning()
+
+			// Record the roll
+			await tx.insert(lootboxRollsTable).values({
+				userId: user.id,
+				lootboxId,
+				wonShopItemId: wonItem.shopItemId,
+				boostedShopItemId,
+				rolled: Math.round(rolled)
+			})
+
+			return {
+				won: true,
+				orderId: order.id,
+				wonItem: {
+					id: wonItem.shopItemId,
+					name: wonItem.itemName,
+					image: wonItem.itemImage
+				},
+				rolled: Math.round(rolled),
+				adjustedPercentages: adjustedItems.map(i => ({
+					shopItemId: i.shopItemId,
+					name: i.itemName,
+					percentage: Math.round(i.adjustedPercentage * 10) / 10
+				}))
+			}
+		})
+
+		// Notify Slack about the lootbox win
+		notifyShopWin(user.id, `${result.wonItem.name} (from lootbox: ${lootbox.name})`, result.wonItem.image ?? '').catch(err =>
+			console.error('[SHOP] Failed to notify lootbox win:', err)
+		)
+
+		return { success: true, ...result }
+	} catch (e) {
+		const err = e as { type?: string; balance?: number; cost?: number; message?: string }
+		if (err.type === 'insufficient_funds') {
+			return { error: 'Insufficient scraps', required: err.cost, available: err.balance }
+		}
+		if (err.type === 'all_out_of_stock') {
+			return { error: 'All items in this lootbox are out of stock' }
+		}
+		if (err.type === 'boost_out_of_stock') {
+			return { error: 'The item you selected to boost is out of stock' }
+		}
+		if (err.type === 'invalid_boost') {
+			return { error: err.message }
+		}
+		throw e
 	}
 })
 
