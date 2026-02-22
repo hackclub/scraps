@@ -119,6 +119,47 @@
 	let unshipReason = $state('');
 	let unshipping = $state(false);
 
+	// lightweight toast helper (DOM-based, so no extra markup required)
+	function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
+		try {
+			const el = document.createElement('div');
+			el.textContent = message;
+			el.style.position = 'fixed';
+			el.style.left = '50%';
+			el.style.bottom = '24px';
+			el.style.transform = 'translateX(-50%)';
+			el.style.padding = '8px 14px';
+			el.style.borderRadius = '999px';
+			el.style.fontWeight = '700';
+			el.style.zIndex = '9999';
+			el.style.boxShadow = '0 6px 18px rgba(0,0,0,0.25)';
+			el.style.opacity = '1';
+			el.style.transition = 'opacity 250ms ease';
+			if (type === 'success') {
+				el.style.background = '#16a34a'; // green-600
+				el.style.color = 'white';
+			} else if (type === 'error') {
+				el.style.background = '#dc2626'; // red-600
+				el.style.color = 'white';
+			} else {
+				el.style.background = '#111827';
+				el.style.color = 'white';
+			}
+			document.body.appendChild(el);
+			window.setTimeout(() => {
+				el.style.opacity = '0';
+				window.setTimeout(() => {
+					el.remove();
+				}, 300);
+			}, 3500);
+		} catch (err) {
+			// Fallback to alert if the DOM approach fails
+			try {
+				alert(message);
+			} catch {}
+		}
+	}
+
 	onMount(async () => {
 		currentUser = await getUser();
 		if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'reviewer')) {
@@ -245,26 +286,20 @@
 		undoingOrder = orderId;
 		showUndoConfirm = null;
 		try {
-			const softDeleteRes = await fetch(`${API_URL}/admin/orders/${orderId}/soft-delete`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			const softDeleteResult = await softDeleteRes.json();
-			if (softDeleteResult.error) {
-				console.error(softDeleteResult.error);
-				return;
-			}
-
+			// Directly call DELETE with a required reason payload.
+			// The server expects a short reason when deleting/reverting an order.
 			const refundRes = await fetch(`${API_URL}/admin/orders/${orderId}`, {
 				method: 'DELETE',
-				credentials: 'include'
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ reason: 'reverted via admin UI' })
 			});
 			const refundResult = await refundRes.json();
 			if (refundResult.error) {
 				console.error(refundResult.error);
 				return;
 			}
-			fetchTimeline();
+			await fetchTimeline();
 		} catch (e) {
 			console.error('Failed to undo order:', e);
 		} finally {
@@ -287,9 +322,7 @@
 				return;
 			}
 			// Update local project status
-			projects = projects.map((p) =>
-				p.id === projectId ? { ...p, status: 'in_progress' } : p
-			);
+			projects = projects.map((p) => (p.id === projectId ? { ...p, status: 'in_progress' } : p));
 			showUnshipConfirm = null;
 			unshipReason = '';
 		} catch (e) {
@@ -500,7 +533,9 @@
 					<ShieldAlert size={20} class="text-red-600" />
 					<div>
 						<p class="font-bold text-red-800">hackatime banned</p>
-						<p class="text-sm text-red-700">this user is banned on hackatime. they will be redirected to fraud.land on login.</p>
+						<p class="text-sm text-red-700">
+							this user is banned on hackatime. they will be redirected to fraud.land on login.
+						</p>
 					</div>
 				</div>
 			</div>
@@ -511,7 +546,10 @@
 					<ShieldAlert size={20} class="text-orange-600" />
 					<div>
 						<p class="font-bold text-orange-800">hackatime suspected</p>
-						<p class="text-sm text-orange-700">this user is flagged as suspected on hackatime. please review their activity carefully.</p>
+						<p class="text-sm text-orange-700">
+							this user is flagged as suspected on hackatime. please review their activity
+							carefully.
+						</p>
 					</div>
 				</div>
 			</div>
@@ -824,9 +862,7 @@
 											{/if}
 										{/if}
 										<div class="text-right">
-											<p
-												class="font-bold {getTimelineColor(event.type, event.amount)}"
-											>
+											<p class="font-bold {getTimelineColor(event.type, event.amount)}">
 												{#if event.amount !== 0}
 													{event.amount > 0 ? '+' : ''}{event.amount}
 												{/if}
@@ -862,7 +898,8 @@
 		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
 			<h2 class="mb-4 text-2xl font-bold">unship project</h2>
 			<p class="mb-4 text-gray-600">
-				this will set the project back to in progress and remove all awarded scraps. this action cannot be undone.
+				this will set the project back to in progress and remove all awarded scraps. this action
+				cannot be undone.
 			</p>
 			<div class="mb-4">
 				<label for="unshipReason" class="mb-1 block text-sm font-bold">reason (optional)</label>

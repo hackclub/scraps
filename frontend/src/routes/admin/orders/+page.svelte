@@ -76,9 +76,15 @@
 	let dateFrom = $state('');
 	let dateTo = $state('');
 	let confirmRevert = $state<Order | null>(null);
+	let confirmDelete = $state<Order | null>(null);
+	// short reason for deletion (shown in admin logs) - required by server when deleting/reverting
+	let confirmReason = $state('');
 	let actionLoading = $state(false);
 	let expandedOrders = $state<Record<number, boolean>>({});
 	let collapsedGroups = $state<Record<string, boolean>>({});
+	let lastDeleted = $state<Order | null>(null);
+	let lastDeletedTimer = $state<number | null>(null);
+	let lastDeletedError = $state<string | null>(null);
 
 	let filteredOrders = $derived.by(() => {
 		let result =
@@ -173,6 +179,7 @@
 	}
 
 	async function toggleFulfilled(order: Order) {
+		actionLoading = true;
 		try {
 			const response = await fetch(`${API_URL}/admin/orders/${order.id}`, {
 				method: 'PATCH',
@@ -185,24 +192,92 @@
 			}
 		} catch (e) {
 			console.error('Failed to update order:', e);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
-	async function revertOrder(order: Order) {
+	async function deleteOrder(order: Order) {
 		actionLoading = true;
 		try {
 			const response = await fetch(`${API_URL}/admin/orders/${order.id}`, {
 				method: 'DELETE',
-				credentials: 'include'
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ reason: confirmReason })
 			});
+			const text = await response.text();
+			let json: any = null;
+			try {
+				json = JSON.parse(text);
+			} catch {
+				// ignore parse error
+			}
+
 			if (response.ok) {
+				// remove from visible list
 				orders = orders.filter((o) => o.id !== order.id);
+				// keep a reference so the admin can revert shortly after deletion
+				lastDeleted = order;
+				lastDeletedError = null;
+				// clear any existing timer
+				if (lastDeletedTimer) {
+					clearTimeout(lastDeletedTimer);
+				}
+				// allow undo for 30 seconds
+				lastDeletedTimer = window.setTimeout(() => {
+					lastDeleted = null;
+					lastDeletedTimer = null;
+					lastDeletedError = null;
+				}, 30000);
+			} else {
+				const err = (json && (json.error || json.message)) || text || 'failed to delete';
+				console.error('Failed to delete order:', err);
 			}
 		} catch (e) {
-			console.error('Failed to revert order:', e);
+			console.error('Failed to delete order:', e);
 		} finally {
 			actionLoading = false;
-			confirmRevert = null;
+			confirmDelete = null;
+			confirmReason = '';
+		}
+	}
+
+	async function restoreDeletedOrder(order: Order) {
+		if (!order) return;
+		actionLoading = true;
+		try {
+			const response = await fetch(`${API_URL}/admin/orders/${order.id}/restore`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			const text = await response.text();
+			let json: any = null;
+			try {
+				json = JSON.parse(text);
+			} catch {
+				// ignore
+			}
+			if (response.ok) {
+				// refetch orders to ensure consistent ordering & data
+				await fetchOrders();
+				// clear undo state
+				if (lastDeletedTimer) {
+					clearTimeout(lastDeletedTimer);
+				}
+				lastDeleted = null;
+				lastDeletedTimer = null;
+				lastDeletedError = null;
+			} else {
+				const err = (json && (json.error || json.message)) || text || 'restore failed';
+				lastDeletedError = String(err);
+				console.error('Failed to restore archived order:', err);
+			}
+		} catch (e) {
+			lastDeletedError = String(e instanceof Error ? e.message : e);
+			console.error('Failed to restore archived order:', e);
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -540,12 +615,12 @@
 														{/if}
 													</button>
 													<button
-														onclick={() => (confirmRevert = order)}
+														onclick={() => (confirmDelete = order)}
 														class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-red-600 px-3 py-2 font-bold text-red-600 transition-all duration-200 hover:border-dashed"
-														title="revert & refund"
+														title="delete order"
 													>
 														<Trash2 size={16} />
-														revert order
+														delete order
 													</button>
 												</div>
 											</div>
@@ -561,39 +636,127 @@
 	{/if}
 </div>
 
-<!-- Revert Confirmation Modal -->
-{#if confirmRevert}
+<!-- Delete Confirmation Modal -->
+{#if confirmDelete}
 	<div
 		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={(e) => e.target === e.currentTarget && (confirmRevert = null)}
-		onkeydown={(e) => e.key === 'Escape' && (confirmRevert = null)}
+		onclick={(e) => e.target === e.currentTarget && (confirmDelete = null)}
+		onkeydown={(e) => e.key === 'Escape' && (confirmDelete = null)}
 		role="dialog"
 		tabindex="-1"
 	>
 		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
-			<h2 class="mb-4 text-2xl font-bold">revert order</h2>
+			<h2 class="mb-4 text-2xl font-bold">delete order</h2>
 			<p class="mb-2 text-gray-600">
-				this will refund <span class="font-bold">{confirmRevert.totalPrice} scraps</span> to
-				<span class="font-bold">@{confirmRevert.username}</span>, restore inventory, and permanently
-				delete this order.
+				this will permanently delete the order for <span class="font-bold"
+					>@{confirmDelete.username}</span
+				> and remove associated refinery/roll/penalty records from their financial timeline. No refund
+				or bonus will be issued.
 			</p>
-			<p class="mb-6 text-sm font-bold text-red-600">this action cannot be undone.</p>
+			<p class="mb-6 text-sm font-bold text-red-600">
+				this action can be reverted for a short time (undo available) but is otherwise destructive.
+			</p>
+			<label for="confirm-reason" class="mb-2 block text-sm font-bold text-gray-700"
+				>reason (min 3 chars)</label
+			>
+			<textarea
+				id="confirm-reason"
+				aria-describedby="confirm-reason-error"
+				aria-required="true"
+				aria-invalid={confirmReason.trim().length > 0 && confirmReason.trim().length < 3}
+				bind:value={confirmReason}
+				class="mb-2 w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+				rows="3"
+				placeholder="brief reason for deleting this order (required)"
+			></textarea>
+			{#if confirmReason && confirmReason.trim().length > 0 && confirmReason.trim().length < 3}
+				<p id="confirm-reason-error" class="mb-4 text-sm text-red-600">
+					reason must be at least 3 characters
+				</p>
+			{:else}
+				<div class="mb-4" aria-hidden="true"></div>
+			{/if}
 			<div class="flex gap-3">
 				<button
-					onclick={() => (confirmRevert = null)}
+					onclick={() => ((confirmDelete = null), (confirmReason = ''))}
 					disabled={actionLoading}
 					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{$t.common.cancel}
 				</button>
 				<button
-					onclick={() => confirmRevert && revertOrder(confirmRevert)}
+					onclick={() => {
+						// basic client-side validation to ensure server receives a short reason
+						if (!confirmReason || confirmReason.trim().length < 3) {
+							actionLoading = false;
+							// small UX: keep modal open and don't proceed
+							return;
+						}
+						confirmDelete && deleteOrder(confirmDelete);
+					}}
 					disabled={actionLoading}
 					class="flex-1 cursor-pointer rounded-full border-4 border-red-600 bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					{actionLoading ? '...' : 'revert & refund'}
+					{actionLoading ? '...' : 'delete permanently'}
 				</button>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<!-- Undo Toast (shows after a deletion, allows quick restore) -->
+{#if lastDeleted}
+	<div
+		role="status"
+		aria-live="polite"
+		aria-atomic="true"
+		class="fixed right-6 bottom-6 z-50 flex items-center gap-4 rounded-2xl border-4 border-black bg-white p-4 shadow-lg"
+	>
+		<div>
+			<p class="font-bold">Order deleted</p>
+			<p class="text-sm text-gray-600">
+				Deleted order for <span class="font-bold">@{lastDeleted.username}</span>. You can revert
+				this action for a short time.
+			</p>
+			{#if lastDeletedError}
+				<p class="text-sm text-red-600">{lastDeletedError}</p>
+			{/if}
+		</div>
+		<div class="flex flex-col gap-2">
+			<button
+				onclick={() => {
+					lastDeleted && restoreDeletedOrder(lastDeleted);
+				}}
+				disabled={actionLoading}
+				class="rounded-full border-4 border-black bg-white px-4 py-2 font-bold hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+			>
+				revert
+			</button>
+			<button
+				onclick={() => {
+					lastDeleted = null;
+					if (lastDeletedTimer) {
+						clearTimeout(lastDeletedTimer);
+						lastDeletedTimer = null;
+					}
+					lastDeletedError = null;
+				}}
+				class="rounded-full border-4 border-gray-300 px-3 py-1 font-bold hover:border-dashed"
+			>
+				dismiss
+			</button>
+		</div>
+	</div>
+{/if}
+
+<style>
+	@keyframes float {
+		0%,
+		100% {
+			transform: translateY(0);
+		}
+		50% {
+			transform: translateY(-6px);
+		}
+	}
+</style>
