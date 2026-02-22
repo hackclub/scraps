@@ -13,6 +13,7 @@ import {
 } from "../schemas/shop";
 import { usersTable } from "../schemas/users";
 import { getUserFromSession } from "../lib/auth";
+import { config } from "../config";
 import {
   getUserScrapsBalance,
   canAfford,
@@ -41,6 +42,7 @@ shop.get("/items", async ({ headers }) => {
       costMultiplier: shopItemsTable.costMultiplier,
       boostAmount: shopItemsTable.boostAmount,
       rollCostOverride: shopItemsTable.rollCostOverride,
+      perRollMultiplier: shopItemsTable.perRollMultiplier,
       createdAt: shopItemsTable.createdAt,
       updatedAt: shopItemsTable.updatedAt,
       heartCount:
@@ -127,36 +129,70 @@ shop.get("/items", async ({ headers }) => {
         boostData.boostPercent >= maxBoost
           ? null
           : getUpgradeCost(item.price, boostData.upgradeCount, actualSpent);
+
+      // Compute server-authoritative display roll cost for UI
+      const effectiveProbability = Math.min(
+        adjustedBaseProbability + boostData.boostPercent,
+        100,
+      );
+      const baseRollCost = calculateRollCost(
+        item.price,
+        effectiveProbability,
+        item.rollCostOverride,
+        item.baseProbability,
+        item.perRollMultiplier,
+      );
+      const previousRolls = rollCountMap.get(item.id) ?? 0;
+      const displayRollCost = Math.round(
+        baseRollCost * (1 + (item.perRollMultiplier ?? 0.05) * previousRolls),
+      );
+
       return {
         ...item,
         heartCount: Number(item.heartCount) || 0,
         userBoostPercent: boostData.boostPercent,
         upgradeCount: boostData.upgradeCount,
         adjustedBaseProbability,
-        effectiveProbability: Math.min(
-          adjustedBaseProbability + boostData.boostPercent,
-          100,
-        ),
+        effectiveProbability,
         rollCostOverride: item.rollCostOverride,
+        perRollMultiplier: item.perRollMultiplier ?? 0.05,
+        rollCount: previousRolls,
         userHearted: heartedIds.has(item.id),
         nextUpgradeCost,
-        rollCount: rollCountMap.get(item.id) ?? 0,
+        // Server-calculated display value (scraps) that matches DB & gameplay
+        displayRollCost,
       };
     });
   }
 
-  return items.map((item) => ({
-    ...item,
-    heartCount: Number(item.heartCount) || 0,
-    userBoostPercent: 0,
-    upgradeCount: 0,
-    adjustedBaseProbability: item.baseProbability,
-    effectiveProbability: Math.min(item.baseProbability, 100),
-    rollCostOverride: item.rollCostOverride,
-    userHearted: false,
-    nextUpgradeCost: getUpgradeCost(item.price, 0),
-    rollCount: 0,
-  }));
+  return items.map((item) => {
+    const effectiveProbability = Math.min(item.baseProbability, 100);
+    const baseRollCost = calculateRollCost(
+      item.price,
+      effectiveProbability,
+      item.rollCostOverride,
+      item.baseProbability,
+      item.perRollMultiplier,
+    );
+    const displayRollCost = Math.round(
+      baseRollCost * (1 + (item.perRollMultiplier ?? 0.05) * 0),
+    );
+
+    return {
+      ...item,
+      heartCount: Number(item.heartCount) || 0,
+      userBoostPercent: 0,
+      upgradeCount: 0,
+      adjustedBaseProbability: item.baseProbability,
+      effectiveProbability,
+      rollCostOverride: item.rollCostOverride,
+      perRollMultiplier: item.perRollMultiplier ?? 0.05,
+      rollCount: 0,
+      userHearted: false,
+      nextUpgradeCost: item.baseUpgradeCost,
+      displayRollCost,
+    };
+  });
 });
 
 shop.get("/items/:id", async ({ params, headers }) => {
@@ -398,17 +434,7 @@ shop.post("/items/:id/purchase", async ({ params, body, headers }) => {
         throw { type: "out_of_stock" };
       }
 
-      const currentItem = {
-        id: rawRow.id as number,
-        name: rawRow.name as string,
-        price: rawRow.price as number,
-        count: rawRow.count as number,
-        baseProbability: rawRow.base_probability as number,
-        baseUpgradeCost: rawRow.base_upgrade_cost as number,
-        costMultiplier: rawRow.cost_multiplier as number,
-        boostAmount: rawRow.boost_amount as number,
-        rollCostOverride: (rawRow.roll_cost_override as number | null) ?? null,
-      };
+      // rawRow is available for any needed fields; no separate `currentItem` mapping required here
 
       // Atomic SQL decrement — always uses the live DB value
       await tx
@@ -516,7 +542,6 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
   }
 
   const item = items[0];
-  const itemRollCostOverride = item.rollCostOverride;
 
   if (item.count < 1) {
     return { error: "Out of stock" };
@@ -559,6 +584,8 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
         costMultiplier: rawRow.cost_multiplier as number,
         boostAmount: rawRow.boost_amount as number,
         rollCostOverride: (rawRow.roll_cost_override as number | null) ?? null,
+        perRollMultiplier:
+          (rawRow.per_roll_multiplier as number | null) ?? null,
       };
 
       // Compute boost and penalty inside transaction
@@ -604,9 +631,10 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
         effectiveProbability,
         currentItem.rollCostOverride,
         currentItem.baseProbability,
+        currentItem.perRollMultiplier ?? undefined,
       );
 
-      // Roll cost escalates by 5% per previous roll on this item
+      // Roll cost escalates by the per-roll multiplier (default 0.05) per previous roll on this item
       const rollCountResult = await tx
         .select({ count: sql<number>`count(*)` })
         .from(shopRollsTable)
@@ -617,7 +645,10 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
           ),
         );
       const previousRolls = Number(rollCountResult[0]?.count ?? 0);
-      const rollCost = Math.round(baseRollCost * (1 + 0.05 * previousRolls));
+      const perRollMult = currentItem.perRollMultiplier ?? 0.05;
+      const rollCost = Math.round(
+        baseRollCost * (1 + perRollMult * previousRolls),
+      );
 
       // Check if user can afford the roll cost
       const {
@@ -640,9 +671,10 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
       const rolled = randomInt(1, 101);
       const actualThreshold = computeRollThreshold(effectiveProbability);
       const won = rolled <= actualThreshold;
-      const displayRolled = !won && rolled <= effectiveProbability
-        ? randomInt(effectiveProbability + 1, 101)
-        : rolled;
+      const displayRolled =
+        !won && rolled <= effectiveProbability
+          ? randomInt(effectiveProbability + 1, 101)
+          : rolled;
 
       // Record the roll inside the transaction
       await tx.insert(shopRollsTable).values({
@@ -1091,8 +1123,12 @@ shop.get("/addresses", async ({ headers }) => {
     return { error: "Unauthorized" };
   }
 
+  // Fetch the stored tokens for this user
   const userData = await db
-    .select({ accessToken: usersTable.accessToken })
+    .select({
+      accessToken: usersTable.accessToken,
+      refreshToken: usersTable.refreshToken,
+    })
     .from(usersTable)
     .where(eq(usersTable.id, user.id))
     .limit(1);
@@ -1102,15 +1138,78 @@ shop.get("/addresses", async ({ headers }) => {
     return [];
   }
 
-  try {
-    const response = await fetch("https://identity.hackclub.com/api/v1/me", {
+  const identityUrl = "https://identity.hackclub.com/api/v1/me";
+  const tokenUrl = "https://auth.hackclub.com/oauth/token";
+
+  async function fetchIdentityWithToken(token: string) {
+    return fetch(identityUrl, {
       headers: {
-        Authorization: `Bearer ${userData[0].accessToken}`,
+        Authorization: `Bearer ${token}`,
       },
     });
+  }
+
+  try {
+    // First attempt using stored access token
+    let response = await fetchIdentityWithToken(userData[0].accessToken);
+
+    // If token expired/unauthorized and we have a refresh token, try to refresh
+    if (
+      (response.status === 401 || response.status === 403) &&
+      userData[0].refreshToken
+    ) {
+      try {
+        const body = new URLSearchParams({
+          client_id: config.hcauth.clientId,
+          client_secret: config.hcauth.clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: userData[0].refreshToken,
+        });
+        const tokenResp = await fetch(tokenUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+
+        if (tokenResp.ok) {
+          const tokenJson = await tokenResp.json();
+          const newAccess = tokenJson.access_token as string;
+          const newRefresh = tokenJson.refresh_token as string | undefined;
+
+          // Persist new tokens to DB
+          await db
+            .update(usersTable)
+            .set({
+              accessToken: newAccess,
+              refreshToken: newRefresh ?? userData[0].refreshToken,
+              updatedAt: new Date(),
+            })
+            .where(eq(usersTable.id, user.id));
+
+          console.log(
+            "[/shop/addresses] Refreshed access token for user",
+            user.id,
+          );
+
+          // Retry identity fetch with new access token
+          response = await fetchIdentityWithToken(newAccess);
+        } else {
+          const txt = await tokenResp.text();
+          console.log(
+            "[/shop/addresses] Token refresh failed:",
+            tokenResp.status,
+            txt,
+          );
+        }
+      } catch (refreshErr) {
+        console.error("[/shop/addresses] Error refreshing token:", refreshErr);
+      }
+    }
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await response
+        .text()
+        .catch(() => "<non-text response>");
       console.log(
         "[/shop/addresses] Hack Club API error:",
         response.status,
@@ -1123,16 +1222,16 @@ shop.get("/addresses", async ({ headers }) => {
       identity?: {
         addresses?: Array<{
           id: string;
-          first_name: string;
-          last_name: string;
-          line_1: string;
-          line_2: string;
-          city: string;
-          state: string;
-          postal_code: string;
-          country: string;
-          phone_number: string;
-          primary: boolean;
+          first_name?: string;
+          last_name?: string;
+          line_1?: string;
+          line_2?: string;
+          city?: string;
+          state?: string;
+          postal_code?: string;
+          country?: string;
+          phone_number?: string;
+          primary?: boolean;
         }>;
       };
     };
