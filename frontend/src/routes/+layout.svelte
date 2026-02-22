@@ -29,6 +29,14 @@
 
 	// Prefetch data on initial load if user is logged in
 	onMount(async () => {
+		// Fetch server config early on client startup so the UI can read canonical values.
+		// Use dynamic import here so we don't need to modify top-level imports in this file.
+		import('$lib/config')
+			.then((m) => m.fetchServerConfig())
+			.catch(() => {
+				/* ignore errors; UI can fallback to local values */
+			});
+
 		user = await getUser();
 		if (user) {
 			prefetchUserData();

@@ -441,11 +441,15 @@
 							<td colspan="3" class="pt-3 text-lg font-bold">average cost per hour</td>
 							<td class="pt-3">{stats.totalHours.toLocaleString()}h</td>
 							<td></td>
-							<td class="pt-3 text-right text-lg font-bold">${stats.totalTierCost?.toLocaleString()}</td>
+							<td class="pt-3 text-right text-lg font-bold"
+								>${stats.totalTierCost?.toLocaleString()}</td
+							>
 						</tr>
 						<tr>
 							<td colspan="5" class="pb-2"></td>
-							<td class="text-right text-2xl font-bold text-green-700">${stats.avgCostPerHour?.toFixed(2)}/hr</td>
+							<td class="text-right text-2xl font-bold text-green-700"
+								>${stats.avgCostPerHour?.toFixed(2)}/hr</td
+							>
 						</tr>
 					</tfoot>
 				</table>
@@ -577,8 +581,12 @@
 					</div>
 					<div>
 						<p class="text-sm font-bold text-gray-500">consolation shipping</p>
-						<p class="text-4xl font-bold">${stats.shopRealCost.consolationShippingCost.toFixed(2)}</p>
-						<p class="text-xs text-gray-400">{stats.shopRealCost.consolationCount} consolations × $2</p>
+						<p class="text-4xl font-bold">
+							${stats.shopRealCost.consolationShippingCost.toFixed(2)}
+						</p>
+						<p class="text-xs text-gray-400">
+							{stats.shopRealCost.consolationCount} consolations × $2
+						</p>
 					</div>
 				</div>
 			</div>
