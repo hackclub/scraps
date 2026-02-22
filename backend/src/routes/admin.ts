@@ -16,7 +16,14 @@ import {
 import { newsTable } from "../schemas/news";
 import { projectActivityTable } from "../schemas/activity";
 import { getUserFromSession } from "../lib/auth";
-import { calculateScrapsFromHours, getUserScrapsBalance, TIER_MULTIPLIERS, DOLLARS_PER_HOUR, SCRAPS_PER_DOLLAR } from "../lib/scraps";
+import {
+  calculateScrapsFromHours,
+  getUserScrapsBalance,
+  TIER_MULTIPLIERS,
+  DOLLARS_PER_HOUR,
+  SCRAPS_PER_DOLLAR,
+  calculateRollCost,
+} from "../lib/scraps";
 import { payoutPendingScraps, getNextPayoutDate } from "../lib/scraps-payout";
 import { syncSingleProject, getHackatimeUser } from "../lib/hackatime-sync";
 import { computeItemPricing, updateShopItemPricing } from "../lib/shop-pricing";
@@ -178,10 +185,14 @@ admin.get("/stats", async ({ headers, status }) => {
       ? Math.round((totalScrapsSpent / roundedTotalHours) * 100) / 100
       : 0;
 
-  const totalTierCost = tierCostBreakdown.reduce((sum, t) => sum + t.totalCost, 0);
-  const avgCostPerHour = roundedTotalHours > 0
-    ? Math.round((totalTierCost / roundedTotalHours) * 100) / 100
-    : 0;
+  const totalTierCost = tierCostBreakdown.reduce(
+    (sum, t) => sum + t.totalCost,
+    0,
+  );
+  const avgCostPerHour =
+    roundedTotalHours > 0
+      ? Math.round((totalTierCost / roundedTotalHours) * 100) / 100
+      : 0;
 
   // Real dollar cost from shop fulfillment
   const [luckWinOrders, consolationCount] = await Promise.all([
@@ -190,7 +201,10 @@ admin.get("/stats", async ({ headers, status }) => {
         itemPrice: shopItemsTable.price,
       })
       .from(shopOrdersTable)
-      .innerJoin(shopItemsTable, eq(shopOrdersTable.shopItemId, shopItemsTable.id))
+      .innerJoin(
+        shopItemsTable,
+        eq(shopOrdersTable.shopItemId, shopItemsTable.id),
+      )
       .where(eq(shopOrdersTable.orderType, "luck_win")),
     db
       .select({ count: sql<number>`count(*)` })
@@ -204,9 +218,10 @@ admin.get("/stats", async ({ headers, status }) => {
   );
   const consolationDollarCost = Number(consolationCount[0]?.count || 0) * 2;
   const totalRealCost = luckWinDollarCost + consolationDollarCost;
-  const realCostPerHour = roundedTotalHours > 0
-    ? Math.round((totalRealCost / roundedTotalHours) * 100) / 100
-    : 0;
+  const realCostPerHour =
+    roundedTotalHours > 0
+      ? Math.round((totalRealCost / roundedTotalHours) * 100) / 100
+      : 0;
 
   return {
     totalUsers,
@@ -255,19 +270,19 @@ admin.get("/users", async ({ headers, query, status }) => {
     const searchIsNumeric = search && /^\d+$/.test(search);
     const searchCondition = search
       ? or(
-        ...(searchIsNumeric ? [eq(usersTable.id, parseInt(search))] : []),
-        sql`${usersTable.username} ILIKE ${"%" + search + "%"}`,
-        sql`${usersTable.email} ILIKE ${"%" + search + "%"}`,
-        sql`${usersTable.slackId} ILIKE ${"%" + search + "%"}`,
-      )
+          ...(searchIsNumeric ? [eq(usersTable.id, parseInt(search))] : []),
+          sql`${usersTable.username} ILIKE ${"%" + search + "%"}`,
+          sql`${usersTable.email} ILIKE ${"%" + search + "%"}`,
+          sql`${usersTable.slackId} ILIKE ${"%" + search + "%"}`,
+        )
       : undefined;
 
     // Sort ID exact matches first, then by created date
     const orderClause = searchIsNumeric
       ? [
-        sql`CASE WHEN ${usersTable.id} = ${parseInt(search)} THEN 0 ELSE 1 END`,
-        desc(usersTable.createdAt),
-      ]
+          sql`CASE WHEN ${usersTable.id} = ${parseInt(search)} THEN 0 ELSE 1 END`,
+          desc(usersTable.createdAt),
+        ]
       : [desc(usersTable.createdAt)];
 
     const [userIds, countResult] = await Promise.all([
@@ -749,12 +764,12 @@ admin.get("/reviews/:id", async ({ params, headers }) => {
       hackatimeBanned,
       user: projectUser[0]
         ? {
-          id: projectUser[0].id,
-          username: projectUser[0].username,
-          email: isAdmin ? projectUser[0].email : undefined,
-          avatar: projectUser[0].avatar,
-          internalNotes: projectUser[0].internalNotes,
-        }
+            id: projectUser[0].id,
+            username: projectUser[0].username,
+            email: isAdmin ? projectUser[0].email : undefined,
+            avatar: projectUser[0].avatar,
+            internalNotes: projectUser[0].internalNotes,
+          }
         : null,
       reviews: visibleReviews.map((r) => {
         const reviewer = reviewers.find((rv) => rv.id === r.reviewerId);
@@ -1201,12 +1216,12 @@ admin.get("/second-pass/:id", async ({ params, headers }) => {
       hackatimeBanned,
       user: projectUser[0]
         ? {
-          id: projectUser[0].id,
-          username: projectUser[0].username,
-          email: projectUser[0].email,
-          avatar: projectUser[0].avatar,
-          internalNotes: projectUser[0].internalNotes,
-        }
+            id: projectUser[0].id,
+            username: projectUser[0].username,
+            email: projectUser[0].email,
+            avatar: projectUser[0].avatar,
+            internalNotes: projectUser[0].internalNotes,
+          }
         : null,
       reviews: reviews.map((r) => {
         const reviewer = reviewers.find((rv) => rv.id === r.reviewerId);
@@ -1599,6 +1614,81 @@ admin.post("/shop/compute-pricing", async ({ headers, body, status }) => {
   return computeItemPricing(dollarCost, baseProbability, stockCount ?? 1);
 });
 
+// Batch compute server-authoritative display roll costs (admin only)
+// Accepts JSON body: { itemIds?: number[], items?: Array<{ id, price, baseProbability?, rollCostOverride?, perRollMultiplier?, rollCount?, userBoostPercent? }> }
+// Returns: { results: [{ id, baseRollCost, displayRollCost }] }
+admin.post("/shop/compute-roll-costs", async ({ headers, body, status }) => {
+  const user = await requireAdmin(headers as Record<string, string>);
+  if (!user) return status(401, { error: "Unauthorized" });
+
+  const { itemIds, items } = body as {
+    itemIds?: number[];
+    items?: Array<any>;
+  };
+
+  try {
+    let rows: any[] = [];
+
+    // If list of DB IDs provided, load canonical fields from DB
+    if (Array.isArray(itemIds) && itemIds.length > 0) {
+      rows = await db
+        .select({
+          id: shopItemsTable.id,
+          price: shopItemsTable.price,
+          baseProbability: shopItemsTable.baseProbability,
+          rollCostOverride: shopItemsTable.rollCostOverride,
+          perRollMultiplier: shopItemsTable.perRollMultiplier,
+        })
+        .from(shopItemsTable)
+        .where(inArray(shopItemsTable.id, itemIds));
+    } else if (Array.isArray(items) && items.length > 0) {
+      // Accept ad-hoc items payload from client for previewing unsaved items
+      rows = items.map((it) => ({
+        id: it.id,
+        price: it.price,
+        baseProbability: it.baseProbability ?? 50,
+        rollCostOverride: it.rollCostOverride ?? null,
+        perRollMultiplier: it.perRollMultiplier ?? 0.05,
+        rollCount: it.rollCount ?? 0,
+        userBoostPercent: it.userBoostPercent ?? 0,
+      }));
+    } else {
+      return status(400, { error: "itemIds or items required" });
+    }
+
+    const results: Array<{
+      id: number;
+      baseRollCost: number;
+      displayRollCost: number;
+    }> = [];
+
+    for (const r of rows) {
+      // Effective probability includes any provided userBoostPercent
+      const effectiveProbability = Math.min(
+        (r.baseProbability ?? 50) + (r.userBoostPercent ?? 0),
+        100,
+      );
+      const perRoll = r.perRollMultiplier ?? 0.05;
+      const baseRollCost = calculateRollCost(
+        r.price,
+        effectiveProbability,
+        r.rollCostOverride,
+        r.baseProbability,
+        perRoll,
+      );
+      const prev = r.rollCount ?? 0;
+      const displayRollCost = Math.round(baseRollCost * (1 + perRoll * prev));
+
+      results.push({ id: r.id, baseRollCost, displayRollCost });
+    }
+
+    return { results };
+  } catch (err) {
+    console.error("[ADMIN] compute-roll-costs error:", err);
+    return status(500, { error: "Failed to compute roll costs" });
+  }
+});
+
 // Shop admin endpoints (admin only)
 admin.get("/shop/items", async ({ headers }) => {
   try {
@@ -1675,6 +1765,16 @@ admin.post("/shop/items", async ({ headers, body, status }) => {
   }
 
   try {
+    // Compute canonical pricing on the server (dollarCost = scrapsPrice / SCRAPS_PER_DOLLAR)
+    const dollarCost =
+      typeof price === "number" ? price / SCRAPS_PER_DOLLAR : 0;
+    const pricing = computeItemPricing(dollarCost, baseProbability, count ?? 1);
+
+    // Allow admin-supplied multipliers (optional); fallback to sensible defaults.
+    const perRollMultiplierVal = (body as any)?.perRollMultiplier ?? 0.05;
+    const upgradeBudgetMultiplierVal =
+      (body as any)?.upgradeBudgetMultiplier ?? 3.0;
+
     await db.insert(shopItemsTable).values({
       name: name.trim(),
       image: image.trim(),
@@ -1682,11 +1782,16 @@ admin.post("/shop/items", async ({ headers, body, status }) => {
       price,
       category: category.trim(),
       count: count || 0,
-      baseProbability: baseProbability ?? 50,
-      baseUpgradeCost: baseUpgradeCost ?? 10,
-      costMultiplier: costMultiplier ?? 115,
-      boostAmount: boostAmount ?? 1,
+      // Use server-calculated canonical values so DB is the source of truth
+      baseProbability: pricing.baseProbability,
+      baseUpgradeCost: pricing.baseUpgradeCost,
+      costMultiplier: pricing.costMultiplier,
+      boostAmount: pricing.boostAmount,
       rollCostOverride: rollCostOverride ?? null,
+      perRollMultiplier: perRollMultiplierVal,
+      upgradeBudgetMultiplier: upgradeBudgetMultiplierVal,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     return { success: true };
@@ -2298,9 +2403,9 @@ admin.get("/export/review-json", async ({ headers, status }) => {
     return projects.map((p) => {
       const hackatimeProjects = p.hackatimeProject
         ? p.hackatimeProject
-          .split(",")
-          .map((n: string) => n.trim())
-          .filter((n: string) => n.length > 0)
+            .split(",")
+            .map((n: string) => n.trim())
+            .filter((n: string) => n.length > 0)
         : [];
 
       return {
@@ -2318,12 +2423,23 @@ admin.get("/export/review-json", async ({ headers, status }) => {
 });
 
 // Revert a shop order (admin only) - refunds scraps, restores inventory, reverses penalties, deletes order
-admin.delete("/orders/:id", async ({ params, headers, status }) => {
+// Admin: delete order (archive full payloads and remove timeline rows)
+admin.delete("/orders/:id", async ({ params, headers, body, status }) => {
   try {
     const user = await requireAdmin(headers as Record<string, string>);
     if (!user) return status(401, { error: "Unauthorized" });
 
     const orderId = parseInt(params.id);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return status(400, { error: "Invalid order id" });
+    }
+
+    const reason = (body && (body as any).reason) || null;
+    if (!reason || typeof reason !== "string" || reason.trim().length < 3) {
+      return status(400, {
+        error: "Provide a short reason (min 3 chars) for deleting this order",
+      });
+    }
 
     const order = await db
       .select({
@@ -2332,8 +2448,12 @@ admin.delete("/orders/:id", async ({ params, headers, status }) => {
         orderType: shopOrdersTable.orderType,
         shopItemId: shopOrdersTable.shopItemId,
         quantity: shopOrdersTable.quantity,
+        pricePerItem: shopOrdersTable.pricePerItem,
         totalPrice: shopOrdersTable.totalPrice,
         userId: shopOrdersTable.userId,
+        shippingAddress: shopOrdersTable.shippingAddress,
+        phone: shopOrdersTable.phone,
+        createdAt: shopOrdersTable.createdAt,
         itemName: shopItemsTable.name,
       })
       .from(shopOrdersTable)
@@ -2346,82 +2466,331 @@ admin.delete("/orders/:id", async ({ params, headers, status }) => {
 
     if (!order[0]) return status(404, { error: "Order not found" });
 
-    await db.transaction(async (tx) => {
-      await tx.insert(userBonusesTable).values({
-        userId: order[0].userId,
-        amount: order[0].totalPrice,
-        reason: `order refund: ${order[0].itemName} (order #${orderId})`,
-        givenBy: user.id,
-      });
+    // Prevent double-archiving — attempt the select, and if the relation doesn't exist create it and retry.
+    let alreadyRow = null;
+    try {
+      const already = await db.execute(
+        sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`,
+      );
+      alreadyRow =
+        (already as any).rows?.[0] ??
+        (Array.isArray(already) ? (already as any)[0] : null);
+    } catch (err) {
+      // If the table doesn't exist, create it on-demand (safe: CREATE TABLE IF NOT EXISTS)
+      // and retry the select. If it's a different error, rethrow.
+      const msg = (err as any)?.message ?? "";
+      const code = (err as any)?.code ?? null;
+      if (msg.includes("does not exist") || code === "42P01") {
+        // Create the table to match the migration shape (minimal safe schema)
+        await db.execute(sql`
+          CREATE TABLE IF NOT EXISTS admin_deleted_orders (
+            id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+            original_order_id integer NOT NULL,
+            user_id integer NOT NULL,
+            shop_item_id integer,
+            quantity integer NOT NULL DEFAULT 1,
+            price_per_item integer NOT NULL,
+            total_price integer NOT NULL,
+            status varchar,
+            order_type varchar,
+            shipping_address text,
+            phone varchar,
+            item_name varchar,
+            created_at timestamptz,
+            deleted_by integer,
+            deleted_at timestamptz NOT NULL DEFAULT now(),
+            reason text,
+            deleted_payload jsonb,
+            restored boolean NOT NULL DEFAULT false,
+            restored_by integer,
+            restored_at timestamptz
+          );
+          CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_deleted_at ON admin_deleted_orders (deleted_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_user_id ON admin_deleted_orders (user_id);
+          CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_original_order_id ON admin_deleted_orders (original_order_id);
+        `);
+        // retry select once
+        const already2 = await db.execute(
+          sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`,
+        );
+        alreadyRow =
+          (already2 as any).rows?.[0] ??
+          (Array.isArray(already2) ? (already2 as any)[0] : null);
+      } else {
+        throw err;
+      }
+    }
+    if (alreadyRow) return status(409, { error: "Order already archived" });
 
-      await tx
-        .update(shopItemsTable)
-        .set({
-          count: sql`${shopItemsTable.count} + ${order[0].quantity}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(shopItemsTable.id, order[0].shopItemId));
-
-      // Reverse the probability penalty if this was a luck_win
-      if (order[0].orderType === "luck_win") {
-        const penalty = await tx
-          .select({
-            probabilityMultiplier: shopPenaltiesTable.probabilityMultiplier,
-          })
+    // collect related rows
+    const [refineryOrders, refineryHistory, rolls, penalties] =
+      await Promise.all([
+        db
+          .select()
+          .from(refineryOrdersTable)
+          .where(
+            and(
+              eq(refineryOrdersTable.userId, order[0].userId),
+              eq(refineryOrdersTable.shopItemId, order[0].shopItemId),
+            ),
+          ),
+        db
+          .select()
+          .from(refinerySpendingHistoryTable)
+          .where(
+            and(
+              eq(refinerySpendingHistoryTable.userId, order[0].userId),
+              eq(refinerySpendingHistoryTable.shopItemId, order[0].shopItemId),
+            ),
+          ),
+        db
+          .select()
+          .from(shopRollsTable)
+          .where(
+            and(
+              eq(shopRollsTable.userId, order[0].userId),
+              eq(shopRollsTable.shopItemId, order[0].shopItemId),
+            ),
+          ),
+        db
+          .select()
           .from(shopPenaltiesTable)
           .where(
             and(
               eq(shopPenaltiesTable.userId, order[0].userId),
               eq(shopPenaltiesTable.shopItemId, order[0].shopItemId),
             ),
-          )
-          .limit(1);
+          ),
+      ]);
 
-        if (penalty.length > 0) {
-          // Undo one halving: double the multiplier back, cap at 100
-          const restoredMultiplier = Math.min(
-            100,
-            penalty[0].probabilityMultiplier * 2,
-          );
-          if (restoredMultiplier >= 100) {
-            // Fully restored — delete the penalty row entirely
-            await tx
-              .delete(shopPenaltiesTable)
-              .where(
-                and(
-                  eq(shopPenaltiesTable.userId, order[0].userId),
-                  eq(shopPenaltiesTable.shopItemId, order[0].shopItemId),
-                ),
-              );
-          } else {
-            await tx
-              .update(shopPenaltiesTable)
-              .set({
-                probabilityMultiplier: restoredMultiplier,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(shopPenaltiesTable.userId, order[0].userId),
-                  eq(shopPenaltiesTable.shopItemId, order[0].shopItemId),
-                ),
-              );
-          }
-        }
-      }
+    await db.transaction(async (tx) => {
+      const deletedPayloadObj = {
+        order: order[0] || {},
+        refineryOrders: refineryOrders || [],
+        refineryHistory: refineryHistory || [],
+        shopRolls: rolls || [],
+        shopPenalties: penalties || [],
+      };
+      const deletedPayload = JSON.stringify(deletedPayloadObj);
 
-      // Delete the order row
+      await tx.execute(sql`INSERT INTO admin_deleted_orders (
+        original_order_id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, item_name, created_at,
+        deleted_payload,
+        deleted_by, deleted_at, reason
+      ) VALUES (
+        ${order[0].id}, ${order[0].userId}, ${order[0].shopItemId}, ${order[0].quantity}, ${order[0].pricePerItem}, ${order[0].totalPrice}, ${order[0].status}, ${order[0].orderType}, ${order[0].shippingAddress}, ${order[0].phone}, ${order[0].itemName}, ${order[0].createdAt},
+        ${deletedPayload}::jsonb,
+        ${user.id}, now(), ${reason}
+      )`);
+
+      await tx
+        .delete(refinerySpendingHistoryTable)
+        .where(
+          and(
+            eq(refinerySpendingHistoryTable.userId, order[0].userId),
+            eq(refinerySpendingHistoryTable.shopItemId, order[0].shopItemId),
+          ),
+        );
+      await tx
+        .delete(refineryOrdersTable)
+        .where(
+          and(
+            eq(refineryOrdersTable.userId, order[0].userId),
+            eq(refineryOrdersTable.shopItemId, order[0].shopItemId),
+          ),
+        );
+      await tx
+        .delete(shopRollsTable)
+        .where(
+          and(
+            eq(shopRollsTable.userId, order[0].userId),
+            eq(shopRollsTable.shopItemId, order[0].shopItemId),
+          ),
+        );
+      await tx
+        .delete(shopPenaltiesTable)
+        .where(
+          and(
+            eq(shopPenaltiesTable.userId, order[0].userId),
+            eq(shopPenaltiesTable.shopItemId, order[0].shopItemId),
+          ),
+        );
       await tx.delete(shopOrdersTable).where(eq(shopOrdersTable.id, orderId));
+
+      // Restore item stock for purchase/luck_win orders (count was decremented when the order was placed)
+      if (
+        order[0].orderType === "purchase" ||
+        order[0].orderType === "luck_win"
+      ) {
+        await tx
+          .update(shopItemsTable)
+          .set({
+            count: sql`${shopItemsTable.count} + ${order[0].quantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(shopItemsTable.id, order[0].shopItemId));
+      }
     });
 
     console.log(
-      `[ADMIN] Order #${orderId} reverted by admin #${user.id}: refunded ${order[0].totalPrice} scraps to user #${order[0].userId}, item "${order[0].itemName}" (itemId=${order[0].shopItemId}), type=${order[0].orderType}, qty=${order[0].quantity}`,
+      `[ADMIN] Order #${orderId} archived/deleted by admin #${user.id}`,
     );
+    return { success: true };
+  } catch (err) {
+    // Log full error details for diagnostics: stack, name, message, cause, and any DB-driver fields.
+    // Wrap logging in a try/catch to avoid masking the original error if logging itself fails.
+    try {
+      console.error(
+        "Admin delete order error (stack):",
+        (err as any)?.stack ?? err,
+      );
+      console.error(
+        "Admin delete order error (name):",
+        (err as any)?.name ?? null,
+      );
+      console.error(
+        "Admin delete order error (message):",
+        (err as any)?.message ?? String(err),
+      );
+      console.error(
+        "Admin delete order error (cause):",
+        (err as any)?.cause ?? null,
+      );
+      // Some drivers attach query and params for failed queries (helpful for debugging)
+      console.error(
+        "Admin delete order error (query):",
+        (err as any)?.query ?? null,
+      );
+      console.error(
+        "Admin delete order error (params):",
+        (err as any)?.params ?? null,
+      );
+      // Attempt to log the full error object including non-enumerable props
+      try {
+        console.error(
+          "Admin delete order error (full):",
+          JSON.stringify(err, Object.getOwnPropertyNames(err), 2),
+        );
+      } catch {
+        // Fallback to a plain object log if JSON.stringify fails
+        console.error("Admin delete order error (full fallback):", err);
+      }
+    } catch (logErr) {
+      console.error("Failed to log admin delete error in detail:", logErr);
+      console.error("Original error:", err);
+    }
 
-    return { success: true, refundedScraps: order[0].totalPrice };
+    return status(500, {
+      error:
+        "Failed to delete order: " + ((err as any)?.message || String(err)),
+    });
+  }
+});
+
+// Restore an archived order (full restore of order + related rows)
+admin.post("/orders/:id/restore", async ({ params, headers, status }) => {
+  try {
+    const user = await requireAdmin(headers as Record<string, string>);
+    if (!user) return status(401, { error: "Unauthorized" });
+
+    const originalOrderId = parseInt(params.id);
+    if (!Number.isInteger(originalOrderId) || originalOrderId <= 0)
+      return status(400, { error: "Invalid order id" });
+
+    const archivedRes = await db.execute(
+      sql`SELECT * FROM admin_deleted_orders WHERE original_order_id = ${originalOrderId} AND restored = false LIMIT 1`,
+    );
+    const archived =
+      (archivedRes as any).rows?.[0] ??
+      (Array.isArray(archivedRes) ? (archivedRes as any)[0] : null);
+    if (!archived)
+      return status(404, {
+        error: "Archived order not found or already restored",
+      });
+
+    // parse payloads (single `deleted_payload` JSON column)
+    const deletedPayload = archived.deleted_payload
+      ? JSON.parse(archived.deleted_payload)
+      : {
+          order: null,
+          refineryOrders: [],
+          refineryHistory: [],
+          shopRolls: [],
+          shopPenalties: [],
+        };
+    const orderPayload = deletedPayload.order ?? null;
+    const refineryOrdersPayload = deletedPayload.refineryOrders ?? [];
+    const refineryHistoryPayload = deletedPayload.refineryHistory ?? [];
+    const shopRollsPayload = deletedPayload.shopRolls ?? [];
+    const shopPenaltiesPayload = deletedPayload.shopPenalties ?? [];
+
+    await db.transaction(async (tx) => {
+      if (!orderPayload) throw new Error("Archived order payload missing");
+
+      // ensure no conflicting active order id
+      const existing = await tx
+        .select({ count: sql`count(*)` })
+        .from(shopOrdersTable)
+        .where(eq(shopOrdersTable.id, orderPayload.id));
+      const existingCount = Number(existing[0]?.count ?? 0);
+      if (existingCount > 0)
+        throw new Error("Active order with that id already exists");
+
+      // Use raw SQL with OVERRIDING SYSTEM VALUE to preserve the original order ID
+      await tx.execute(sql`INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, created_at)
+        OVERRIDING SYSTEM VALUE
+        VALUES (${orderPayload.id}, ${orderPayload.userId}, ${orderPayload.shopItemId}, ${orderPayload.quantity}, ${orderPayload.pricePerItem}, ${orderPayload.totalPrice}, ${orderPayload.status}, ${orderPayload.orderType}, ${orderPayload.shippingAddress}, ${orderPayload.phone}, ${orderPayload.createdAt})`);
+
+      // Related rows: omit id (auto-generated) — only the data matters, not the original IDs
+      for (const r of refineryOrdersPayload) {
+        await tx.insert(refineryOrdersTable).values({
+          userId: r.userId,
+          shopItemId: r.shopItemId,
+          cost: r.cost,
+          boostAmount: r.boostAmount,
+          createdAt: r.createdAt,
+        });
+      }
+      for (const h of refineryHistoryPayload) {
+        await tx.insert(refinerySpendingHistoryTable).values({
+          userId: h.userId,
+          shopItemId: h.shopItemId,
+          cost: h.cost,
+          createdAt: h.createdAt,
+        });
+      }
+      for (const rr of shopRollsPayload) {
+        await tx.insert(shopRollsTable).values({
+          userId: rr.userId,
+          shopItemId: rr.shopItemId,
+          rolled: rr.rolled,
+          threshold: rr.threshold,
+          won: rr.won,
+          createdAt: rr.createdAt,
+        });
+      }
+      for (const p of shopPenaltiesPayload) {
+        await tx.insert(shopPenaltiesTable).values({
+          userId: p.userId,
+          shopItemId: p.shopItemId,
+          probabilityMultiplier: p.probabilityMultiplier,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        });
+      }
+
+      await tx.execute(
+        sql`UPDATE admin_deleted_orders SET restored = true, restored_by = ${user.id}, restored_at = now() WHERE id = ${archived.id}`,
+      );
+    });
+
+    console.log(
+      `[ADMIN] Archived order #${originalOrderId} fully restored by admin #${user.id}`,
+    );
+    return { success: true };
   } catch (err) {
     console.error(err);
-    return status(500, { error: "Failed to revert order" });
+    return status(500, { error: "Failed to restore archived order" });
   }
 });
 
@@ -2730,9 +3099,9 @@ admin.post("/sync-ysws", async ({ headers, set }) => {
     const users =
       userIds.length > 0
         ? await db
-          .select({ id: usersTable.id, email: usersTable.email })
-          .from(usersTable)
-          .where(inArray(usersTable.id, userIds))
+            .select({ id: usersTable.id, email: usersTable.email })
+            .from(usersTable)
+            .where(inArray(usersTable.id, userIds))
         : [];
     const emailMap = new Map(users.map((u) => [u.id, u.email]));
 
@@ -2784,6 +3153,16 @@ admin.post("/recalculate-shop-pricing", async ({ headers, status }) => {
     console.error("[ADMIN] Shop pricing recalculation error:", err);
     return status(500, { error: "Failed to recalculate shop pricing" });
   }
+});
+
+admin.get("/config", async () => {
+  // Public endpoint: returns canonical pricing constants for the frontend to consume.
+  // These are intentionally read from the server-side constants so UI and server stay in sync.
+  return {
+    scrapsPerDollar: SCRAPS_PER_DOLLAR,
+    dollarsPerHour: DOLLARS_PER_HOUR,
+    tierMultipliers: TIER_MULTIPLIERS,
+  };
 });
 
 export default admin;
