@@ -42,48 +42,33 @@ export function computeItemPricing(
   /** scraps per dollar used */
   scrapsPerDollar: number;
 } {
-  const price = Math.max(1, Math.round(dollarCost * SCRAPS_PER_DOLLAR));
+  // Delegate core pricing calculation to the canonical helper so admin previews
+  // and bulk recalculations stay consistent with live logic.
+  const pricing = calculateShopItemPricing(dollarCost, stockCount);
 
-  let prob: number;
-  if (
+  const price = pricing.price;
+  // If caller provided an explicit baseProbability, prefer it for displayed values,
+  // otherwise use the computed baseProbability from the canonical helper.
+  const prob =
     baseProbability !== undefined &&
     baseProbability >= 1 &&
     baseProbability <= 100
-  ) {
-    prob = Math.round(baseProbability);
-  } else {
-    // Auto: rarer for expensive items, more common for cheap/plentiful ones
-    const priceRarityFactor = Math.max(0, 1 - dollarCost / 100);
-    const stockRarityFactor = Math.min(1, stockCount / 20);
-    prob = Math.max(
-      1,
-      Math.min(
-        80,
-        Math.round((priceRarityFactor * 0.4 + stockRarityFactor * 0.6) * 80),
-      ),
-    );
-  }
+      ? Math.round(baseProbability)
+      : pricing.baseProbability;
 
   const rollCost = calculateRollCost(price, prob, undefined, prob);
 
   const threshold = computeRollThreshold(prob);
-  const expectedRollsAtBase = threshold > 0 ? Math.round((100 / threshold) * 10) / 10 : Infinity;
+  const expectedRollsAtBase =
+    threshold > 0 ? Math.round((100 / threshold) * 10) / 10 : Infinity;
   const expectedSpendAtBase = Math.round(rollCost * expectedRollsAtBase);
-
-  const probabilityGap = 100 - prob;
-  const targetUpgrades = Math.max(5, Math.min(20, Math.ceil(dollarCost / 5)));
-  const boostAmount = Math.max(1, Math.round(probabilityGap / targetUpgrades));
-
-  // Upgrades start at 25% of item price and decay by 1.05x per level
-  const baseUpgradeCost = Math.max(1, Math.floor(price * 0.25));
-  const costMultiplier = 105; // stored as percentage, used as decay divisor
 
   return {
     price,
     baseProbability: prob,
-    baseUpgradeCost,
-    costMultiplier,
-    boostAmount,
+    baseUpgradeCost: pricing.baseUpgradeCost,
+    costMultiplier: pricing.costMultiplier,
+    boostAmount: pricing.boostAmount,
     rollCost,
     expectedRollsAtBase,
     expectedSpendAtBase,
