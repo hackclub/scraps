@@ -1,5 +1,6 @@
 import {
   integer,
+  real,
   pgTable,
   varchar,
   timestamp,
@@ -22,6 +23,10 @@ export const shopItemsTable = pgTable("shop_items", {
   costMultiplier: integer("cost_multiplier").notNull().default(115),
   boostAmount: integer("boost_amount").notNull().default(1),
   rollCostOverride: integer("roll_cost_override"),
+  perRollMultiplier: real("per_roll_multiplier").notNull().default(0.05),
+  upgradeBudgetMultiplier: real("upgrade_budget_multiplier")
+    .notNull()
+    .default(3.0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
