@@ -30964,7 +30964,23 @@ function drizzle(...params) {
 })(drizzle || (drizzle = {}));
 
 // src/db/index.ts
-var db = drizzle(config.databaseUrl);
+var pool = new Pool({
+  max: 10,
+  connectionString: config.databaseUrl,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000
+});
+pool.on("error", (err) => {
+  console.error("[DB_POOL] Unexpected idle client error", err);
+});
+process.on("beforeExit", async () => {
+  try {
+    await pool.end();
+  } catch (err) {
+    console.warn("[DB_POOL] Error shutting down pool", err);
+  }
+});
+var db = drizzle(pool);
 
 // src/schemas/users.ts
 var usersTable = pgTable("users", {
@@ -31442,8 +31458,8 @@ async function getHackatimeUser(email) {
     if (!emailResponse.ok)
       return null;
     const emailData = await emailResponse.json();
-    const user_id = emailData.user_id;
-    if (typeof user_id !== "number")
+    const user_id = parseInt(String(emailData.user_id), 10);
+    if (isNaN(user_id))
       return null;
     const infoResponse = await fetch(`${HACKATIME_API}/user/info?user_id=${user_id}`, {
       headers: {
@@ -31453,13 +31469,14 @@ async function getHackatimeUser(email) {
     });
     if (!infoResponse.ok)
       return null;
-    const info = await infoResponse.json();
+    const infoData = await infoResponse.json();
+    const userObj = infoData.user ?? infoData;
     const user = {
-      user_id: info.user.user_id,
-      username: info.user.username,
-      slack_uid: info.user.slack_uid || undefined,
-      banned: info.user.banned || false,
-      suspected: info.user.suspected || false
+      user_id: parseInt(String(userObj.user_id), 10) || user_id,
+      username: userObj.username ?? null,
+      slack_uid: userObj.slack_uid || undefined,
+      banned: userObj.banned || false,
+      suspected: userObj.suspected || false
     };
     hackatimeUserCache.set(email, user);
     return user;
@@ -31762,6 +31779,49 @@ async function computeEffectiveHoursForProject(project) {
 
 // src/routes/projects.ts
 var ALLOWED_IMAGE_DOMAIN = "cdn.hackclub.com";
+async function prefixHackatimeIds(hackatimeProject, email) {
+  if (!hackatimeProject)
+    return null;
+  const names = hackatimeProject.split(",").map((p) => p.trim()).filter((p) => p.length > 0);
+  if (names.length === 0)
+    return null;
+  const alreadyPrefixed = names.every((n) => {
+    const colonIdx = n.indexOf(":");
+    return colonIdx !== -1 && !n.startsWith("U") && !isNaN(parseInt(n.substring(0, colonIdx), 10));
+  });
+  if (alreadyPrefixed)
+    return hackatimeProject;
+  const hackatimeUser = await getHackatimeUser(email);
+  if (!hackatimeUser || typeof hackatimeUser.user_id !== "number")
+    return hackatimeProject;
+  return names.map((name) => {
+    const colonIdx = name.indexOf(":");
+    if (colonIdx !== -1 && !name.startsWith("U") && !isNaN(parseInt(name.substring(0, colonIdx), 10))) {
+      return name;
+    }
+    const slashIdx = name.indexOf("/");
+    if (slashIdx !== -1 && name.startsWith("U")) {
+      name = name.substring(slashIdx + 1);
+    }
+    return `${hackatimeUser.user_id}:${name}`;
+  }).join(",");
+}
+function stripHackatimeIds(hackatimeProject) {
+  if (!hackatimeProject)
+    return null;
+  return hackatimeProject.split(",").map((entry) => {
+    const trimmed = entry.trim();
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx !== -1 && !trimmed.startsWith("U")) {
+      return trimmed.substring(colonIdx + 1);
+    }
+    const slashIdx = trimmed.indexOf("/");
+    if (slashIdx !== -1 && trimmed.startsWith("U")) {
+      return trimmed.substring(slashIdx + 1);
+    }
+    return trimmed;
+  }).join(",") || null;
+}
 function parseHackatimeProjects2(hackatimeProject) {
   if (!hackatimeProject)
     return null;
@@ -31884,6 +31944,7 @@ projects.get("/", async ({ headers, query }) => {
   return {
     data: projectsList.map((p) => ({
       ...p,
+      hackatimeProject: stripHackatimeIds(p.hackatimeProject),
       status: p.status === "pending_admin_approval" ? "waiting_for_review" : p.status
     })),
     pagination: {
@@ -31984,7 +32045,7 @@ projects.get("/:id", async ({ params, headers }) => {
       image: project[0].image,
       githubUrl: project[0].githubUrl,
       playableUrl: project[0].playableUrl,
-      hackatimeProject: isOwner ? project[0].hackatimeProject : undefined,
+      hackatimeProject: isOwner ? stripHackatimeIds(project[0].hackatimeProject) : undefined,
       hours: projectHours,
       hoursOverride: isOwner ? project[0].hoursOverride : undefined,
       tier: project[0].tier,
@@ -32015,7 +32076,7 @@ projects.post("/", async ({ body, headers }) => {
   if (!validateImageUrl(data.image)) {
     return { error: "Image must be from cdn.hackclub.com" };
   }
-  const projectName = parseHackatimeProjects2(data.hackatimeProject || null);
+  const projectName = await prefixHackatimeIds(parseHackatimeProjects2(data.hackatimeProject || null), user.email);
   const tier = data.tier !== undefined ? Math.max(1, Math.min(4, data.tier)) : 1;
   const newProject = await db.insert(projectsTable).values({
     userId: user.id,
@@ -32038,7 +32099,7 @@ projects.post("/", async ({ body, headers }) => {
     projectId: newProject[0].id,
     action: "project_created"
   });
-  return newProject[0];
+  return { ...newProject[0], hackatimeProject: stripHackatimeIds(newProject[0].hackatimeProject) };
 });
 projects.put("/:id", async ({ params, body, headers }) => {
   const user = await getUserFromSession(headers);
@@ -32058,7 +32119,7 @@ projects.put("/:id", async ({ params, body, headers }) => {
   if (!playableCheck.valid) {
     return { error: playableCheck.error };
   }
-  const projectName = parseHackatimeProjects2(data.hackatimeProject || null);
+  const projectName = await prefixHackatimeIds(parseHackatimeProjects2(data.hackatimeProject || null), user.email);
   const tier = data.tier !== undefined ? Math.max(1, Math.min(4, data.tier)) : undefined;
   const updated = await db.update(projectsTable).set({
     name: data.name,
@@ -32079,7 +32140,7 @@ projects.put("/:id", async ({ params, body, headers }) => {
     const syncResult = await syncSingleProject(updated[0].id);
     updated[0].hours = syncResult.hours;
   }
-  return updated[0];
+  return { ...updated[0], hackatimeProject: stripHackatimeIds(updated[0].hackatimeProject) };
 });
 projects.delete("/:id", async ({ params, headers }) => {
   const user = await getUserFromSession(headers);
@@ -32117,7 +32178,7 @@ projects.post("/:id/unsubmit", async ({ params, headers }) => {
     projectId: updated[0].id,
     action: "project_unsubmitted"
   });
-  return updated[0];
+  return { ...updated[0], hackatimeProject: stripHackatimeIds(updated[0].hackatimeProject) };
 });
 projects.post("/:id/submit", async ({ params, headers, body }) => {
   const user = await getUserFromSession(headers);
@@ -32175,7 +32236,7 @@ projects.post("/:id/submit", async ({ params, headers, body }) => {
       console.error("Failed to send Slack submission notification:", slackErr);
     }
   }
-  return updated[0];
+  return { ...updated[0], hackatimeProject: stripHackatimeIds(updated[0].hackatimeProject) };
 });
 projects.get("/:id/reviews", async ({ params, headers }) => {
   const user = await getUserFromSession(headers);
@@ -32245,6 +32306,8 @@ var shopItemsTable = pgTable("shop_items", {
   costMultiplier: integer("cost_multiplier").notNull().default(115),
   boostAmount: integer("boost_amount").notNull().default(1),
   rollCostOverride: integer("roll_cost_override"),
+  perRollMultiplier: real("per_roll_multiplier").notNull().default(0.05),
+  upgradeBudgetMultiplier: real("upgrade_budget_multiplier").notNull().default(3),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull()
 });
@@ -32307,7 +32370,7 @@ var refinerySpendingHistoryTable = pgTable("refinery_spending_history", {
 var PHI = (1 + Math.sqrt(5)) / 2;
 var MULTIPLIER = 10;
 var SCRAPS_PER_HOUR = PHI * MULTIPLIER;
-var DOLLARS_PER_HOUR = 5;
+var DOLLARS_PER_HOUR = 4;
 var SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 var TIER_MULTIPLIERS = {
   1: 0.8,
@@ -32315,25 +32378,40 @@ var TIER_MULTIPLIERS = {
   3: 1.25,
   4: 1.5
 };
-function calculateShopItemPricing(monetaryValue, stockCount) {
+function calculateShopItemPricing(monetaryValue, stockCount, upgradeBudgetMultiplier, perRollMultiplier) {
   const price = Math.round(monetaryValue * SCRAPS_PER_DOLLAR);
   const priceRarityFactor = Math.max(0, 1 - monetaryValue / 100);
   const stockRarityFactor = Math.min(1, stockCount / 20);
   const baseProbability = Math.max(1, Math.min(80, Math.round((priceRarityFactor * 0.4 + stockRarityFactor * 0.6) * 80)));
-  const rollCost = Math.max(1, Math.round(price * (baseProbability / 100)));
-  const upgradeBudget = Math.max(0, price * 3 - rollCost);
+  const perRollMult = perRollMultiplier ?? 1;
+  const rollCost = Math.max(1, Math.round(price * (baseProbability / 100) * perRollMult));
+  const maxBudgetMultiplier = upgradeBudgetMultiplier ?? UPGRADE_MAX_BUDGET_MULTIPLIER;
+  const maxBudget = Math.max(0, Math.floor(price * maxBudgetMultiplier));
   const probabilityGap = 100 - baseProbability;
   const targetUpgrades = Math.max(5, Math.min(20, Math.ceil(monetaryValue / 5)));
   const boostAmount = Math.max(1, Math.round(probabilityGap / targetUpgrades));
   const actualUpgrades = Math.ceil(probabilityGap / boostAmount);
-  const costMultiplier = 110;
-  const multiplierDecimal = costMultiplier / 100;
-  let baseUpgradeCost;
-  if (actualUpgrades <= 0 || upgradeBudget <= 0) {
-    baseUpgradeCost = Math.round(price * 0.05) || 1;
-  } else {
-    const seriesSum = (Math.pow(multiplierDecimal, actualUpgrades) - 1) / (multiplierDecimal - 1);
-    baseUpgradeCost = Math.max(1, Math.round(upgradeBudget / seriesSum));
+  let baseUpgradeCost = Math.max(1, Math.floor(price * UPGRADE_START_PERCENT));
+  const costMultiplier = Math.round(UPGRADE_DECAY * 100);
+  function computeCumulative(base) {
+    let cum = 0;
+    let next = base;
+    for (let i = 0;i < actualUpgrades; i++) {
+      cum += Math.floor(next);
+      next = next / UPGRADE_DECAY;
+      if (cum > maxBudget)
+        break;
+    }
+    return cum;
+  }
+  if (maxBudget > 0) {
+    let cum = computeCumulative(baseUpgradeCost);
+    let attempts = 0;
+    while (cum > maxBudget && baseUpgradeCost > 1 && attempts < 200) {
+      baseUpgradeCost = Math.max(1, baseUpgradeCost - 1);
+      cum = computeCumulative(baseUpgradeCost);
+      attempts++;
+    }
   }
   return {
     price,
@@ -32343,12 +32421,13 @@ function calculateShopItemPricing(monetaryValue, stockCount) {
     boostAmount
   };
 }
-function calculateRollCost(basePrice, effectiveProbability, rollCostOverride, baseProbability) {
+function calculateRollCost(basePrice, effectiveProbability, rollCostOverride, baseProbability, perRollMultiplier) {
   if (rollCostOverride != null && rollCostOverride > 0) {
     return rollCostOverride;
   }
-  const baseProb = baseProbability ?? effectiveProbability;
-  return Math.max(1, Math.round(basePrice * (baseProb / 100)));
+  const probToUse = baseProbability ?? effectiveProbability;
+  const multiplier = perRollMultiplier ?? 1;
+  return Math.max(1, Math.round(basePrice * (probToUse / 100) * multiplier));
 }
 var UPGRADE_START_PERCENT = 0.25;
 var UPGRADE_DECAY = 1.05;
@@ -32858,6 +32937,7 @@ shop.get("/items", async ({ headers }) => {
     costMultiplier: shopItemsTable.costMultiplier,
     boostAmount: shopItemsTable.boostAmount,
     rollCostOverride: shopItemsTable.rollCostOverride,
+    perRollMultiplier: shopItemsTable.perRollMultiplier,
     createdAt: shopItemsTable.createdAt,
     updatedAt: shopItemsTable.updatedAt,
     heartCount: sql`(SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = shop_items.id)`.as("heart_count")
@@ -32902,32 +32982,45 @@ shop.get("/items", async ({ headers }) => {
       const maxBoost = 100 - adjustedBaseProbability;
       const actualSpent = refinerySpentMap.get(item.id) ?? 0;
       const nextUpgradeCost = boostData.boostPercent >= maxBoost ? null : getUpgradeCost(item.price, boostData.upgradeCount, actualSpent);
+      const effectiveProbability = Math.min(adjustedBaseProbability + boostData.boostPercent, 100);
+      const baseRollCost = calculateRollCost(item.price, effectiveProbability, item.rollCostOverride, item.baseProbability, item.perRollMultiplier);
+      const previousRolls = rollCountMap.get(item.id) ?? 0;
+      const displayRollCost = Math.round(baseRollCost * (1 + (item.perRollMultiplier ?? 0.05) * previousRolls));
       return {
         ...item,
         heartCount: Number(item.heartCount) || 0,
         userBoostPercent: boostData.boostPercent,
         upgradeCount: boostData.upgradeCount,
         adjustedBaseProbability,
-        effectiveProbability: Math.min(adjustedBaseProbability + boostData.boostPercent, 100),
+        effectiveProbability,
         rollCostOverride: item.rollCostOverride,
+        perRollMultiplier: item.perRollMultiplier ?? 0.05,
+        rollCount: previousRolls,
         userHearted: heartedIds.has(item.id),
         nextUpgradeCost,
-        rollCount: rollCountMap.get(item.id) ?? 0
+        displayRollCost
       };
     });
   }
-  return items.map((item) => ({
-    ...item,
-    heartCount: Number(item.heartCount) || 0,
-    userBoostPercent: 0,
-    upgradeCount: 0,
-    adjustedBaseProbability: item.baseProbability,
-    effectiveProbability: Math.min(item.baseProbability, 100),
-    rollCostOverride: item.rollCostOverride,
-    userHearted: false,
-    nextUpgradeCost: getUpgradeCost(item.price, 0),
-    rollCount: 0
-  }));
+  return items.map((item) => {
+    const effectiveProbability = Math.min(item.baseProbability, 100);
+    const baseRollCost = calculateRollCost(item.price, effectiveProbability, item.rollCostOverride, item.baseProbability, item.perRollMultiplier);
+    const displayRollCost = Math.round(baseRollCost * (1 + (item.perRollMultiplier ?? 0.05) * 0));
+    return {
+      ...item,
+      heartCount: Number(item.heartCount) || 0,
+      userBoostPercent: 0,
+      upgradeCount: 0,
+      adjustedBaseProbability: item.baseProbability,
+      effectiveProbability,
+      rollCostOverride: item.rollCostOverride,
+      perRollMultiplier: item.perRollMultiplier ?? 0.05,
+      rollCount: 0,
+      userHearted: false,
+      nextUpgradeCost: item.baseUpgradeCost,
+      displayRollCost
+    };
+  });
 });
 shop.get("/items/:id", async ({ params, headers }) => {
   const user2 = await getUserFromSession(headers);
@@ -33059,17 +33152,6 @@ shop.post("/items/:id/purchase", async ({ params, body, headers }) => {
       if (!rawRow || rawRow.count < quantity) {
         throw { type: "out_of_stock" };
       }
-      const currentItem = {
-        id: rawRow.id,
-        name: rawRow.name,
-        price: rawRow.price,
-        count: rawRow.count,
-        baseProbability: rawRow.base_probability,
-        baseUpgradeCost: rawRow.base_upgrade_cost,
-        costMultiplier: rawRow.cost_multiplier,
-        boostAmount: rawRow.boost_amount,
-        rollCostOverride: rawRow.roll_cost_override ?? null
-      };
       await tx.update(shopItemsTable).set({
         count: sql`${shopItemsTable.count} - ${quantity}`,
         updatedAt: new Date
@@ -33146,7 +33228,6 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
     return { error: "Item not found" };
   }
   const item = items[0];
-  const itemRollCostOverride = item.rollCostOverride;
   if (item.count < 1) {
     return { error: "Out of stock" };
   }
@@ -33169,7 +33250,8 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
         baseUpgradeCost: rawRow.base_upgrade_cost,
         costMultiplier: rawRow.cost_multiplier,
         boostAmount: rawRow.boost_amount,
-        rollCostOverride: rawRow.roll_cost_override ?? null
+        rollCostOverride: rawRow.roll_cost_override ?? null,
+        perRollMultiplier: rawRow.per_roll_multiplier ?? null
       };
       const boostResult = await tx.select({
         boostPercent: sql`COALESCE(SUM(${refineryOrdersTable.boostAmount}), 0)`
@@ -33181,10 +33263,11 @@ shop.post("/items/:id/try-luck", async ({ params, headers }) => {
       const penaltyMultiplier = penaltyResult.length > 0 ? penaltyResult[0].probabilityMultiplier : 100;
       const adjustedBaseProbability = Math.floor(currentItem.baseProbability * penaltyMultiplier / 100);
       const effectiveProbability = Math.min(adjustedBaseProbability + boostPercent, 100);
-      const baseRollCost = calculateRollCost(currentItem.price, effectiveProbability, currentItem.rollCostOverride, currentItem.baseProbability);
+      const baseRollCost = calculateRollCost(currentItem.price, effectiveProbability, currentItem.rollCostOverride, currentItem.baseProbability, currentItem.perRollMultiplier ?? undefined);
       const rollCountResult = await tx.select({ count: sql`count(*)` }).from(shopRollsTable).where(and(eq(shopRollsTable.userId, user2.id), eq(shopRollsTable.shopItemId, itemId)));
       const previousRolls = Number(rollCountResult[0]?.count ?? 0);
-      const rollCost = Math.round(baseRollCost * (1 + 0.05 * previousRolls));
+      const perRollMult = currentItem.perRollMultiplier ?? 0.05;
+      const rollCost = Math.round(baseRollCost * (1 + perRollMult * previousRolls));
       const {
         balance: currentBalance,
         earned,
@@ -33464,19 +33547,59 @@ shop.get("/addresses", async ({ headers }) => {
     console.log("[/shop/addresses] Unauthorized - no user session");
     return { error: "Unauthorized" };
   }
-  const userData = await db.select({ accessToken: usersTable.accessToken }).from(usersTable).where(eq(usersTable.id, user2.id)).limit(1);
+  const userData = await db.select({
+    accessToken: usersTable.accessToken,
+    refreshToken: usersTable.refreshToken
+  }).from(usersTable).where(eq(usersTable.id, user2.id)).limit(1);
   if (userData.length === 0 || !userData[0].accessToken) {
     console.log("[/shop/addresses] No access token found for user", user2.id);
     return [];
   }
-  try {
-    const response = await fetch("https://identity.hackclub.com/api/v1/me", {
+  const identityUrl = "https://identity.hackclub.com/api/v1/me";
+  const tokenUrl = "https://auth.hackclub.com/oauth/token";
+  async function fetchIdentityWithToken(token) {
+    return fetch(identityUrl, {
       headers: {
-        Authorization: `Bearer ${userData[0].accessToken}`
+        Authorization: `Bearer ${token}`
       }
     });
+  }
+  try {
+    let response = await fetchIdentityWithToken(userData[0].accessToken);
+    if ((response.status === 401 || response.status === 403) && userData[0].refreshToken) {
+      try {
+        const body = new URLSearchParams({
+          client_id: config.hcauth.clientId,
+          client_secret: config.hcauth.clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: userData[0].refreshToken
+        });
+        const tokenResp = await fetch(tokenUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString()
+        });
+        if (tokenResp.ok) {
+          const tokenJson = await tokenResp.json();
+          const newAccess = tokenJson.access_token;
+          const newRefresh = tokenJson.refresh_token;
+          await db.update(usersTable).set({
+            accessToken: newAccess,
+            refreshToken: newRefresh ?? userData[0].refreshToken,
+            updatedAt: new Date
+          }).where(eq(usersTable.id, user2.id));
+          console.log("[/shop/addresses] Refreshed access token for user", user2.id);
+          response = await fetchIdentityWithToken(newAccess);
+        } else {
+          const txt = await tokenResp.text();
+          console.log("[/shop/addresses] Token refresh failed:", tokenResp.status, txt);
+        }
+      } catch (refreshErr) {
+        console.error("[/shop/addresses] Error refreshing token:", refreshErr);
+      }
+    }
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await response.text().catch(() => "<non-text response>");
       console.log("[/shop/addresses] Hack Club API error:", response.status, errorText);
       return [];
     }
@@ -33899,7 +34022,6 @@ hackatime.get("/projects", async ({ headers }) => {
     console.log("[HACKATIME] Projects fetched:", projects2.length);
     return {
       slackId: user2.slackId,
-      hackatimeUserId,
       projects: projects2.map((p) => ({
         name: p.name,
         hours: Math.round(p.total_duration / 3600 * 10) / 10,
@@ -33968,30 +34090,19 @@ var upload_default = upload;
 
 // src/lib/shop-pricing.ts
 function computeItemPricing(dollarCost, baseProbability, stockCount = 1) {
-  const price = Math.max(1, Math.round(dollarCost * SCRAPS_PER_DOLLAR));
-  let prob;
-  if (baseProbability !== undefined && baseProbability >= 1 && baseProbability <= 100) {
-    prob = Math.round(baseProbability);
-  } else {
-    const priceRarityFactor = Math.max(0, 1 - dollarCost / 100);
-    const stockRarityFactor = Math.min(1, stockCount / 20);
-    prob = Math.max(1, Math.min(80, Math.round((priceRarityFactor * 0.4 + stockRarityFactor * 0.6) * 80)));
-  }
+  const pricing = calculateShopItemPricing(dollarCost, stockCount);
+  const price = pricing.price;
+  const prob = baseProbability !== undefined && baseProbability >= 1 && baseProbability <= 100 ? Math.round(baseProbability) : pricing.baseProbability;
   const rollCost = calculateRollCost(price, prob, undefined, prob);
   const threshold = computeRollThreshold(prob);
   const expectedRollsAtBase = threshold > 0 ? Math.round(100 / threshold * 10) / 10 : Infinity;
   const expectedSpendAtBase = Math.round(rollCost * expectedRollsAtBase);
-  const probabilityGap = 100 - prob;
-  const targetUpgrades = Math.max(5, Math.min(20, Math.ceil(dollarCost / 5)));
-  const boostAmount = Math.max(1, Math.round(probabilityGap / targetUpgrades));
-  const baseUpgradeCost = Math.max(1, Math.floor(price * 0.25));
-  const costMultiplier = 105;
   return {
     price,
     baseProbability: prob,
-    baseUpgradeCost,
-    costMultiplier,
-    boostAmount,
+    baseUpgradeCost: pricing.baseUpgradeCost,
+    costMultiplier: pricing.costMultiplier,
+    boostAmount: pricing.boostAmount,
     rollCost,
     expectedRollsAtBase,
     expectedSpendAtBase,
@@ -35059,6 +35170,49 @@ admin.post("/shop/compute-pricing", async ({ headers, body, status: status2 }) =
   }
   return computeItemPricing(dollarCost, baseProbability, stockCount ?? 1);
 });
+admin.post("/shop/compute-roll-costs", async ({ headers, body, status: status2 }) => {
+  const user2 = await requireAdmin(headers);
+  if (!user2)
+    return status2(401, { error: "Unauthorized" });
+  const { itemIds, items } = body;
+  try {
+    let rows = [];
+    if (Array.isArray(itemIds) && itemIds.length > 0) {
+      rows = await db.select({
+        id: shopItemsTable.id,
+        price: shopItemsTable.price,
+        baseProbability: shopItemsTable.baseProbability,
+        rollCostOverride: shopItemsTable.rollCostOverride,
+        perRollMultiplier: shopItemsTable.perRollMultiplier
+      }).from(shopItemsTable).where(inArray(shopItemsTable.id, itemIds));
+    } else if (Array.isArray(items) && items.length > 0) {
+      rows = items.map((it) => ({
+        id: it.id,
+        price: it.price,
+        baseProbability: it.baseProbability ?? 50,
+        rollCostOverride: it.rollCostOverride ?? null,
+        perRollMultiplier: it.perRollMultiplier ?? 0.05,
+        rollCount: it.rollCount ?? 0,
+        userBoostPercent: it.userBoostPercent ?? 0
+      }));
+    } else {
+      return status2(400, { error: "itemIds or items required" });
+    }
+    const results = [];
+    for (const r of rows) {
+      const effectiveProbability = Math.min((r.baseProbability ?? 50) + (r.userBoostPercent ?? 0), 100);
+      const perRoll = r.perRollMultiplier ?? 0.05;
+      const baseRollCost = calculateRollCost(r.price, effectiveProbability, r.rollCostOverride, r.baseProbability, perRoll);
+      const prev = r.rollCount ?? 0;
+      const displayRollCost = Math.round(baseRollCost * (1 + perRoll * prev));
+      results.push({ id: r.id, baseRollCost, displayRollCost });
+    }
+    return { results };
+  } catch (err) {
+    console.error("[ADMIN] compute-roll-costs error:", err);
+    return status2(500, { error: "Failed to compute roll costs" });
+  }
+});
 admin.get("/shop/items", async ({ headers }) => {
   try {
     const user2 = await requireAdmin(headers);
@@ -35101,6 +35255,10 @@ admin.post("/shop/items", async ({ headers, body, status: status2 }) => {
     });
   }
   try {
+    const dollarCost = typeof price === "number" ? price / SCRAPS_PER_DOLLAR : 0;
+    const pricing = computeItemPricing(dollarCost, baseProbability, count ?? 1);
+    const perRollMultiplierVal = body?.perRollMultiplier ?? 0.05;
+    const upgradeBudgetMultiplierVal = body?.upgradeBudgetMultiplier ?? 3;
     await db.insert(shopItemsTable).values({
       name: name.trim(),
       image: image.trim(),
@@ -35108,11 +35266,15 @@ admin.post("/shop/items", async ({ headers, body, status: status2 }) => {
       price,
       category: category.trim(),
       count: count || 0,
-      baseProbability: baseProbability ?? 50,
-      baseUpgradeCost: baseUpgradeCost ?? 10,
-      costMultiplier: costMultiplier ?? 115,
-      boostAmount: boostAmount ?? 1,
-      rollCostOverride: rollCostOverride ?? null
+      baseProbability: pricing.baseProbability,
+      baseUpgradeCost: pricing.baseUpgradeCost,
+      costMultiplier: pricing.costMultiplier,
+      boostAmount: pricing.boostAmount,
+      rollCostOverride: rollCostOverride ?? null,
+      perRollMultiplier: perRollMultiplierVal,
+      upgradeBudgetMultiplier: upgradeBudgetMultiplierVal,
+      createdAt: new Date,
+      updatedAt: new Date
     });
     return { success: true };
   } catch (err) {
@@ -35535,58 +35697,219 @@ admin.get("/export/review-json", async ({ headers, status: status2 }) => {
     return status2(500, { error: "Failed to export review JSON" });
   }
 });
-admin.delete("/orders/:id", async ({ params, headers, status: status2 }) => {
+admin.delete("/orders/:id", async ({ params, headers, body, status: status2 }) => {
   try {
     const user2 = await requireAdmin(headers);
     if (!user2)
       return status2(401, { error: "Unauthorized" });
     const orderId = parseInt(params.id);
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return status2(400, { error: "Invalid order id" });
+    }
+    const reason = body && body.reason || null;
+    if (!reason || typeof reason !== "string" || reason.trim().length < 3) {
+      return status2(400, {
+        error: "Provide a short reason (min 3 chars) for deleting this order"
+      });
+    }
     const order = await db.select({
       id: shopOrdersTable.id,
       status: shopOrdersTable.status,
       orderType: shopOrdersTable.orderType,
       shopItemId: shopOrdersTable.shopItemId,
       quantity: shopOrdersTable.quantity,
+      pricePerItem: shopOrdersTable.pricePerItem,
       totalPrice: shopOrdersTable.totalPrice,
       userId: shopOrdersTable.userId,
+      shippingAddress: shopOrdersTable.shippingAddress,
+      phone: shopOrdersTable.phone,
+      createdAt: shopOrdersTable.createdAt,
       itemName: shopItemsTable.name
     }).from(shopOrdersTable).innerJoin(shopItemsTable, eq(shopOrdersTable.shopItemId, shopItemsTable.id)).where(eq(shopOrdersTable.id, orderId)).limit(1);
     if (!order[0])
       return status2(404, { error: "Order not found" });
-    await db.transaction(async (tx) => {
-      await tx.insert(userBonusesTable).values({
-        userId: order[0].userId,
-        amount: order[0].totalPrice,
-        reason: `order refund: ${order[0].itemName} (order #${orderId})`,
-        givenBy: user2.id
-      });
-      await tx.update(shopItemsTable).set({
-        count: sql`${shopItemsTable.count} + ${order[0].quantity}`,
-        updatedAt: new Date
-      }).where(eq(shopItemsTable.id, order[0].shopItemId));
-      if (order[0].orderType === "luck_win") {
-        const penalty = await tx.select({
-          probabilityMultiplier: shopPenaltiesTable.probabilityMultiplier
-        }).from(shopPenaltiesTable).where(and(eq(shopPenaltiesTable.userId, order[0].userId), eq(shopPenaltiesTable.shopItemId, order[0].shopItemId))).limit(1);
-        if (penalty.length > 0) {
-          const restoredMultiplier = Math.min(100, penalty[0].probabilityMultiplier * 2);
-          if (restoredMultiplier >= 100) {
-            await tx.delete(shopPenaltiesTable).where(and(eq(shopPenaltiesTable.userId, order[0].userId), eq(shopPenaltiesTable.shopItemId, order[0].shopItemId)));
-          } else {
-            await tx.update(shopPenaltiesTable).set({
-              probabilityMultiplier: restoredMultiplier,
-              updatedAt: new Date
-            }).where(and(eq(shopPenaltiesTable.userId, order[0].userId), eq(shopPenaltiesTable.shopItemId, order[0].shopItemId)));
-          }
-        }
+    let alreadyRow = null;
+    try {
+      const already = await db.execute(sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`);
+      alreadyRow = already.rows?.[0] ?? (Array.isArray(already) ? already[0] : null);
+    } catch (err) {
+      const msg = err?.message ?? "";
+      const code = err?.code ?? null;
+      if (msg.includes("does not exist") || code === "42P01") {
+        await db.execute(sql`
+          CREATE TABLE IF NOT EXISTS admin_deleted_orders (
+            id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+            original_order_id integer NOT NULL,
+            user_id integer NOT NULL,
+            shop_item_id integer,
+            quantity integer NOT NULL DEFAULT 1,
+            price_per_item integer NOT NULL,
+            total_price integer NOT NULL,
+            status varchar,
+            order_type varchar,
+            shipping_address text,
+            phone varchar,
+            item_name varchar,
+            created_at timestamptz,
+            deleted_by integer,
+            deleted_at timestamptz NOT NULL DEFAULT now(),
+            reason text,
+            deleted_payload jsonb,
+            restored boolean NOT NULL DEFAULT false,
+            restored_by integer,
+            restored_at timestamptz
+          );
+          CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_deleted_at ON admin_deleted_orders (deleted_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_user_id ON admin_deleted_orders (user_id);
+          CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_original_order_id ON admin_deleted_orders (original_order_id);
+        `);
+        const already2 = await db.execute(sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`);
+        alreadyRow = already2.rows?.[0] ?? (Array.isArray(already2) ? already2[0] : null);
+      } else {
+        throw err;
       }
+    }
+    if (alreadyRow)
+      return status2(409, { error: "Order already archived" });
+    const [refineryOrders, refineryHistory, rolls, penalties] = await Promise.all([
+      db.select().from(refineryOrdersTable).where(and(eq(refineryOrdersTable.userId, order[0].userId), eq(refineryOrdersTable.shopItemId, order[0].shopItemId))),
+      db.select().from(refinerySpendingHistoryTable).where(and(eq(refinerySpendingHistoryTable.userId, order[0].userId), eq(refinerySpendingHistoryTable.shopItemId, order[0].shopItemId))),
+      db.select().from(shopRollsTable).where(and(eq(shopRollsTable.userId, order[0].userId), eq(shopRollsTable.shopItemId, order[0].shopItemId))),
+      db.select().from(shopPenaltiesTable).where(and(eq(shopPenaltiesTable.userId, order[0].userId), eq(shopPenaltiesTable.shopItemId, order[0].shopItemId)))
+    ]);
+    await db.transaction(async (tx) => {
+      const deletedPayloadObj = {
+        order: order[0] || {},
+        refineryOrders: refineryOrders || [],
+        refineryHistory: refineryHistory || [],
+        shopRolls: rolls || [],
+        shopPenalties: penalties || []
+      };
+      const deletedPayload = JSON.stringify(deletedPayloadObj);
+      await tx.execute(sql`INSERT INTO admin_deleted_orders (
+        original_order_id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, item_name, created_at,
+        deleted_payload,
+        deleted_by, deleted_at, reason
+      ) VALUES (
+        ${order[0].id}, ${order[0].userId}, ${order[0].shopItemId}, ${order[0].quantity}, ${order[0].pricePerItem}, ${order[0].totalPrice}, ${order[0].status}, ${order[0].orderType}, ${order[0].shippingAddress}, ${order[0].phone}, ${order[0].itemName}, ${order[0].createdAt},
+        ${deletedPayload}::jsonb,
+        ${user2.id}, now(), ${reason}
+      )`);
+      await tx.delete(refinerySpendingHistoryTable).where(and(eq(refinerySpendingHistoryTable.userId, order[0].userId), eq(refinerySpendingHistoryTable.shopItemId, order[0].shopItemId)));
+      await tx.delete(refineryOrdersTable).where(and(eq(refineryOrdersTable.userId, order[0].userId), eq(refineryOrdersTable.shopItemId, order[0].shopItemId)));
+      await tx.delete(shopRollsTable).where(and(eq(shopRollsTable.userId, order[0].userId), eq(shopRollsTable.shopItemId, order[0].shopItemId)));
+      await tx.delete(shopPenaltiesTable).where(and(eq(shopPenaltiesTable.userId, order[0].userId), eq(shopPenaltiesTable.shopItemId, order[0].shopItemId)));
       await tx.delete(shopOrdersTable).where(eq(shopOrdersTable.id, orderId));
+      if (order[0].orderType === "purchase" || order[0].orderType === "luck_win") {
+        await tx.update(shopItemsTable).set({
+          count: sql`${shopItemsTable.count} + ${order[0].quantity}`,
+          updatedAt: new Date
+        }).where(eq(shopItemsTable.id, order[0].shopItemId));
+      }
     });
-    console.log(`[ADMIN] Order #${orderId} reverted by admin #${user2.id}: refunded ${order[0].totalPrice} scraps to user #${order[0].userId}, item "${order[0].itemName}" (itemId=${order[0].shopItemId}), type=${order[0].orderType}, qty=${order[0].quantity}`);
-    return { success: true, refundedScraps: order[0].totalPrice };
+    console.log(`[ADMIN] Order #${orderId} archived/deleted by admin #${user2.id}`);
+    return { success: true };
+  } catch (err) {
+    try {
+      console.error("Admin delete order error (stack):", err?.stack ?? err);
+      console.error("Admin delete order error (name):", err?.name ?? null);
+      console.error("Admin delete order error (message):", err?.message ?? String(err));
+      console.error("Admin delete order error (cause):", err?.cause ?? null);
+      console.error("Admin delete order error (query):", err?.query ?? null);
+      console.error("Admin delete order error (params):", err?.params ?? null);
+      try {
+        console.error("Admin delete order error (full):", JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+      } catch {
+        console.error("Admin delete order error (full fallback):", err);
+      }
+    } catch (logErr) {
+      console.error("Failed to log admin delete error in detail:", logErr);
+      console.error("Original error:", err);
+    }
+    return status2(500, {
+      error: "Failed to delete order: " + (err?.message || String(err))
+    });
+  }
+});
+admin.post("/orders/:id/restore", async ({ params, headers, status: status2 }) => {
+  try {
+    const user2 = await requireAdmin(headers);
+    if (!user2)
+      return status2(401, { error: "Unauthorized" });
+    const originalOrderId = parseInt(params.id);
+    if (!Number.isInteger(originalOrderId) || originalOrderId <= 0)
+      return status2(400, { error: "Invalid order id" });
+    const archivedRes = await db.execute(sql`SELECT * FROM admin_deleted_orders WHERE original_order_id = ${originalOrderId} AND restored = false LIMIT 1`);
+    const archived = archivedRes.rows?.[0] ?? (Array.isArray(archivedRes) ? archivedRes[0] : null);
+    if (!archived)
+      return status2(404, {
+        error: "Archived order not found or already restored"
+      });
+    const deletedPayload = archived.deleted_payload ? JSON.parse(archived.deleted_payload) : {
+      order: null,
+      refineryOrders: [],
+      refineryHistory: [],
+      shopRolls: [],
+      shopPenalties: []
+    };
+    const orderPayload = deletedPayload.order ?? null;
+    const refineryOrdersPayload = deletedPayload.refineryOrders ?? [];
+    const refineryHistoryPayload = deletedPayload.refineryHistory ?? [];
+    const shopRollsPayload = deletedPayload.shopRolls ?? [];
+    const shopPenaltiesPayload = deletedPayload.shopPenalties ?? [];
+    await db.transaction(async (tx) => {
+      if (!orderPayload)
+        throw new Error("Archived order payload missing");
+      const existing = await tx.select({ count: sql`count(*)` }).from(shopOrdersTable).where(eq(shopOrdersTable.id, orderPayload.id));
+      const existingCount = Number(existing[0]?.count ?? 0);
+      if (existingCount > 0)
+        throw new Error("Active order with that id already exists");
+      await tx.execute(sql`INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, created_at)
+        OVERRIDING SYSTEM VALUE
+        VALUES (${orderPayload.id}, ${orderPayload.userId}, ${orderPayload.shopItemId}, ${orderPayload.quantity}, ${orderPayload.pricePerItem}, ${orderPayload.totalPrice}, ${orderPayload.status}, ${orderPayload.orderType}, ${orderPayload.shippingAddress}, ${orderPayload.phone}, ${orderPayload.createdAt})`);
+      for (const r of refineryOrdersPayload) {
+        await tx.insert(refineryOrdersTable).values({
+          userId: r.userId,
+          shopItemId: r.shopItemId,
+          cost: r.cost,
+          boostAmount: r.boostAmount,
+          createdAt: r.createdAt
+        });
+      }
+      for (const h of refineryHistoryPayload) {
+        await tx.insert(refinerySpendingHistoryTable).values({
+          userId: h.userId,
+          shopItemId: h.shopItemId,
+          cost: h.cost,
+          createdAt: h.createdAt
+        });
+      }
+      for (const rr of shopRollsPayload) {
+        await tx.insert(shopRollsTable).values({
+          userId: rr.userId,
+          shopItemId: rr.shopItemId,
+          rolled: rr.rolled,
+          threshold: rr.threshold,
+          won: rr.won,
+          createdAt: rr.createdAt
+        });
+      }
+      for (const p of shopPenaltiesPayload) {
+        await tx.insert(shopPenaltiesTable).values({
+          userId: p.userId,
+          shopItemId: p.shopItemId,
+          probabilityMultiplier: p.probabilityMultiplier,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt
+        });
+      }
+      await tx.execute(sql`UPDATE admin_deleted_orders SET restored = true, restored_by = ${user2.id}, restored_at = now() WHERE id = ${archived.id}`);
+    });
+    console.log(`[ADMIN] Archived order #${originalOrderId} fully restored by admin #${user2.id}`);
+    return { success: true };
   } catch (err) {
     console.error(err);
-    return status2(500, { error: "Failed to revert order" });
+    return status2(500, { error: "Failed to restore archived order" });
   }
 });
 admin.post("/projects/:id/unship", async ({ params, headers, body, status: status2 }) => {
@@ -35816,6 +36139,13 @@ admin.post("/recalculate-shop-pricing", async ({ headers, status: status2 }) => 
     console.error("[ADMIN] Shop pricing recalculation error:", err);
     return status2(500, { error: "Failed to recalculate shop pricing" });
   }
+});
+admin.get("/config", async () => {
+  return {
+    scrapsPerDollar: SCRAPS_PER_DOLLAR,
+    dollarsPerHour: DOLLARS_PER_HOUR,
+    tierMultipliers: TIER_MULTIPLIERS
+  };
 });
 var admin_default = admin;
 
