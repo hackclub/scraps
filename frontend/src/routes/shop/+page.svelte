@@ -23,13 +23,19 @@
 	}
 
 	function getItemRollCost(item: ShopItem): number {
+		// Prefer the server-provided displayRollCost (authoritative) when available.
+		// Fallback to a local computation that mirrors server logic exactly.
+		if (item.displayRollCost != null && Number.isFinite(item.displayRollCost)) {
+			return item.displayRollCost;
+		}
 		let baseCost: number;
 		if (item.rollCostOverride != null && item.rollCostOverride > 0) {
 			baseCost = item.rollCostOverride;
 		} else {
 			baseCost = Math.max(1, Math.round(item.price * (item.baseProbability / 100)));
 		}
-		return Math.round(baseCost * (1 + 0.05 * (item.rollCount || 0)));
+		const perRoll = item.perRollMultiplier ?? 0.05;
+		return Math.round(baseCost * (1 + perRoll * (item.rollCount || 0)));
 	}
 
 	let selectedCategories = $state<Set<string>>(new Set());

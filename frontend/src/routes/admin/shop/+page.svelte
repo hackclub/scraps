@@ -29,6 +29,7 @@
 		costMultiplier: number;
 		boostAmount: number;
 		rollCostOverride: number | null;
+		perRollMultiplier?: number | null;
 		createdAt: string;
 		updatedAt: string;
 	}
@@ -91,18 +92,20 @@
 	const DOLLARS_PER_HOUR = 4;
 	const SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 
-	// Must match backend calculateRollCost exactly
+	// Must match backend calculateRollCost exactly (adds optional per-roll multiplier)
 	function calculateRollCost(
 		basePrice: number,
 		effectiveProbability: number,
 		rollCostOverride?: number | null,
-		baseProbability?: number
+		baseProbability?: number,
+		perRollMultiplier?: number
 	): number {
 		if (rollCostOverride != null && rollCostOverride > 0) {
 			return rollCostOverride;
 		}
 		const baseProb = baseProbability ?? effectiveProbability;
-		return Math.max(1, Math.round(basePrice * (baseProb / 100)));
+		const multiplier = perRollMultiplier ?? 1;
+		return Math.max(1, Math.round(basePrice * (baseProb / 100) * multiplier));
 	}
 
 	// Must match backend computeRollThreshold exactly
@@ -135,13 +138,15 @@
 		return { price, baseProbability, baseUpgradeCost, costMultiplier, boostAmount };
 	}
 
+	// Synchronous EV simulation that mirrors backend math.
 	function simulateEV(
 		price: number,
 		baseProbability: number,
 		baseUpgradeCost: number,
 		costMultiplier: number,
 		boostAmount: number,
-		rollCostOverride?: number | null
+		rollCostOverride?: number | null,
+		perRollMultiplier?: number | null
 	): EVSummary {
 		const results: EVResult[] = [];
 		const probabilityGap = 100 - baseProbability;
@@ -150,18 +155,24 @@
 		let bestLevel = 0;
 		let bestCost = Infinity;
 
+		// backend constants mirrored
+		const UPGRADE_START_PERCENT = 0.25;
+		const UPGRADE_DECAY = 1.05;
+		const UPGRADE_MAX_BUDGET_MULTIPLIER = 3;
+
 		for (let k = 0; k <= maxUpgrades; k++) {
 			const boostPercent = k * boostAmount;
 			const effectiveProbability = Math.min(baseProbability + boostPercent, 100);
 
-			const rollCost = calculateRollCost(price, effectiveProbability, rollCostOverride, baseProbability);
-
-			// Cumulative upgrade cost (decaying: price * 0.25 / 1.05^i, capped at 2x price)
-			const maxBudget = price * 2;
+			// Cumulative upgrade cost (decaying: price * 0.25 / 1.05^i, capped at 3x price)
+			const maxBudget = Math.max(0, Math.floor(price * UPGRADE_MAX_BUDGET_MULTIPLIER));
 			let upgradeCostCumulative = 0;
 			let budgetExhausted = false;
 			for (let i = 0; i < k; i++) {
-				const ucost = Math.max(1, Math.floor(price * 0.25 / Math.pow(1.05, i)));
+				const ucost = Math.max(
+					1,
+					Math.floor((price * UPGRADE_START_PERCENT) / Math.pow(UPGRADE_DECAY, i))
+				);
 				if (upgradeCostCumulative + ucost > maxBudget) {
 					upgradeCostCumulative = maxBudget;
 					budgetExhausted = true;
@@ -170,7 +181,19 @@
 				upgradeCostCumulative += ucost;
 			}
 
-			if (budgetExhausted) break;
+			if (budgetExhausted) {
+				// If budget exhausted for this k, treat this k as invalid (stop exploring further)
+				break;
+			}
+
+			// Determine rollCost using local (synchronous) computation
+			const rollCost = calculateRollCost(
+				price,
+				effectiveProbability,
+				rollCostOverride,
+				baseProbability,
+				perRollMultiplier ?? undefined
+			);
 
 			// Backend applies 17/20 house edge via computeRollThreshold
 			const actualThreshold = computeRollThreshold(effectiveProbability);
@@ -180,7 +203,7 @@
 			const expectedTotalCost = upgradeCostCumulative + expectedRollCost;
 			const evRatio = price > 0 ? expectedTotalCost / price : Infinity;
 
-			results.push({
+			const result: EVResult = {
 				upgradeLevel: k,
 				boostPercent,
 				effectiveProbability,
@@ -191,7 +214,9 @@
 				expectedRollCost: Math.round(expectedRollCost),
 				expectedTotalCost: Math.round(expectedTotalCost),
 				evRatio: Math.round(evRatio * 1000) / 1000
-			});
+			};
+
+			results.push(result);
 
 			if (expectedTotalCost < bestCost) {
 				bestCost = expectedTotalCost;
@@ -225,7 +250,8 @@
 			item.baseUpgradeCost,
 			item.costMultiplier,
 			item.boostAmount,
-			item.rollCostOverride
+			item.rollCostOverride,
+			item.perRollMultiplier ?? undefined
 		);
 	}
 
@@ -244,57 +270,103 @@
 
 	let showDetailedEV = $state(false);
 
-	// Optimal pricing derived from current monetary value + stock count
-	// When price is overridden, compute EV-safe upgrade costs against the actual price
-	let optimalPricing = $derived(
-		calculatePricing(formMonetaryValue, formCount, formPriceOverride ? formPrice : undefined)
-	);
+	// Optimal pricing is fetched from the server so the UI always matches backend logic.
+	// When price is overridden, request EV-safe upgrade costs computed on the server.
+	let optimalPricing = $state<any>(null);
 
 	let hasCustomPricing = $derived(
 		formPrice > 0 &&
-			(formPrice !== optimalPricing.price ||
-				formBaseProbability !== optimalPricing.baseProbability ||
-				formBaseUpgradeCost !== optimalPricing.baseUpgradeCost ||
-				formCostMultiplier !== optimalPricing.costMultiplier ||
-				formBoostAmount !== optimalPricing.boostAmount)
+			(formPrice !== optimalPricing?.price ||
+				formBaseProbability !== optimalPricing?.baseProbability ||
+				formBaseUpgradeCost !== optimalPricing?.baseUpgradeCost ||
+				formCostMultiplier !== optimalPricing?.costMultiplier ||
+				formBoostAmount !== optimalPricing?.boostAmount)
 	);
 
-	function recalculatePricing() {
-		const pricing = calculatePricing(
-			formMonetaryValue,
-			formCount,
-			formPriceOverride ? formPrice : undefined
-		);
-		if (!formPriceOverride) {
-			formPrice = pricing.price;
+	async function recalculatePricing() {
+		// Call server-side compute endpoint so admin previews exactly match backend
+		try {
+			const body = {
+				dollarCost: formMonetaryValue,
+				baseProbability: formBaseProbability,
+				stockCount: formCount
+			};
+			const res = await fetch(`${API_URL}/admin/shop/compute-pricing`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			});
+			if (!res.ok) {
+				// Fall back gracefully to client-side calculation if server call fails
+				console.error('[ADMIN] compute-pricing failed', res.status);
+				const pricing = calculatePricing(
+					formMonetaryValue,
+					formCount,
+					formPriceOverride ? formPrice : undefined
+				);
+				if (!formPriceOverride) {
+					formPrice = pricing.price;
+				}
+				formBaseProbability = pricing.baseProbability;
+				formBaseUpgradeCost = pricing.baseUpgradeCost;
+				formCostMultiplier = pricing.costMultiplier;
+				formBoostAmount = pricing.boostAmount;
+				optimalPricing = pricing;
+				return;
+			}
+			const pricing = await res.json();
+			// Server returns canonical pricing object
+			if (!formPriceOverride) {
+				formPrice = pricing.price;
+			}
+			formBaseProbability = pricing.baseProbability;
+			formBaseUpgradeCost = pricing.baseUpgradeCost;
+			formCostMultiplier = pricing.costMultiplier;
+			formBoostAmount = pricing.boostAmount;
+			optimalPricing = pricing;
+		} catch (err) {
+			console.error('[ADMIN] recalculatePricing error', err);
+			// Fallback to local computation on network/other errors
+			const pricing = calculatePricing(
+				formMonetaryValue,
+				formCount,
+				formPriceOverride ? formPrice : undefined
+			);
+			if (!formPriceOverride) {
+				formPrice = pricing.price;
+			}
+			formBaseProbability = pricing.baseProbability;
+			formBaseUpgradeCost = pricing.baseUpgradeCost;
+			formCostMultiplier = pricing.costMultiplier;
+			formBoostAmount = pricing.boostAmount;
+			optimalPricing = pricing;
 		}
-		formBaseProbability = pricing.baseProbability;
-		formBaseUpgradeCost = pricing.baseUpgradeCost;
-		formCostMultiplier = pricing.costMultiplier;
-		formBoostAmount = pricing.boostAmount;
 	}
 
-	function updateFromMonetary(value: number) {
+	async function updateFromMonetary(value: number) {
 		formMonetaryValue = value;
 		if (!formPriceOverride) {
 			formPrice = Math.round(value * SCRAPS_PER_DOLLAR);
 		}
-		recalculatePricing();
+		await recalculatePricing();
 	}
 
-	function updateFromStock(value: number) {
+	async function updateFromStock(value: number) {
 		formCount = value;
-		recalculatePricing();
+		await recalculatePricing();
 	}
 
-	function updatePriceOverride(value: number) {
+	async function updatePriceOverride(value: number) {
 		formPrice = value;
 		formPriceOverride = true;
+		await recalculatePricing();
 	}
 
-	function clearPriceOverride() {
+	async function clearPriceOverride() {
 		formPriceOverride = false;
 		formPrice = Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR);
+		await recalculatePricing();
 	}
 
 	let deleteConfirmId = $state<number | null>(null);
@@ -325,7 +397,7 @@
 		}
 	}
 
-	function openCreateModal() {
+	async function openCreateModal() {
 		editingItem = null;
 		formName = '';
 		formImage = '';
@@ -342,10 +414,12 @@
 		formRollCostOverride = null;
 		formError = null;
 		showDetailedEV = false;
+		// Prefetch canonical pricing so modal EV/optimal UI matches backend
+		await recalculatePricing();
 		showModal = true;
 	}
 
-	function openEditModal(item: ShopItem) {
+	async function openEditModal(item: ShopItem) {
 		editingItem = item;
 		formName = item.name;
 		formImage = item.image;
@@ -363,6 +437,8 @@
 		formRollCostOverride = item.rollCostOverride ?? null;
 		formError = null;
 		showDetailedEV = false;
+		// Prefetch canonical pricing so modal EV/optimal UI matches backend
+		await recalculatePricing();
 		showModal = true;
 	}
 
@@ -609,566 +685,463 @@
 							? 'bg-red-100'
 							: 'bg-gray-100'}"
 					>
-						{#if ev.isExploitable}
-							<span class="flex items-center gap-1 font-bold text-red-600">
-								<AlertTriangle size={14} />
-								EXPLOITABLE
-							</span>
-						{:else}
-							<span class="flex items-center gap-1 font-bold text-green-700">
-								<ShieldCheck size={14} />
-								safe
-							</span>
-						{/if}
-						<span class="text-gray-500">·</span>
-						<span>
-							<span class="text-gray-500">house edge:</span>
-							<span class="font-bold {ev.houseEdgePercent < 0 ? 'text-red-600' : ''}"
-								>+{ev.houseEdgePercent}%</span
-							>
-						</span>
-						<span class="text-gray-500">·</span>
-						<span>
-							<span class="text-gray-500">player best (lv{ev.bestPlayerLevel}):</span>
-							<span class="font-bold {ev.bestPlayerRatio < 1 ? 'text-red-600' : ''}"
-								>{ev.bestPlayerCost} scraps</span
-							>
-							<span class="text-gray-500">({ev.bestPlayerRatio}×)</span>
-						</span>
-						<span class="text-gray-500">·</span>
-						<span>
-							<span class="text-gray-500">base roll:</span>
-							<span class="font-bold"
-								>{calculateRollCost(item.price, item.baseProbability, item.rollCostOverride)} scraps</span
-							>
-						</span>
-					</div>
-				</div>
-			{/each}
-		</div>
-	{/if}
-</div>
-
-{#if showModal}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-		<div
-			class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6"
-		>
-			<div class="mb-6 flex items-center justify-between">
-				<h2 class="text-2xl font-bold">{editingItem ? $t.admin.editItem : $t.admin.addItem}</h2>
-				<button
-					onclick={closeModal}
-					class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
-				>
-					<X size={20} />
-				</button>
-			</div>
-
-			{#if formError}
-				<div class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm text-red-600">
-					{formError}
-				</div>
-			{/if}
-
-			<div class="space-y-4">
-				<div>
-					<label for="name" class="mb-1 block text-sm font-bold">name</label>
-					<input
-						id="name"
-						type="text"
-						bind:value={formName}
-						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-					/>
-				</div>
-
-				<div>
-					<label for="image" class="mb-1 block text-sm font-bold">image URL</label>
-					<input
-						id="image"
-						type="text"
-						bind:value={formImage}
-						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-					/>
-				</div>
-
-				<div>
-					<label for="description" class="mb-1 block text-sm font-bold">description</label>
-					<textarea
-						id="description"
-						bind:value={formDescription}
-						rows="3"
-						class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-					></textarea>
-				</div>
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="monetaryValue" class="mb-1 block text-sm font-bold">value ($)</label>
-						<input
-							id="monetaryValue"
-							type="number"
-							value={formMonetaryValue}
-							oninput={(e) => updateFromMonetary(parseFloat(e.currentTarget.value) || 0)}
-							min="0"
-							step="0.01"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							auto = {Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)} scraps
-						</p>
-					</div>
-					<div>
-						<label for="scrapsPrice" class="mb-1 block text-sm font-bold">
-							price (scraps)
-							{#if formPriceOverride}
-								<span class="ml-1 text-xs font-normal text-yellow-600">overridden</span>
-							{/if}
-						</label>
-						<input
-							id="scrapsPrice"
-							type="number"
-							value={formPrice}
-							oninput={(e) => updatePriceOverride(parseInt(e.currentTarget.value) || 0)}
-							min="1"
-							class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {formPriceOverride
-								? 'border-yellow-500'
-								: 'border-black'}"
-						/>
-						{#if formPriceOverride}
-							<button
-								onclick={clearPriceOverride}
-								class="mt-1 cursor-pointer text-xs font-bold text-yellow-600 underline"
-							>
-								reset to auto ({Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)})
-							</button>
-						{:else}
-							<p class="mt-1 text-xs text-gray-500">
-								~{(formPrice / SCRAPS_PER_HOUR).toFixed(1)} hrs to earn
-							</p>
-						{/if}
-					</div>
-				</div>
-				<p class="text-xs text-gray-500">
-					{formBaseProbability}% base · +{formBoostAmount}%/upgrade · ~{(
-						formPrice / SCRAPS_PER_HOUR
-					).toFixed(1)} hrs to earn
-				</p>
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
-						<input
-							id="count"
-							type="number"
-							value={formCount}
-							oninput={(e) => updateFromStock(parseInt(e.currentTarget.value) || 0)}
-							min="0"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						/>
-						<p class="mt-1 text-xs text-gray-500">affects rarity calculation</p>
-					</div>
-					<div>
-						<label for="category" class="mb-1 block text-sm font-bold">categories</label>
-						<input
-							id="category"
-							type="text"
-							bind:value={formCategory}
-							placeholder="stickers, hardware"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						/>
-					</div>
-				</div>
-
-				<!-- Optimal pricing hint -->
-				{#if formMonetaryValue > 0}
-					<div
-						class="rounded-xl border-2 p-3 {hasCustomPricing
-							? 'border-yellow-400 bg-yellow-50'
-							: 'border-green-400 bg-green-50'}"
-					>
-						<div class="flex items-center justify-between">
-							<div class="text-xs">
-								<span class="font-bold {hasCustomPricing ? 'text-yellow-700' : 'text-green-700'}">
-									{hasCustomPricing
-										? 'custom pricing (differs from optimal)'
-										: 'using optimal pricing'}
-								</span>
-								<span class="ml-2 text-gray-500">
-									optimal: {optimalPricing.baseProbability}% base · +{optimalPricing.boostAmount}%/upgrade
-									· {optimalPricing.baseUpgradeCost} base cost · {optimalPricing.costMultiplier}%
-									mult
-								</span>
-							</div>
-							{#if hasCustomPricing}
-								<button
-									onclick={recalculatePricing}
-									class="flex cursor-pointer items-center gap-1 rounded-full border-2 border-yellow-600 px-3 py-1 text-xs font-bold text-yellow-700 transition-all duration-200 hover:border-dashed"
-								>
-									<RotateCcw size={12} />
-									use optimal
-								</button>
-							{/if}
-						</div>
-					</div>
-				{/if}
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="baseProbability" class="mb-1 block text-sm font-bold"
-							>base probability (%)</label
-						>
-						<input
-							id="baseProbability"
-							type="number"
-							bind:value={formBaseProbability}
-							min="1"
-							max="100"
-							step="1"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none {formBaseProbability !==
-							optimalPricing.baseProbability
-								? 'border-yellow-500'
-								: ''}"
-						/>
-						{#if formBaseProbability !== optimalPricing.baseProbability}
-							<p class="mt-1 text-xs text-yellow-600">optimal: {optimalPricing.baseProbability}%</p>
-						{/if}
-					</div>
-					<div>
-						<label for="boostAmount" class="mb-1 block text-sm font-bold"
-							>boost per upgrade (%)</label
-						>
-						<input
-							id="boostAmount"
-							type="number"
-							bind:value={formBoostAmount}
-							min="1"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none {formBoostAmount !==
-							optimalPricing.boostAmount
-								? 'border-yellow-500'
-								: ''}"
-						/>
-						{#if formBoostAmount !== optimalPricing.boostAmount}
-							<p class="mt-1 text-xs text-yellow-600">optimal: +{optimalPricing.boostAmount}%</p>
-						{/if}
-					</div>
-				</div>
-
-				<div>
-					<label for="rollCostOverride" class="mb-1 block text-sm font-bold">
-						roll cost override
-						{#if formRollCostOverride != null}
-							<span class="ml-1 text-xs font-normal text-yellow-600">overridden</span>
-						{/if}
-					</label>
-					<div class="flex gap-2">
-						<input
-							id="rollCostOverride"
-							type="number"
-							value={formRollCostOverride ?? ''}
-							oninput={(e) => {
-								const val = e.currentTarget.value;
-								formRollCostOverride = val === '' ? null : parseInt(val) || null;
-							}}
-							min="1"
-							placeholder="auto (base {Math.max(
-								1,
-								Math.round(formPrice * (formBaseProbability / 100))
-							)} / +1 {Math.max(
-								1,
-								Math.round(formPrice * (Math.min(100, formBaseProbability + formBoostAmount) / 100))
-							)})"
-							class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {formRollCostOverride !=
-							null
-								? 'border-yellow-500'
-								: 'border-black'}"
-						/>
-						{#if formRollCostOverride != null}
-							<button
-								onclick={() => (formRollCostOverride = null)}
-								class="shrink-0 cursor-pointer rounded-lg border-2 border-yellow-500 px-3 py-2 text-xs font-bold text-yellow-600 transition-all duration-200 hover:border-dashed"
-							>
-								auto
-							</button>
-						{/if}
-					</div>
-					<p class="mt-1 text-xs text-gray-500">
-						auto shows base / +1 roll — e.g. base {Math.max(
-							1,
-							Math.round(formPrice * (formBaseProbability / 100))
-						)} / +1 {Math.max(
-							1,
-							Math.round(formPrice * (Math.min(100, formBaseProbability + formBoostAmount) / 100))
-						)}. (shop uses effective% at roll time)
-					</p>
-				</div>
-
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="baseUpgradeCost" class="mb-1 block text-sm font-bold"
-							>base upgrade cost</label
-						>
-						<input
-							id="baseUpgradeCost"
-							type="number"
-							bind:value={formBaseUpgradeCost}
-							min="1"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none {formBaseUpgradeCost !==
-							optimalPricing.baseUpgradeCost
-								? 'border-yellow-500'
-								: ''}"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							cost of first upgrade in scraps
-							{#if formBaseUpgradeCost !== optimalPricing.baseUpgradeCost}
-								<span class="text-yellow-600">· optimal: {optimalPricing.baseUpgradeCost}</span>
-							{/if}
-						</p>
-					</div>
-					<div>
-						<label for="costMultiplier" class="mb-1 block text-sm font-bold"
-							>cost multiplier (%)</label
-						>
-						<input
-							id="costMultiplier"
-							type="number"
-							bind:value={formCostMultiplier}
-							min="100"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none {formCostMultiplier !==
-							optimalPricing.costMultiplier
-								? 'border-yellow-500'
-								: ''}"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							110 = 1.10× per upgrade
-							{#if formCostMultiplier !== optimalPricing.costMultiplier}
-								<span class="text-yellow-600">· optimal: {optimalPricing.costMultiplier}%</span>
-							{/if}
-						</p>
-					</div>
-				</div>
-
-				<!-- EV Analysis Panel -->
-				{#if formEV}
-					<div
-						class="rounded-xl border-4 p-4 {formEV.isExploitable
-							? 'border-red-600 bg-red-50'
-							: 'border-green-600 bg-green-50'}"
-					>
-						<div class="mb-3 flex items-center justify-between">
-							<h3
-								class="flex items-center gap-2 text-sm font-bold {formEV.isExploitable
-									? 'text-red-700'
-									: 'text-green-700'}"
-							>
-								{#if formEV.isExploitable}
-									<AlertTriangle size={16} />
-									EV ANALYSIS — EXPLOITABLE
-								{:else}
-									<ShieldCheck size={16} />
-									EV ANALYSIS — SAFE
+						<div class="flex-1">
+							<div class="mb-1 text-xs text-gray-500">best player strategy</div>
+							<div class="flex items-center gap-3">
+								<div class="font-bold">level {ev.bestPlayerLevel}</div>
+								<div class="text-gray-600">cost {ev.bestPlayerCost} scraps</div>
+								{#if ev.isExploitable}
+									<div class="font-bold text-red-600">exploitable</div>
 								{/if}
-							</h3>
+								<div class="text-gray-500">house edge {ev.houseEdgePercent}%</div>
+							</div>
+						</div>
+						<div class="flex gap-2">
 							<button
 								onclick={() => (showDetailedEV = !showDetailedEV)}
-								class="cursor-pointer text-xs font-bold underline {formEV.isExploitable
-									? 'text-red-600'
-									: 'text-green-700'}"
+								class="cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
 							>
 								{showDetailedEV ? 'hide details' : 'show details'}
 							</button>
 						</div>
+					</div>
 
-						<div class="grid grid-cols-2 gap-3 text-xs">
-							<div>
-								<span class="text-gray-500">house edge:</span>
-								<span class="ml-1 font-bold">+{formEV.houseEdgePercent}%</span>
-							</div>
-							<div>
-								<span class="text-gray-500">base roll cost:</span>
-								<span class="ml-1 font-bold"
-									>{calculateRollCost(formPrice, formBaseProbability, formRollCostOverride)} scraps</span
+					{#if showDetailedEV}
+						<div class="mt-3">
+							<table class="w-full text-sm">
+								<thead>
+									<tr class="text-left text-xs text-gray-600">
+										<th class="py-2">level</th>
+										<th>eff%</th>
+										<th>roll cost</th>
+										<th>upgrade cost</th>
+										<th>expected rolls</th>
+										<th>expected total</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each ev.results as r}
+										<tr class="border-t">
+											<td class="py-2">{r.upgradeLevel}</td>
+											<td>{r.effectiveProbability}%</td>
+											<td>{r.rollCost}</td>
+											<td>{r.upgradeCostCumulative}</td>
+											<td>{r.expectedRolls}</td>
+											<td>{r.expectedTotalCost}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</div>
+
+				{#if showModal}
+					<div
+						class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+						onclick={(e) => e.target === e.currentTarget && closeModal()}
+						onkeydown={(e) => e.key === 'Escape' && closeModal()}
+						role="dialog"
+						tabindex="-1"
+					>
+						<div
+							class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6"
+						>
+							<div class="mb-6 flex items-center justify-between">
+								<h2 class="text-2xl font-bold">
+									{editingItem ? $t.admin.editItem : $t.admin.addItem}
+								</h2>
+								<button
+									onclick={closeModal}
+									class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
 								>
-								{#if formRollCostOverride != null}
-									<span class="ml-1 text-xs text-yellow-600">(overridden)</span>
+									<X size={20} />
+								</button>
+							</div>
+
+							{#if formError}
+								<div
+									class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm text-red-600"
+								>
+									{formError}
+								</div>
+							{/if}
+
+							<div class="space-y-4">
+								<div>
+									<label for="name" class="mb-1 block text-sm font-bold">name</label>
+									<input
+										id="name"
+										type="text"
+										bind:value={formName}
+										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+									/>
+								</div>
+
+								<div>
+									<label for="image" class="mb-1 block text-sm font-bold">image URL</label>
+									<input
+										id="image"
+										type="text"
+										bind:value={formImage}
+										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+									/>
+								</div>
+
+								<div>
+									<label for="description" class="mb-1 block text-sm font-bold">description</label>
+									<textarea
+										id="description"
+										bind:value={formDescription}
+										rows="3"
+										class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+									></textarea>
+								</div>
+
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<label for="monetaryValue" class="mb-1 block text-sm font-bold">value ($)</label
+										>
+										<input
+											id="monetaryValue"
+											type="number"
+											value={formMonetaryValue}
+											oninput={(e) => updateFromMonetary(parseFloat(e.currentTarget.value) || 0)}
+											min="0"
+											step="0.01"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+										<p class="mt-1 text-xs text-gray-500">
+											auto = {Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)} scraps
+										</p>
+									</div>
+
+									<div>
+										<label for="scrapsPrice" class="mb-1 block text-sm font-bold"
+											>price (scraps)
+											{#if formPriceOverride}
+												<span class="ml-1 text-xs font-normal text-yellow-600">overridden</span>
+											{/if}
+										</label>
+										<input
+											id="scrapsPrice"
+											type="number"
+											value={formPrice}
+											oninput={(e) => updatePriceOverride(parseInt(e.currentTarget.value) || 0)}
+											min="1"
+											class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {formPriceOverride
+												? 'border-yellow-500'
+												: 'border-black'}"
+										/>
+										{#if formPriceOverride}
+											<button
+												onclick={clearPriceOverride}
+												class="mt-1 cursor-pointer text-xs font-bold text-yellow-600 underline"
+												>reset to auto ({Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)})</button
+											>
+										{:else}
+											<p class="mt-1 text-xs text-gray-500">
+												~{(formPrice / SCRAPS_PER_HOUR).toFixed(1)} hrs to earn
+											</p>
+										{/if}
+									</div>
+								</div>
+
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
+										<input
+											id="count"
+											type="number"
+											value={formCount}
+											oninput={(e) => updateFromStock(parseInt(e.currentTarget.value) || 0)}
+											min="0"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+										<p class="mt-1 text-xs text-gray-500">affects rarity calculation</p>
+									</div>
+									<div>
+										<label for="category" class="mb-1 block text-sm font-bold">categories</label>
+										<input
+											id="category"
+											type="text"
+											bind:value={formCategory}
+											placeholder="stickers, hardware"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+									</div>
+								</div>
+
+								{#if formMonetaryValue > 0}
+									<div
+										class="rounded-xl border-2 p-3 {hasCustomPricing
+											? 'border-yellow-400 bg-yellow-50'
+											: 'border-green-400 bg-green-50'}"
+									>
+										<div class="flex items-center justify-between">
+											<div class="text-xs">
+												<span
+													class="font-bold {hasCustomPricing
+														? 'text-yellow-700'
+														: 'text-green-700'}"
+												>
+													{hasCustomPricing
+														? 'custom pricing (differs from optimal)'
+														: 'using optimal pricing'}
+												</span>
+												<span class="ml-2 text-gray-500">
+													optimal: {optimalPricing?.baseProbability}% base · +{optimalPricing?.boostAmount}%/upgrade
+													· {optimalPricing?.baseUpgradeCost} base cost · {optimalPricing?.costMultiplier}%
+													mult
+												</span>
+											</div>
+											{#if hasCustomPricing}
+												<button
+													onclick={async () => {
+														// Apply optimal values into the form
+														if (!optimalPricing) return;
+														formPrice = optimalPricing.price;
+														formBaseProbability = optimalPricing.baseProbability;
+														formBaseUpgradeCost = optimalPricing.baseUpgradeCost;
+														formCostMultiplier = optimalPricing.costMultiplier;
+														formBoostAmount = optimalPricing.boostAmount;
+														formPriceOverride = false;
+														// ensure EV and server parity
+														await recalculatePricing();
+													}}
+													class="flex cursor-pointer items-center gap-1 rounded-full border-2 border-yellow-600 px-3 py-1 text-xs font-bold text-yellow-700 transition-all duration-200 hover:border-dashed"
+												>
+													<RotateCcw size={12} />
+													use optimal
+												</button>
+											{/if}
+										</div>
+									</div>
+								{/if}
+
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<label for="baseProbability" class="mb-1 block text-sm font-bold"
+											>base probability (%)</label
+										>
+										<input
+											id="baseProbability"
+											type="number"
+											bind:value={formBaseProbability}
+											min="1"
+											max="100"
+											step="1"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+									</div>
+									<div>
+										<label for="boostAmount" class="mb-1 block text-sm font-bold"
+											>boost per upgrade (%)</label
+										>
+										<input
+											id="boostAmount"
+											type="number"
+											bind:value={formBoostAmount}
+											min="0"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+									</div>
+								</div>
+
+								<div class="grid grid-cols-2 gap-4">
+									<div>
+										<label for="baseUpgradeCost" class="mb-1 block text-sm font-bold"
+											>base upgrade cost</label
+										>
+										<input
+											id="baseUpgradeCost"
+											type="number"
+											bind:value={formBaseUpgradeCost}
+											min="1"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+									</div>
+									<div>
+										<label for="costMultiplier" class="mb-1 block text-sm font-bold"
+											>cost multiplier (%)</label
+										>
+										<input
+											id="costMultiplier"
+											type="number"
+											bind:value={formCostMultiplier}
+											min="100"
+											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+									</div>
+								</div>
+
+								<div>
+									<label for="rollCostOverride" class="mb-1 block text-sm font-bold"
+										>roll cost override</label
+									>
+									<div class="flex gap-2">
+										<input
+											id="rollCostOverride"
+											type="number"
+											value={formRollCostOverride ?? ''}
+											oninput={(e) => {
+												const val = e.currentTarget.value;
+												formRollCostOverride = val === '' ? null : parseInt(val) || null;
+											}}
+											min="1"
+											placeholder="auto"
+											class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none"
+										/>
+										{#if formRollCostOverride != null}
+											<button
+												onclick={() => (formRollCostOverride = null)}
+												class="shrink-0 cursor-pointer rounded-lg border-2 border-yellow-500 px-3 py-2 text-xs font-bold text-yellow-600 transition-all duration-200 hover:border-dashed"
+											>
+												auto
+											</button>
+										{/if}
+									</div>
+								</div>
+
+								{#if formEV}
+									<div
+										class="mt-4 rounded-xl border-4 p-4 {formEV.isExploitable
+											? 'border-red-600 bg-red-50'
+											: 'border-green-600 bg-green-50'}"
+									>
+										<div class="mb-3 flex items-center justify-between">
+											<h3
+												class="flex items-center gap-2 text-sm font-bold {formEV.isExploitable
+													? 'text-red-700'
+													: 'text-green-700'}"
+											>
+												{#if formEV.isExploitable}
+													<AlertTriangle size={16} />
+													EV ANALYSIS — EXPLOITABLE
+												{:else}
+													<ShieldCheck size={16} />
+													EV ANALYSIS — SAFE
+												{/if}
+											</h3>
+											<button
+												onclick={() => (showDetailedEV = !showDetailedEV)}
+												class="cursor-pointer text-xs font-bold underline {formEV.isExploitable
+													? 'text-red-600'
+													: 'text-green-700'}"
+											>
+												{showDetailedEV ? 'hide details' : 'show details'}
+											</button>
+										</div>
+
+										<div class="grid grid-cols-2 gap-3 text-xs">
+											<div>
+												<span class="text-gray-500">house edge:</span>
+												<span class="ml-1 font-bold">+{formEV.houseEdgePercent}%</span>
+											</div>
+											<div>
+												<span class="text-gray-500">base roll cost:</span>
+												<span class="ml-1 font-bold"
+													>{calculateRollCost(
+														formPrice,
+														formBaseProbability,
+														formRollCostOverride,
+														formBaseProbability,
+														formRollCostOverride ? undefined : undefined
+													)} scraps</span
+												>
+												{#if formRollCostOverride != null}
+													<span class="ml-1 text-xs text-yellow-600">(overridden)</span>
+												{/if}
+											</div>
+											<div>
+												<span class="text-gray-500">player best (lv{formEV.bestPlayerLevel}):</span>
+												<span
+													class="ml-1 font-bold {formEV.bestPlayerRatio < 1 ? 'text-red-600' : ''}"
+													>{formEV.bestPlayerCost} scraps ({formEV.bestPlayerRatio}× price)</span
+												>
+											</div>
+											<div>
+												<span class="text-gray-500">upgrades to 100%:</span>
+												<span class="ml-1 font-bold"
+													>{formBoostAmount > 0
+														? Math.ceil((100 - formBaseProbability) / formBoostAmount)
+														: 0} upgrades</span
+												>
+											</div>
+										</div>
+
+										{#if formEV.isExploitable}
+											<div class="mt-3 rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
+												⚠ Users can profit at upgrade level {formEV.bestPlayerLevel} — expected cost ({formEV.bestPlayerCost})
+												is below item price ({formPrice}). Consider increasing upgrade costs or
+												lowering boost amount.
+											</div>
+										{/if}
+
+										{#if showDetailedEV}
+											<div class="mt-3 max-h-64 overflow-y-auto">
+												<table class="w-full text-left text-xs">
+													<thead class="sticky top-0 bg-white">
+														<tr class="border-b border-gray-300">
+															<th class="px-1 py-1">lv</th>
+															<th class="px-1 py-1">displayed</th>
+															<th class="px-1 py-1">actual</th>
+															<th class="px-1 py-1">roll cost</th>
+															<th class="px-1 py-1">upgr cost</th>
+															<th class="px-1 py-1">E[rolls]</th>
+															<th class="px-1 py-1">E[total]</th>
+															<th class="px-1 py-1">ratio</th>
+														</tr>
+													</thead>
+													<tbody>
+														{#each formEV.results as r}
+															<tr class="border-b">
+																<td class="px-1 py-1">{r.upgradeLevel}</td>
+																<td class="px-1 py-1">{r.effectiveProbability}%</td>
+																<td class="px-1 py-1">{r.actualWinChance}%</td>
+																<td class="px-1 py-1">{r.rollCost}</td>
+																<td class="px-1 py-1">{r.upgradeCostCumulative}</td>
+																<td class="px-1 py-1">{r.expectedRolls}</td>
+																<td
+																	class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
+																	>{r.expectedTotalCost}</td
+																>
+																<td
+																	class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
+																	>{r.evRatio}×</td
+																>
+															</tr>
+														{/each}
+													</tbody>
+												</table>
+											</div>
+										{/if}
+									</div>
 								{/if}
 							</div>
-							<div>
-								<span class="text-gray-500">player best (lv{formEV.bestPlayerLevel}):</span>
-								<span class="ml-1 font-bold {formEV.bestPlayerRatio < 1 ? 'text-red-600' : ''}">
-									{formEV.bestPlayerCost} scraps ({formEV.bestPlayerRatio}× price)
-								</span>
-							</div>
-							<div>
-								<span class="text-gray-500">upgrades to 100%:</span>
-								<span class="ml-1 font-bold"
-									>{formBoostAmount > 0
-										? Math.ceil((100 - formBaseProbability) / formBoostAmount)
-										: 0} upgrades</span
+
+							<div class="mt-6 flex gap-3">
+								<button
+									onclick={closeModal}
+									disabled={saving}
+									class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+									>{$t.common.cancel}</button
+								>
+								<button
+									onclick={handleSubmit}
+									disabled={saving}
+									class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+									>{saving
+										? $t.common.saving
+										: editingItem
+											? $t.common.save
+											: $t.common.create}</button
 								>
 							</div>
 						</div>
-
-						{#if formEV.isExploitable}
-							<div class="mt-3 rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
-								⚠ Users can profit at upgrade level {formEV.bestPlayerLevel} — expected cost ({formEV.bestPlayerCost})
-								is below item price ({formPrice}). Increase upgrade costs or lower boost amount.
-							</div>
-						{/if}
-
-						{#if showDetailedEV}
-							<div class="mt-3 max-h-64 overflow-y-auto">
-								<table class="w-full text-left text-xs">
-									<thead class="sticky top-0 bg-white">
-										<tr class="border-b border-gray-300">
-											<th class="px-1 py-1">lv</th>
-											<th class="px-1 py-1">displayed</th>
-											<th class="px-1 py-1">actual</th>
-											<th class="px-1 py-1">roll cost</th>
-											<th class="px-1 py-1">upgr cost</th>
-											<th class="px-1 py-1">E[rolls]</th>
-											<th class="px-1 py-1">E[total]</th>
-											<th class="px-1 py-1">ratio</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each formEV.results as r}
-											<tr
-												class="border-b border-gray-200 {r.upgradeLevel === formEV.bestPlayerLevel
-													? formEV.isExploitable
-														? 'bg-red-200 font-bold'
-														: 'bg-green-200 font-bold'
-													: ''}"
-											>
-												<td class="px-1 py-1">{r.upgradeLevel}</td>
-												<td class="px-1 py-1">{r.effectiveProbability}%</td>
-												<td class="px-1 py-1">{r.actualWinChance}%</td>
-												<td class="px-1 py-1">{r.rollCost}</td>
-												<td class="px-1 py-1">{r.upgradeCostCumulative}</td>
-												<td class="px-1 py-1">{r.expectedRolls}</td>
-												<td class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
-													>{r.expectedTotalCost}</td
-												>
-												<td class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
-													>{r.evRatio}×</td
-												>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-							<p class="mt-2 text-xs text-gray-500">
-								highlighted row = optimal user strategy (lowest expected cost). ratio {'<'} 1.0× means
-								user profits.
-							</p>
-						{/if}
 					</div>
 				{/if}
-			</div>
-
-			<div class="mt-6 flex gap-3">
-				<button
-					onclick={closeModal}
-					disabled={saving}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{$t.common.cancel}
-				</button>
-				<button
-					onclick={handleSubmit}
-					disabled={saving}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{saving ? $t.common.saving : editingItem ? $t.common.save : $t.common.create}
-				</button>
-			</div>
+			{/each}
 		</div>
-	</div>
-{/if}
-
-{#if deleteConfirmId}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={(e) => e.target === e.currentTarget && (deleteConfirmId = null)}
-		onkeydown={(e) => e.key === 'Escape' && (deleteConfirmId = null)}
-		role="dialog"
-		tabindex="-1"
-	>
-		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
-			<h2 class="mb-4 text-2xl font-bold">{$t.admin.confirmDelete}</h2>
-			<p class="mb-6 text-gray-600">
-				are you sure you want to delete this item? <span class="mt-2 block text-red-600"
-					>this action cannot be undone.</span
-				>
-			</p>
-			<div class="flex gap-3">
-				<button
-					onclick={() => (deleteConfirmId = null)}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{$t.common.cancel}
-				</button>
-				<button
-					onclick={confirmDelete}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{$t.common.delete}
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-{#if showResetConfirm}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={(e) => e.target === e.currentTarget && (showResetConfirm = false)}
-		onkeydown={(e) => e.key === 'Escape' && (showResetConfirm = false)}
-		role="dialog"
-		tabindex="-1"
-	>
-		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
-			<h2 class="mb-4 text-2xl font-bold">reset non-buyer refinery</h2>
-			<p class="mb-6 text-gray-600">
-				this will delete all refinery orders and spending history for users who have never won or
-				purchased an item, refunding their scraps. this cannot be undone.
-			</p>
-			<div class="flex gap-3">
-				<button
-					onclick={() => (showResetConfirm = false)}
-					disabled={resettingRefinery}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					cancel
-				</button>
-				<button
-					onclick={resetNonBuyerRefinery}
-					disabled={resettingRefinery}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{resettingRefinery ? 'resetting...' : 'reset'}
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-{#if errorModal}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-		onclick={(e) => e.target === e.currentTarget && (errorModal = null)}
-		onkeydown={(e) => e.key === 'Escape' && (errorModal = null)}
-		role="dialog"
-		tabindex="-1"
-	>
-		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
-			<h2 class="mb-4 text-2xl font-bold">{$t.common.error}</h2>
-			<p class="mb-6 text-gray-600">{errorModal}</p>
-			<button
-				onclick={() => (errorModal = null)}
-				class="w-full cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed"
-			>
-				{$t.common.ok}
-			</button>
-		</div>
-	</div>
-{/if}
+	{/if}
+</div>

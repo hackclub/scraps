@@ -50,15 +50,24 @@
 	let showConfirmation = $state(false);
 	let localHearted = $state(item.userHearted);
 	let localHeartCount = $state(item.heartCount);
-	let rollCost = $derived((() => {
-		let baseCost: number;
-		if (item.rollCostOverride != null && item.rollCostOverride > 0) {
-			baseCost = item.rollCostOverride;
-		} else {
-			baseCost = Math.max(1, Math.round(item.price * (item.baseProbability / 100)));
-		}
-		return Math.round(baseCost * (1 + 0.05 * (item.rollCount || 0)));
-	})());
+	let rollCost = $derived(
+		(() => {
+			// Prefer server-provided displayRollCost when present (authoritative).
+			// Fallback to local computation if the server value is missing for any reason.
+			if (item.displayRollCost != null && Number.isFinite(item.displayRollCost)) {
+				return item.displayRollCost;
+			}
+			let baseCost: number;
+			if (item.rollCostOverride != null && item.rollCostOverride > 0) {
+				baseCost = item.rollCostOverride;
+			} else {
+				baseCost = Math.max(1, Math.round(item.price * (item.baseProbability / 100)));
+			}
+			const perRoll = item.perRollMultiplier ?? 0.05;
+			const rollCount = item.rollCount ?? 0;
+			return Math.round(baseCost * (1 + perRoll * rollCount));
+		})()
+	);
 	let canAfford = $derived($userScrapsStore >= rollCost);
 	let alertMessage = $state<string | null>(null);
 	let alertType = $state<'error' | 'info'>('info');
@@ -313,7 +322,7 @@
 			</button>
 		</div>
 
-		<div class="mb-6 min-h-[120px] rounded-lg border-2 border-black p-4">
+		<div class="mb-6 min-h-30 rounded-lg border-2 border-black p-4">
 			{#if activeTab === 'leaderboard'}
 				{#if loadingLeaderboard}
 					<p class="text-center text-gray-500">{$t.common.loading}</p>
@@ -404,7 +413,7 @@
 
 	{#if showConfirmation}
 		<div
-			class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+			class="fixed inset-0 z-60 flex items-center justify-center bg-black/50 p-4"
 			onclick={(e) => e.target === e.currentTarget && (showConfirmation = false)}
 			onkeydown={(e) => e.key === 'Escape' && (showConfirmation = false)}
 			role="dialog"
@@ -443,7 +452,7 @@
 
 	{#if alertMessage}
 		<div
-			class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+			class="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-4"
 			onclick={(e) => e.target === e.currentTarget && (alertMessage = null)}
 			onkeydown={(e) => e.key === 'Escape' && (alertMessage = null)}
 			role="dialog"

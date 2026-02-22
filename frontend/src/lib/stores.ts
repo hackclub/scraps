@@ -25,6 +25,7 @@ export interface ShopItem {
 	price: number;
 	category: string;
 	count: number;
+	rollCount: number;
 	heartCount: number;
 	userHearted: boolean;
 	baseProbability: number;
@@ -33,11 +34,12 @@ export interface ShopItem {
 	costMultiplier: number;
 	boostAmount: number;
 	rollCostOverride: number | null;
+	perRollMultiplier: number;
 	userBoostPercent: number;
 	upgradeCount: number;
 	effectiveProbability: number;
 	nextUpgradeCost: number | null;
-	rollCount: number;
+	displayRollCost?: number;
 }
 
 export interface LeaderboardEntry {
