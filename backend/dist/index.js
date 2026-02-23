@@ -35723,14 +35723,17 @@ admin.delete("/orders/:id", async ({ params, headers, body, status: status2 }) =
       userId: shopOrdersTable.userId,
       shippingAddress: shopOrdersTable.shippingAddress,
       phone: shopOrdersTable.phone,
+      notes: shopOrdersTable.notes,
+      isFulfilled: shopOrdersTable.isFulfilled,
       createdAt: shopOrdersTable.createdAt,
+      updatedAt: shopOrdersTable.updatedAt,
       itemName: shopItemsTable.name
     }).from(shopOrdersTable).innerJoin(shopItemsTable, eq(shopOrdersTable.shopItemId, shopItemsTable.id)).where(eq(shopOrdersTable.id, orderId)).limit(1);
     if (!order[0])
       return status2(404, { error: "Order not found" });
     let alreadyRow = null;
     try {
-      const already = await db.execute(sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`);
+      const already = await db.execute(sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} AND restored = false LIMIT 1`);
       alreadyRow = already.rows?.[0] ?? (Array.isArray(already) ? already[0] : null);
     } catch (err) {
       const msg = err?.message ?? "";
@@ -35763,7 +35766,7 @@ admin.delete("/orders/:id", async ({ params, headers, body, status: status2 }) =
           CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_user_id ON admin_deleted_orders (user_id);
           CREATE INDEX IF NOT EXISTS idx_admin_deleted_orders_original_order_id ON admin_deleted_orders (original_order_id);
         `);
-        const already2 = await db.execute(sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`);
+        const already2 = await db.execute(sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} AND restored = false LIMIT 1`);
         alreadyRow = already2.rows?.[0] ?? (Array.isArray(already2) ? already2[0] : null);
       } else {
         throw err;
@@ -35845,13 +35848,14 @@ admin.post("/orders/:id/restore", async ({ params, headers, status: status2 }) =
       return status2(404, {
         error: "Archived order not found or already restored"
       });
-    const deletedPayload = archived.deleted_payload ? JSON.parse(archived.deleted_payload) : {
+    const rawPayload = archived.deleted_payload;
+    const deletedPayload = rawPayload == null ? {
       order: null,
       refineryOrders: [],
       refineryHistory: [],
       shopRolls: [],
       shopPenalties: []
-    };
+    } : typeof rawPayload === "string" ? JSON.parse(rawPayload) : rawPayload;
     const orderPayload = deletedPayload.order ?? null;
     const refineryOrdersPayload = deletedPayload.refineryOrders ?? [];
     const refineryHistoryPayload = deletedPayload.refineryHistory ?? [];
@@ -35864,9 +35868,9 @@ admin.post("/orders/:id/restore", async ({ params, headers, status: status2 }) =
       const existingCount = Number(existing[0]?.count ?? 0);
       if (existingCount > 0)
         throw new Error("Active order with that id already exists");
-      await tx.execute(sql`INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, created_at)
+      await tx.execute(sql`INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, notes, is_fulfilled, created_at, updated_at)
         OVERRIDING SYSTEM VALUE
-        VALUES (${orderPayload.id}, ${orderPayload.userId}, ${orderPayload.shopItemId}, ${orderPayload.quantity}, ${orderPayload.pricePerItem}, ${orderPayload.totalPrice}, ${orderPayload.status}, ${orderPayload.orderType}, ${orderPayload.shippingAddress}, ${orderPayload.phone}, ${orderPayload.createdAt})`);
+        VALUES (${orderPayload.id}, ${orderPayload.userId}, ${orderPayload.shopItemId}, ${orderPayload.quantity}, ${orderPayload.pricePerItem}, ${orderPayload.totalPrice}, ${orderPayload.status}, ${orderPayload.orderType}, ${orderPayload.shippingAddress}, ${orderPayload.phone}, ${orderPayload.notes ?? null}, ${orderPayload.isFulfilled ?? false}, ${orderPayload.createdAt}, ${orderPayload.updatedAt ?? orderPayload.createdAt})`);
       for (const r of refineryOrdersPayload) {
         await tx.insert(refineryOrdersTable).values({
           userId: r.userId,
@@ -35902,6 +35906,12 @@ admin.post("/orders/:id/restore", async ({ params, headers, status: status2 }) =
           createdAt: p.createdAt,
           updatedAt: p.updatedAt
         });
+      }
+      if (orderPayload.orderType === "purchase" || orderPayload.orderType === "luck_win") {
+        await tx.update(shopItemsTable).set({
+          count: sql`GREATEST(${shopItemsTable.count} - ${orderPayload.quantity ?? 1}, 0)`,
+          updatedAt: new Date
+        }).where(eq(shopItemsTable.id, orderPayload.shopItemId));
       }
       await tx.execute(sql`UPDATE admin_deleted_orders SET restored = true, restored_by = ${user2.id}, restored_at = now() WHERE id = ${archived.id}`);
     });
