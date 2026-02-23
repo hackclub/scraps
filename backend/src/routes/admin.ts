@@ -2453,7 +2453,10 @@ admin.delete("/orders/:id", async ({ params, headers, body, status }) => {
         userId: shopOrdersTable.userId,
         shippingAddress: shopOrdersTable.shippingAddress,
         phone: shopOrdersTable.phone,
+        notes: shopOrdersTable.notes,
+        isFulfilled: shopOrdersTable.isFulfilled,
         createdAt: shopOrdersTable.createdAt,
+        updatedAt: shopOrdersTable.updatedAt,
         itemName: shopItemsTable.name,
       })
       .from(shopOrdersTable)
@@ -2470,7 +2473,7 @@ admin.delete("/orders/:id", async ({ params, headers, body, status }) => {
     let alreadyRow = null;
     try {
       const already = await db.execute(
-        sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`,
+        sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} AND restored = false LIMIT 1`,
       );
       alreadyRow =
         (already as any).rows?.[0] ??
@@ -2511,7 +2514,7 @@ admin.delete("/orders/:id", async ({ params, headers, body, status }) => {
         `);
         // retry select once
         const already2 = await db.execute(
-          sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} LIMIT 1`,
+          sql`SELECT 1 FROM admin_deleted_orders WHERE original_order_id = ${orderId} AND restored = false LIMIT 1`,
         );
         alreadyRow =
           (already2 as any).rows?.[0] ??
@@ -2709,15 +2712,19 @@ admin.post("/orders/:id/restore", async ({ params, headers, status }) => {
       });
 
     // parse payloads (single `deleted_payload` JSON column)
-    const deletedPayload = archived.deleted_payload
-      ? JSON.parse(archived.deleted_payload)
-      : {
-          order: null,
-          refineryOrders: [],
-          refineryHistory: [],
-          shopRolls: [],
-          shopPenalties: [],
-        };
+    const rawPayload = archived.deleted_payload;
+    const deletedPayload =
+      rawPayload == null
+        ? {
+            order: null,
+            refineryOrders: [],
+            refineryHistory: [],
+            shopRolls: [],
+            shopPenalties: [],
+          }
+        : typeof rawPayload === "string"
+          ? JSON.parse(rawPayload)
+          : rawPayload;
     const orderPayload = deletedPayload.order ?? null;
     const refineryOrdersPayload = deletedPayload.refineryOrders ?? [];
     const refineryHistoryPayload = deletedPayload.refineryHistory ?? [];
@@ -2737,9 +2744,9 @@ admin.post("/orders/:id/restore", async ({ params, headers, status }) => {
         throw new Error("Active order with that id already exists");
 
       // Use raw SQL with OVERRIDING SYSTEM VALUE to preserve the original order ID
-      await tx.execute(sql`INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, created_at)
+      await tx.execute(sql`INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, notes, is_fulfilled, created_at, updated_at)
         OVERRIDING SYSTEM VALUE
-        VALUES (${orderPayload.id}, ${orderPayload.userId}, ${orderPayload.shopItemId}, ${orderPayload.quantity}, ${orderPayload.pricePerItem}, ${orderPayload.totalPrice}, ${orderPayload.status}, ${orderPayload.orderType}, ${orderPayload.shippingAddress}, ${orderPayload.phone}, ${orderPayload.createdAt})`);
+        VALUES (${orderPayload.id}, ${orderPayload.userId}, ${orderPayload.shopItemId}, ${orderPayload.quantity}, ${orderPayload.pricePerItem}, ${orderPayload.totalPrice}, ${orderPayload.status}, ${orderPayload.orderType}, ${orderPayload.shippingAddress}, ${orderPayload.phone}, ${orderPayload.notes ?? null}, ${orderPayload.isFulfilled ?? false}, ${orderPayload.createdAt}, ${orderPayload.updatedAt ?? orderPayload.createdAt})`);
 
       // Related rows: omit id (auto-generated) — only the data matters, not the original IDs
       for (const r of refineryOrdersPayload) {
@@ -2777,6 +2784,20 @@ admin.post("/orders/:id/restore", async ({ params, headers, status }) => {
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
         });
+      }
+
+      // Decrement stock that was restored during delete (reverses the count+quantity from delete handler)
+      if (
+        orderPayload.orderType === "purchase" ||
+        orderPayload.orderType === "luck_win"
+      ) {
+        await tx
+          .update(shopItemsTable)
+          .set({
+            count: sql`GREATEST(${shopItemsTable.count} - ${orderPayload.quantity ?? 1}, 0)`,
+            updatedAt: new Date(),
+          })
+          .where(eq(shopItemsTable.id, orderPayload.shopItemId));
       }
 
       await tx.execute(
