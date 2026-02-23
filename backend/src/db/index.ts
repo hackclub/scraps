@@ -28,5 +28,5 @@ process.on("beforeExit", async () => {
   }
 });
 
-export const db = drizzle(pool);
+export const db = drizzle({ client: pool });
 export { pool as pgPool };

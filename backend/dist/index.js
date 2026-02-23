@@ -30980,7 +30980,7 @@ process.on("beforeExit", async () => {
     console.warn("[DB_POOL] Error shutting down pool", err);
   }
 });
-var db = drizzle(pool);
+var db = drizzle({ client: pool });
 
 // src/schemas/users.ts
 var usersTable = pgTable("users", {
