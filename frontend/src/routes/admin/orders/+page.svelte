@@ -363,7 +363,7 @@
 			const data = await response.json();
 			if (response.ok) {
 				trackingInputs[order.id] = data.letterId;
-				showToast(`Theseus letter created: ${data.letterId}`, 'success');
+				await toggleFulfilled(order);
 			} else {
 				showToast(data.error || 'failed to create Theseus letter', 'error');
 			}
