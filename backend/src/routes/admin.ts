@@ -2810,14 +2810,6 @@ admin.post("/orders/:id/theseus", async ({ params, headers, status }) => {
 
     const letter = (await theseusRes.json()) as { id: string };
 
-    await db
-      .update(shopOrdersTable)
-      .set({
-        trackingNumber: letter.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(shopOrdersTable.id, orderId));
-
     return { letterId: letter.id };
   } catch (err) {
     console.error("[THESEUS] Error:", err);

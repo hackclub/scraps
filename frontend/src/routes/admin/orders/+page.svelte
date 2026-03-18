@@ -362,9 +362,6 @@
 			});
 			const data = await response.json();
 			if (response.ok) {
-				orders = orders.map((o) =>
-					o.id === order.id ? { ...o, trackingNumber: data.letterId } : o
-				);
 				trackingInputs[order.id] = data.letterId;
 				showToast(`Theseus letter created: ${data.letterId}`, 'success');
 			} else {
