@@ -48,4 +48,7 @@ export const config = {
 
 	// HCB
 	hcbOrgSlug: 'ysws-scraps',
+
+	// Theseus (mail.hackclub.com)
+	theseusApiKey: process.env.THESEUS_API_KEY,
 }

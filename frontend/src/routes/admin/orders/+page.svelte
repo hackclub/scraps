@@ -13,7 +13,8 @@
 		ChevronDown,
 		ChevronUp,
 		Search,
-		ShieldAlert
+		ShieldAlert,
+		Mail
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
@@ -99,6 +100,7 @@
 	let filterItem = $state('');
 	let filterUser = $state('');
 	let filterRegion = $state<'' | 'us' | 'intl'>('');
+	let theseusLoading = $state<Record<number, boolean>>({});
 
 	let uniqueItems = $derived(
 		[...new Map(orders.map((o) => [o.itemName, o.itemName])).values()].sort()
@@ -348,6 +350,30 @@
 			showToast('failed to restore order: ' + msg, 'error');
 		} finally {
 			actionLoading = false;
+		}
+	}
+
+	async function addToTheseus(order: Order) {
+		theseusLoading[order.id] = true;
+		try {
+			const response = await fetch(`${API_URL}/admin/orders/${order.id}/theseus`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			const data = await response.json();
+			if (response.ok) {
+				orders = orders.map((o) =>
+					o.id === order.id ? { ...o, trackingNumber: data.letterId } : o
+				);
+				trackingInputs[order.id] = data.letterId;
+				showToast(`Theseus letter created: ${data.letterId}`, 'success');
+			} else {
+				showToast(data.error || 'failed to create Theseus letter', 'error');
+			}
+		} catch (_e) {
+			showToast('failed to create Theseus letter', 'error');
+		} finally {
+			theseusLoading[order.id] = false;
 		}
 	}
 
@@ -748,8 +774,31 @@
 															class="rounded-lg border-2 border-gray-300 bg-gray-50 px-3 py-2 text-sm"
 														>
 															<p class="text-xs font-bold text-gray-500 uppercase">tracking</p>
-															<p class="font-bold break-all">{order.trackingNumber}</p>
+															<p class="font-bold break-all">
+																{#if order.trackingNumber.startsWith('ltr!')}
+																	<a
+																		href="https://mail.hackclub.com/back_office/letters/{order.trackingNumber}"
+																		target="_blank"
+																		rel="noopener noreferrer"
+																		class="text-blue-600 hover:underline"
+																	>
+																		{order.trackingNumber}
+																	</a>
+																{:else}
+																	{order.trackingNumber}
+																{/if}
+															</p>
 														</div>
+													{/if}
+													{#if !order.trackingNumber?.startsWith('ltr!') && parseShippingAddress(order.shippingAddress)}
+														<button
+															onclick={() => addToTheseus(order)}
+															disabled={theseusLoading[order.id]}
+															class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+														>
+															<Mail size={16} />
+															{theseusLoading[order.id] ? 'sending...' : 'Add to Theseus (jenin)'}
+														</button>
 													{/if}
 													<button
 														onclick={() => toggleFulfilled(order)}

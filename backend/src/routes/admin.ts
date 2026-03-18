@@ -2718,6 +2718,113 @@ admin.patch("/orders/:id", async ({ params, body, headers, status }) => {
   }
 });
 
+// Create a Theseus letter for an order
+admin.post("/orders/:id/theseus", async ({ params, headers, status }) => {
+  try {
+    const user = await requireAdmin(headers as Record<string, string>);
+    if (!user) {
+      return status(401, { error: "Unauthorized" });
+    }
+
+    if (!config.theseusApiKey) {
+      return status(500, { error: "Theseus API key not configured" });
+    }
+
+    const orderId = parseInt(params.id);
+
+    const [order] = await db
+      .select({
+        id: shopOrdersTable.id,
+        shippingAddress: shopOrdersTable.shippingAddress,
+        trackingNumber: shopOrdersTable.trackingNumber,
+        phone: shopOrdersTable.phone,
+        itemName: shopItemsTable.name,
+        userEmail: usersTable.email,
+      })
+      .from(shopOrdersTable)
+      .innerJoin(shopItemsTable, eq(shopOrdersTable.shopItemId, shopItemsTable.id))
+      .innerJoin(usersTable, eq(shopOrdersTable.userId, usersTable.id))
+      .where(eq(shopOrdersTable.id, orderId))
+      .limit(1);
+
+    if (!order) {
+      return status(404, { error: "Order not found" });
+    }
+
+    if (!order.shippingAddress) {
+      return status(400, { error: "Order has no shipping address" });
+    }
+
+    let addr: {
+      firstName: string;
+      lastName: string;
+      address1: string;
+      address2?: string | null;
+      city: string;
+      state: string;
+      postalCode: string;
+      country: string;
+    };
+    try {
+      addr = JSON.parse(order.shippingAddress);
+    } catch {
+      return status(400, { error: "Invalid shipping address data" });
+    }
+
+    const theseusPayload = {
+      address: {
+        first_name: addr.firstName,
+        last_name: addr.lastName,
+        line_1: addr.address1,
+        line_2: addr.address2 || null,
+        city: addr.city,
+        state: addr.state,
+        postal_code: addr.postalCode,
+        country: addr.country,
+      },
+      rubber_stamps: order.itemName,
+      recipient_email: order.userEmail || undefined,
+      idempotency_key: `scraps-order-${order.id}`,
+      metadata: { scraps_order_id: order.id },
+    };
+
+    const theseusRes = await fetch(
+      "https://mail.hackclub.com/api/v1/letter_queues/scraps",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.theseusApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(theseusPayload),
+      },
+    );
+
+    if (!theseusRes.ok) {
+      const errBody = await theseusRes.text();
+      console.error("[THESEUS] Failed to create letter:", theseusRes.status, errBody);
+      return status(theseusRes.status as 400, {
+        error: `Theseus error: ${errBody}`,
+      });
+    }
+
+    const letter = (await theseusRes.json()) as { id: string };
+
+    await db
+      .update(shopOrdersTable)
+      .set({
+        trackingNumber: letter.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(shopOrdersTable.id, orderId));
+
+    return { letterId: letter.id };
+  } catch (err) {
+    console.error("[THESEUS] Error:", err);
+    return status(500, { error: "Failed to create Theseus letter" });
+  }
+});
+
 // Sync hours for a single project from Hackatime
 admin.post("/projects/:id/sync-hours", async ({ headers, params, status }) => {
   const user = await requireReviewer(headers as Record<string, string>);
