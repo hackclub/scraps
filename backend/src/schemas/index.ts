@@ -1,8 +1,0 @@
-export { usersTable } from './users'
-export { projectsTable } from './projects'
-export { reviewsTable } from './reviews'
-export { sessionsTable } from './sessions'
-export { shopItemsTable, shopHeartsTable, shopOrdersTable, shopRollsTable, refineryOrdersTable, shopPenaltiesTable, refinerySpendingHistoryTable, adminDeletedOrdersTable } from './shop'
-export { newsTable } from './news'
-export { projectActivityTable } from './activity'
-export { userActivityTable } from './user-emails'

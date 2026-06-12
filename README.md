@@ -4,8 +4,4 @@
 
 # scraps
 
-nom nom nom
-
-#leeks #scraps #scraypard-v2??? #cool-ysws #youshouldtotallydothiscoolyswsthatstotallynotaboutgamblinghours
-
-V2 COMING SOON
+The site is currently being reworked! Expect V2 to launch soon :p
