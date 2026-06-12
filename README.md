@@ -4,4 +4,4 @@
 
 # scraps
 
-The site is currently being reworked! Expect V2 to launch soon :p
+za old repo (v1)
