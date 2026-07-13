@@ -1,0 +1,17 @@
+:concurrency: 5
+:queues:
+  - default
+  - mailers
+:schedule:
+  hackatime_sync:
+    cron: "*/2 * * * *"
+    class: "HackatimeBatchSyncJob"
+    description: "Sync Hackatime hours for all non-shipped projects every 2 minutes"
+  airtable_sync:
+    cron: "*/5 * * * *"
+    class: "AirtableSyncJob"
+    description: "Sync shipped projects to Airtable every 5 minutes"
+  scrap_payout:
+    cron: "0 * * * *"
+    class: "ScrapPayoutJob"
+    description: "Process pending scraps payouts hourly"

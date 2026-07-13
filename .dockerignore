@@ -1,0 +1,31 @@
+.git/
+.gitignore
+
+# Frontend
+frontend/node_modules
+frontend/build
+frontend/.svelte-kit
+frontend/.vscode
+
+# Backend
+backend/.bundle
+backend/log/*
+backend/tmp/*
+!backend/log/.keep
+!backend/tmp/.keep
+backend/storage/*
+!backend/storage/.keep
+backend/vendor/bundle
+backend/config/master.key
+backend/config/credentials/*.key
+backend/.env*
+
+# CI files, not needed in the image
+.github
+backend/.github
+
+# Kamal (unused, but keep the image clean if it shows up later)
+backend/config/deploy*.yml
+backend/.kamal
+
+docs/
