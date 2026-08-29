@@ -1,0 +1,58 @@
+
+> scraps@0.0.1 dev
+> vite dev
+
+
+  [32m[1mVITE[22m v7.3.1[39m  [2mready in [0m[1m5084[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+10:28:50 PM [vite-plugin-svelte] src/lib/components/Tutorial.svelte:371:2 Elements with the 'toolbar' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+12:26:43 AM [vite-plugin-svelte] src/lib/components/Tutorial.svelte:371:2 Elements with the 'toolbar' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+[2m12:18:16 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/lib/components/Footer.svelte, /src/routes/layout.css[22m
+[2m12:18:16 AM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m [32mpage reload [39m[2msrc/lib/components/Footer.svelte[22m
+1:04:08 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:283:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:08 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:359:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:08 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:453:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:09 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:283:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:09 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:359:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:09 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:453:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+[2m1:04:35 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32m✨ new dependencies optimized: [33mmarked[32m[39m
+[2m1:04:35 AM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32m✨ optimized dependencies changed. reloading[39m
+1:04:36 AM [vite-plugin-svelte] src/lib/components/Tutorial.svelte:371:2 Elements with the 'toolbar' interactive role must have a tabindex value
+https://svelte.dev/e/a11y_interactive_supports_focus
+1:04:36 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:283:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:36 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:359:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:04:36 AM [vite-plugin-svelte] src/lib/components/CreateProjectModal.svelte:453:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:21:24 AM [vite-plugin-svelte] src/lib/components/AddressSelectModal.svelte:158:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+1:21:24 AM [vite-plugin-svelte] src/lib/components/ShopItemModal.svelte:55:27 This reference only captures the initial value of `item`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+1:21:24 AM [vite-plugin-svelte] src/lib/components/ShopItemModal.svelte:56:30 This reference only captures the initial value of `item`. Did you mean to reference it inside a derived instead?
+https://svelte.dev/e/state_referenced_locally
+3:34:36 AM [vite-plugin-svelte] src/routes/projects/[id]/submit/+page.svelte:364:4 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+3:34:36 AM [vite-plugin-svelte] src/routes/projects/[id]/submit/+page.svelte:481:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+3:34:36 AM [vite-plugin-svelte] src/routes/projects/[id]/submit/+page.svelte:559:4 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+3:34:40 AM [vite-plugin-svelte] src/routes/projects/[id]/edit/+page.svelte:340:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+3:34:40 AM [vite-plugin-svelte] src/routes/projects/[id]/edit/+page.svelte:457:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+3:34:40 AM [vite-plugin-svelte] src/routes/projects/[id]/edit/+page.svelte:535:5 A form label must be associated with a control
+https://svelte.dev/e/a11y_label_has_associated_control
+
+Google Chrome is requesting /.well-known/appspecific/com.chrome.devtools.json to automatically configure devtools project settings. To learn why, and how to prevent this message, see https://svelte.dev/docs/cli/devtools-json
+

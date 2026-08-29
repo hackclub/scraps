@@ -1,6 +1,6 @@
 Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
-  get "/", to: proc { [200, {}, ["if you dm @notaroomba abt finding this you may get cool stickers"]] }
+  get "/", to: proc { [200, {}, ["if you dm @iamalive abt finding this you may get cool stickers"]] }
 
   # Auth
   get "oauth/callback", to: "auth#callback"

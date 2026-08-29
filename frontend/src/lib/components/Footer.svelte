@@ -9,9 +9,9 @@
 	>
 	{$t.footer.and}
 	<a
-		href="https://github.com/notaroomba"
+		href="https://github.com/iamalive"
 		target="_blank"
 		rel="noopener noreferrer"
-		class="hover:underline">@notaroomba</a
+		class="hover:underline">@iamalive</a
 	>
 </footer>

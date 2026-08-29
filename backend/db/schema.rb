@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_06_230224) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_07_154413) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -105,6 +105,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_230224) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "project_id"
     t.integer "user_id"
+    t.index ["project_id"], name: "index_project_activity_on_project_id"
   end
 
   create_table "projects", id: :serial, force: :cascade do |t|
@@ -134,6 +135,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_230224) do
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "user_id", null: false
     t.integer "views", default: 0, null: false
+    t.index ["status"], name: "index_projects_on_status"
+    t.index ["updated_at"], name: "index_projects_on_updated_at"
+    t.index ["user_id"], name: "index_projects_on_user_id"
+    t.index ["views"], name: "index_projects_on_views"
   end
 
   create_table "refinery_orders", id: :serial, force: :cascade do |t|
@@ -159,6 +164,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_230224) do
     t.text "internal_justification"
     t.integer "project_id", null: false
     t.integer "reviewer_id", null: false
+    t.index ["project_id"], name: "index_reviews_on_project_id"
+    t.index ["reviewer_id"], name: "index_reviews_on_reviewer_id"
   end
 
   create_table "sessions", primary_key: "token", id: :text, force: :cascade do |t|

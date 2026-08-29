@@ -13,55 +13,58 @@ class ProjectsController < ApplicationController
 
     visible_statuses = %w[shipped in_progress waiting_for_review pending_admin_approval]
 
-    where_parts = ["(deleted = 0 OR deleted IS NULL)", "status IN ('shipped','in_progress','waiting_for_review','pending_admin_approval')"]
+    where_parts = ["(p.deleted = 0 OR p.deleted IS NULL)", "p.status IN ('shipped','in_progress','waiting_for_review','pending_admin_approval')"]
     bind_values = []
 
     if search.present?
       bind_idx = bind_values.size + 1
-      where_parts << "(name ILIKE $#{bind_idx} OR description ILIKE $#{bind_idx + 1})"
+      where_parts << "(p.name ILIKE $#{bind_idx} OR p.description ILIKE $#{bind_idx + 1})"
       bind_values << "%#{search}%" << "%#{search}%"
     end
 
     if tier && tier.between?(1, 4)
       bind_idx = bind_values.size + 1
-      where_parts << "tier = $#{bind_idx}"
+      where_parts << "p.tier = $#{bind_idx}"
       bind_values << tier
     end
 
     if status_filter == "shipped" || status_filter == "in_progress"
-      where_parts[1] = "status = '#{ActiveRecord::Base.connection.quote_string(status_filter)}'"
+      where_parts[1] = "p.status = '#{ActiveRecord::Base.connection.quote_string(status_filter)}'"
     elsif status_filter == "waiting_for_review"
-      where_parts[1] = "status IN ('waiting_for_review','pending_admin_approval')"
+      where_parts[1] = "p.status IN ('waiting_for_review','pending_admin_approval')"
     end
 
     where_sql = where_parts.join(" AND ")
 
     order_sql = case sort_by
-    when "views" then "views DESC"
+    when "views" then "p.views DESC"
     when "random" then "RANDOM()"
-    else "updated_at DESC"
+    else "p.updated_at DESC"
     end
 
     conn = ActiveRecord::Base.connection
+    # Single round trip: join the username in directly and use a window function
+    # to get the total count alongside the page, instead of separate queries.
     rows = conn.select_all(
-      "SELECT id, name, description, image, hours, hours_override, tier, status, views, user_id FROM projects WHERE #{where_sql} ORDER BY #{order_sql} LIMIT #{limit} OFFSET #{offset}",
+      "SELECT p.id, p.name, p.description, p.image, p.hours, p.hours_override, p.tier, p.status, p.views, p.user_id, u.username,
+              COUNT(*) OVER() AS full_count
+       FROM projects p
+       LEFT JOIN users u ON u.id = p.user_id
+       WHERE #{where_sql} ORDER BY #{order_sql} LIMIT #{limit} OFFSET #{offset}",
       "ExploreProjects",
       bind_values.each_with_index.map { |v, i| [nil, v] }
-    )
+    ).to_a
 
-    count_row = conn.select_one(
-      "SELECT COUNT(*) AS cnt FROM projects WHERE #{where_sql}",
-      "ExploreCount",
-      bind_values.each_with_index.map { |v, i| [nil, v] }
-    )
-    total = count_row["cnt"].to_i
-
-    user_ids = rows.map { |r| r["user_id"] }.compact.uniq
-    users = {}
-    if user_ids.any?
-      conn.select_all("SELECT id, username FROM users WHERE id IN (#{user_ids.join(',')})").each do |u|
-        users[u["id"].to_i] = u["username"]
-      end
+    # The window function only returns a count when at least one row comes back;
+    # fall back to a real count query for out-of-range pages (empty result set).
+    total = if rows.any?
+      rows.first["full_count"].to_i
+    else
+      conn.select_one(
+        "SELECT COUNT(*) AS cnt FROM projects p WHERE #{where_sql}",
+        "ExploreCount",
+        bind_values.each_with_index.map { |v, i| [nil, v] }
+      )["cnt"].to_i
     end
 
     data = rows.map do |p|
@@ -77,7 +80,7 @@ class ProjectsController < ApplicationController
         tier: p["tier"].to_i,
         status: display_status,
         views: p["views"].to_i,
-        username: users[p["user_id"].to_i]
+        username: p["username"]
       }
     end
 
@@ -96,12 +99,19 @@ class ProjectsController < ApplicationController
 
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(
-      "SELECT * FROM projects WHERE user_id = #{current_user.id} AND (deleted = 0 OR deleted IS NULL) ORDER BY updated_at DESC LIMIT #{limit} OFFSET #{offset}"
-    )
-    count_row = conn.select_one(
-      "SELECT COUNT(*) AS cnt FROM projects WHERE user_id = #{current_user.id} AND (deleted = 0 OR deleted IS NULL)"
-    )
-    total = count_row["cnt"].to_i
+      "SELECT p.*, COUNT(*) OVER() AS full_count
+       FROM projects p
+       WHERE p.user_id = #{current_user.id} AND (p.deleted = 0 OR p.deleted IS NULL)
+       ORDER BY p.updated_at DESC LIMIT #{limit} OFFSET #{offset}"
+    ).to_a
+
+    total = if rows.any?
+      rows.first["full_count"].to_i
+    else
+      conn.select_one(
+        "SELECT COUNT(*) AS cnt FROM projects WHERE user_id = #{current_user.id} AND (deleted = 0 OR deleted IS NULL)"
+      )["cnt"].to_i
+    end
 
     data = rows.map { |p| project_row_to_h(p, strip_ids: true) }
 
@@ -115,7 +125,14 @@ class ProjectsController < ApplicationController
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
     conn = ActiveRecord::Base.connection
-    project = conn.select_one("SELECT * FROM projects WHERE id = #{params[:id].to_i}")
+    # Single round trip: pull the owner's username/avatar in via join instead of
+    # a second lookup.
+    project = conn.select_one(
+      "SELECT p.*, u.username AS owner_username, u.avatar AS owner_avatar
+       FROM projects p
+       LEFT JOIN users u ON u.id = p.user_id
+       WHERE p.id = #{params[:id].to_i}"
+    )
     return render_json({ error: "Not found" }, status: :not_found) unless project
 
     is_owner = project["user_id"].to_i == current_user.id
@@ -128,18 +145,19 @@ class ProjectsController < ApplicationController
 
     conn.execute("UPDATE projects SET views = views + 1 WHERE id = #{params[:id].to_i}") unless is_owner
 
-    owner = conn.select_one("SELECT id, username, avatar FROM users WHERE id = #{project['user_id'].to_i}")
-
-    reviews_rows = conn.select_all(
-      "SELECT id, reviewer_id, action, feedback_for_author, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
-    ).to_a
-
-    reviewer_ids = reviews_rows.map { |r| r["reviewer_id"].to_i }.uniq
-    reviewers = {}
-    if reviewer_ids.any? && is_staff
-      conn.select_all("SELECT id, username, avatar FROM users WHERE id IN (#{reviewer_ids.join(',')})").each do |u|
-        reviewers[u["id"].to_i] = u
-      end
+    # Only fetch reviewer identity from the DB at all when the viewer is staff -
+    # non-staff viewers never see it, so it's never even selected for them.
+    reviews_rows = if is_staff
+      conn.select_all(
+        "SELECT r.id, r.reviewer_id, r.action, r.feedback_for_author, r.created_at, u.username AS reviewer_username, u.avatar AS reviewer_avatar
+         FROM reviews r
+         LEFT JOIN users u ON u.id = r.reviewer_id
+         WHERE r.project_id = #{params[:id].to_i}"
+      ).to_a
+    else
+      conn.select_all(
+        "SELECT id, reviewer_id, action, feedback_for_author, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
+      ).to_a
     end
 
     is_pending_admin = project["status"] == "pending_admin_approval"
@@ -152,7 +170,7 @@ class ProjectsController < ApplicationController
         action: r["action"],
         feedback_for_author: r["feedback_for_author"],
         created_at: r["created_at"],
-        reviewer: is_staff ? reviewers[r["reviewer_id"].to_i] : nil
+        reviewer: is_staff ? { id: r["reviewer_id"].to_i, username: r["reviewer_username"], avatar: r["reviewer_avatar"] } : nil
       }
     end
 
@@ -211,7 +229,7 @@ class ProjectsController < ApplicationController
         created_at: project["created_at"],
         updated_at: project["updated_at"]
       },
-      owner: owner ? { id: owner["id"].to_i, username: owner["username"], avatar: owner["avatar"] } : nil,
+      owner: project["user_id"] ? { id: project["user_id"].to_i, username: project["owner_username"], avatar: project["owner_avatar"] } : nil,
       is_owner: is_owner,
       has_submitted_feedback: is_owner ? has_submitted_feedback : nil,
       activity: activity
@@ -417,22 +435,26 @@ class ProjectsController < ApplicationController
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
     conn = ActiveRecord::Base.connection
+    # Only need `status` afterwards - no reason to pull every column across the
+    # wire just to confirm the project exists and belongs to this user.
     project = conn.select_one(
-      "SELECT * FROM projects WHERE id = #{params[:id].to_i} AND user_id = #{current_user.id}"
+      "SELECT status FROM projects WHERE id = #{params[:id].to_i} AND user_id = #{current_user.id}"
     )
     return render_json({ error: "Not found" }, status: :not_found) unless project
 
     is_staff = %w[admin reviewer creator].include?(current_user.role)
-    reviews_rows = conn.select_all(
-      "SELECT id, reviewer_id, action, feedback_for_author, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
-    ).to_a
-
-    reviewer_ids = reviews_rows.map { |r| r["reviewer_id"].to_i }.uniq
-    reviewers = {}
-    if is_staff && reviewer_ids.any?
-      conn.select_all("SELECT id, username, avatar FROM users WHERE id IN (#{reviewer_ids.join(',')})").each do |u|
-        reviewers[u["id"].to_i] = u
-      end
+    # Only fetch reviewer identity from the DB at all when the viewer is staff.
+    reviews_rows = if is_staff
+      conn.select_all(
+        "SELECT r.id, r.reviewer_id, r.action, r.feedback_for_author, r.created_at, u.username AS reviewer_username, u.avatar AS reviewer_avatar
+         FROM reviews r
+         LEFT JOIN users u ON u.id = r.reviewer_id
+         WHERE r.project_id = #{params[:id].to_i}"
+      ).to_a
+    else
+      conn.select_all(
+        "SELECT id, action, feedback_for_author, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
+      ).to_a
     end
 
     is_pending_admin = project["status"] == "pending_admin_approval"
@@ -444,7 +466,7 @@ class ProjectsController < ApplicationController
         action: r["action"],
         feedback_for_author: r["feedback_for_author"],
         created_at: r["created_at"],
-        reviewer: is_staff ? reviewers[r["reviewer_id"].to_i] : nil
+        reviewer: is_staff ? { id: r["reviewer_id"].to_i, username: r["reviewer_username"], avatar: r["reviewer_avatar"] } : nil
       }
     end)
   end
