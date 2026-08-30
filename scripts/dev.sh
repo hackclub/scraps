@@ -19,7 +19,7 @@ pids+=($!)
 (cd "$root/backend" && bundle exec sidekiq) &
 pids+=($!)
 
-(cd "$root/frontend" && npm run dev) &
+(cd "$root/frontend" && bun run dev) &
 pids+=($!)
 
 wait

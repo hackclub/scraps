@@ -192,15 +192,35 @@ class AuthController < ApplicationController
     username = nil
     avatar_url = nil
 
-    if identity["slack_id"].present? && ENV["SLACK_BOT_TOKEN"].present?
+    # Primary source: Cachet (cachet.dunkirk.sh), a public proxy/cache for Slack
+    # profile pictures and display names. Needs no bot scope, unlike users.info.
+    if identity["slack_id"].present?
+      cachet = fetch_cachet_profile(identity["slack_id"])
+      if cachet
+        username = cachet["displayName"].presence || cachet["realName"].presence
+        # Store the Cachet permalink (302s to the current image) rather than the
+        # slack-edge URL, so the avatar never goes stale.
+        avatar_url = "https://cachet.dunkirk.sh/users/#{identity['slack_id']}/r" if cachet["imageUrl"].present?
+      end
+    end
+
+    # Secondary: a direct users.info lookup, only useful if the bot token has the
+    # users:read scope. Also the source of the Airtable first/last name split.
+    if (username.nil? || avatar_url.nil?) && identity["slack_id"].present? && ENV["SLACK_BOT_TOKEN"].present?
       profile = fetch_slack_profile(identity["slack_id"])
       if profile
-        username = profile["display_name"].presence || profile["real_name"]
-        avatar_url = profile["image_512"] || profile["image_192"] || profile["image_72"]
+        username ||= profile["display_name"].presence || profile["real_name"]
+        avatar_url ||= profile["image_512"] || profile["image_192"] || profile["image_72"]
         @airtable_first_name = profile["first_name"]
         @airtable_last_name = profile["last_name"]
       end
     end
+
+    # Final fallback: the name from Hack Club Auth (there is no avatar there).
+    username ||= [identity["first_name"], identity["last_name"]]
+                 .map { |s| s.to_s.strip.presence }.compact.join(" ").presence
+    @airtable_first_name ||= identity["first_name"]
+    @airtable_last_name ||= identity["last_name"]
 
     conn = ActiveRecord::Base.connection
     existing = conn.select_one(
@@ -210,7 +230,7 @@ class AuthController < ApplicationController
     if existing
       conn.execute(<<~SQL)
         UPDATE users SET
-          username = #{conn.quote(username)},
+          username = COALESCE(#{conn.quote(username)}, username),
           email = COALESCE(#{conn.quote(identity['primary_email'])}, email),
           slack_id = #{conn.quote(identity['slack_id'])},
           avatar = COALESCE(#{conn.quote(avatar_url)}, avatar),
@@ -251,6 +271,16 @@ class AuthController < ApplicationController
     data = resp.parsed_response
     return nil unless data["ok"]
     data.dig("user", "profile")
+  rescue StandardError
+    nil
+  end
+
+  # https://cachet.dunkirk.sh/swagger — { displayName, realName, pronouns, imageUrl, ... }
+  def fetch_cachet_profile(slack_id)
+    resp = HTTParty.get("https://cachet.dunkirk.sh/users/#{slack_id}", timeout: 5)
+    return nil unless resp.success?
+    data = resp.parsed_response
+    data.is_a?(Hash) ? data : nil
   rescue StandardError
     nil
   end

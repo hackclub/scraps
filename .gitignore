@@ -26,6 +26,10 @@ table.csv
 table.json
 *.exe
 
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
 # nathan please delete this manually </3
 cloudflared.exe 
 /.claude
