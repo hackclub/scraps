@@ -1,6 +1,14 @@
 class AuthController < ApplicationController
   HACKCLUB_AUTH_URL = "https://auth.hackclub.com"
 
+  # Community-tier scopes. Once Hack Club HQ grants this OAuth app the elevated
+  # scopes, append them here (or set HCAUTH_SCOPE in the env, no deploy needed):
+  #   basic_info  -> legal_first_name, legal_last_name, birthday
+  #   addresses   -> addresses[] (line_1/2, city, state, postal_code, country)
+  #   phone       -> phone_number
+  # e.g. "openid email name profile verification_status slack_id basic_info addresses phone"
+  OAUTH_SCOPE = ENV.fetch("HCAUTH_SCOPE", "openid email name profile verification_status slack_id")
+
   def collect_email
     email = params[:email].to_s.strip
     unless email.match?(/\A[^\s@]+@[^\s@]+\.[^\s@]+\z/)
@@ -104,19 +112,8 @@ class AuthController < ApplicationController
       return render_json({ user: nil, banned: true })
     end
 
-    # Auto-award tutorial bonus
-    if current_user.tutorial_completed
-      ActiveRecord::Base.transaction do
-        ActiveRecord::Base.connection.execute(
-          "SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE"
-        )
-        existing = UserBonus.find_by(user_id: current_user.id, reason: "tutorial_completion")
-        unless existing
-          UserBonus.create!(user_id: current_user.id, reason: "tutorial_completion", amount: 5)
-        end
-      end
-    end
-
+    # The tutorial bonus is awarded once in UserController#complete_tutorial;
+    # no need to re-check (a locking transaction) on every profile fetch.
     balance = ScrapsService.get_user_scraps_balance(current_user.id)
     render_json({
       user: {
@@ -152,7 +149,7 @@ class AuthController < ApplicationController
       client_id: ENV["HCAUTH_CLIENT_ID"],
       redirect_uri: ENV.fetch("HCAUTH_REDIRECT_URI") { "http://localhost:3000/api/auth/callback/hackclub" },
       response_type: "code",
-      scope: "openid email name profile verification_status slack_id"
+      scope: OAUTH_SCOPE
     )
     "#{HACKCLUB_AUTH_URL}/oauth/authorize?#{params}"
   end
@@ -223,6 +220,9 @@ class AuthController < ApplicationController
     @airtable_last_name ||= identity["last_name"]
 
     conn = ActiveRecord::Base.connection
+    # Only present once HQ grants `basic_info` / `addresses` / `phone` scopes; nil otherwise.
+    addr = primary_address(identity)
+
     existing = conn.select_one(
       "SELECT id FROM users WHERE sub = #{conn.quote(identity['id'])}"
     )
@@ -238,13 +238,29 @@ class AuthController < ApplicationController
           refresh_token = #{conn.quote(tokens['refresh_token'])},
           id_token = #{conn.quote(tokens['id_token'])},
           verification_status = #{conn.quote(identity['verification_status'])},
+          ysws_eligible = #{conn.quote(identity['ysws_eligible'])},
+          phone = COALESCE(#{conn.quote(identity['phone_number'])}, phone),
+          birthday = COALESCE(#{conn.quote(identity['birthday'])}, birthday),
+          legal_first_name = COALESCE(#{conn.quote(identity['legal_first_name'])}, legal_first_name),
+          legal_last_name = COALESCE(#{conn.quote(identity['legal_last_name'])}, legal_last_name),
+          address_line1 = COALESCE(#{conn.quote(addr['line_1'])}, address_line1),
+          address_line2 = COALESCE(#{conn.quote(addr['line_2'])}, address_line2),
+          address_city = COALESCE(#{conn.quote(addr['city'])}, address_city),
+          address_state = COALESCE(#{conn.quote(addr['state'])}, address_state),
+          address_postal_code = COALESCE(#{conn.quote(addr['postal_code'])}, address_postal_code),
+          address_country = COALESCE(#{conn.quote(addr['country'])}, address_country),
           updated_at = NOW()
         WHERE sub = #{conn.quote(identity['id'])}
       SQL
       User.find(existing["id"])
     else
       conn.execute(<<~SQL)
-        INSERT INTO users (sub, slack_id, username, email, avatar, access_token, refresh_token, id_token, verification_status, role, tutorial_completed, language, created_at, updated_at)
+        INSERT INTO users (
+          sub, slack_id, username, email, avatar, access_token, refresh_token, id_token,
+          verification_status, ysws_eligible, phone, birthday, legal_first_name, legal_last_name,
+          address_line1, address_line2, address_city, address_state, address_postal_code, address_country,
+          role, tutorial_completed, language, created_at, updated_at
+        )
         VALUES (
           #{conn.quote(identity['id'])},
           #{conn.quote(identity['slack_id'])},
@@ -255,11 +271,30 @@ class AuthController < ApplicationController
           #{conn.quote(tokens['refresh_token'])},
           #{conn.quote(tokens['id_token'])},
           #{conn.quote(identity['verification_status'])},
+          #{conn.quote(identity['ysws_eligible'])},
+          #{conn.quote(identity['phone_number'])},
+          #{conn.quote(identity['birthday'])},
+          #{conn.quote(identity['legal_first_name'])},
+          #{conn.quote(identity['legal_last_name'])},
+          #{conn.quote(addr['line_1'])},
+          #{conn.quote(addr['line_2'])},
+          #{conn.quote(addr['city'])},
+          #{conn.quote(addr['state'])},
+          #{conn.quote(addr['postal_code'])},
+          #{conn.quote(addr['country'])},
           'member', false, 'en', NOW(), NOW()
         )
       SQL
       User.find_by!(sub: identity["id"])
     end
+  end
+
+  # The user's primary address from Hack Club Auth (identity["addresses"]), or {}.
+  # Empty until the OAuth app is granted the `addresses` scope.
+  def primary_address(identity)
+    addrs = identity["addresses"]
+    return {} unless addrs.is_a?(Array) && addrs.any?
+    (addrs.find { |a| a["primary"] } || addrs.first || {})
   end
 
   def fetch_slack_profile(slack_id)

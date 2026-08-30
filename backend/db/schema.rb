@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_30_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_30_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -251,14 +251,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_30_120000) do
 
   create_table "users", id: :serial, force: :cascade do |t|
     t.text "access_token"
+    t.text "address_city"
+    t.text "address_country"
+    t.text "address_line1"
+    t.text "address_line2"
+    t.text "address_postal_code"
+    t.text "address_state"
     t.string "airtable_id"
     t.text "avatar"
+    t.date "birthday"
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.text "email", default: "", null: false
     t.boolean "has_been_onboarded", default: false, null: false
     t.text "id_token"
     t.text "internal_notes"
     t.text "language", default: "en"
+    t.text "legal_first_name"
+    t.text "legal_last_name"
     t.text "phone"
     t.text "refresh_token"
     t.text "role", default: "member", null: false
@@ -268,6 +277,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_30_120000) do
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.text "username"
     t.text "verification_status"
+    t.boolean "ysws_eligible"
 
     t.unique_constraint ["sub"], name: "users_sub_key"
   end

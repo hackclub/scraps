@@ -22,44 +22,36 @@ module ScrapsService
   end
 
   def self.get_user_scraps_balance(user_id, conn = ActiveRecord::Base.connection)
-    earned_row = conn.select_one(<<~SQL, "ScrapsEarned", [user_id])
-      SELECT COALESCE(SUM(CASE WHEN scraps_paid_amount > 0 THEN scraps_paid_amount ELSE scraps_awarded END), 0) AS total
-      FROM projects
-      WHERE user_id = $1
-        AND (scraps_paid_at IS NOT NULL OR scraps_paid_amount > 0)
-        AND scraps_awarded > 0
+    # One round-trip instead of five — the remote DB has ~100ms latency per query.
+    row = conn.select_one(<<~SQL, "ScrapsBalance", [user_id])
+      SELECT
+        (SELECT COALESCE(SUM(CASE WHEN scraps_paid_amount > 0 THEN scraps_paid_amount ELSE scraps_awarded END), 0)
+         FROM projects
+         WHERE user_id = $1
+           AND (scraps_paid_at IS NOT NULL OR scraps_paid_amount > 0)
+           AND scraps_awarded > 0) AS project_earned,
+        (SELECT COALESCE(SUM(scraps_awarded - CASE WHEN scraps_paid_amount > 0 THEN scraps_paid_amount ELSE 0 END), 0)
+         FROM projects
+         WHERE user_id = $1
+           AND status = 'shipped'
+           AND (deleted = 0 OR deleted IS NULL)
+           AND scraps_paid_at IS NULL
+           AND scraps_awarded > 0) AS pending,
+        (SELECT COALESCE(SUM(amount), 0)
+         FROM user_bonuses WHERE user_id = $1) AS bonus_earned,
+        (SELECT COALESCE(SUM(total_price), 0)
+         FROM shop_orders
+         WHERE user_id = $1 AND status NOT IN ('cancelled', 'deleted')) AS shop_spent,
+        (SELECT COALESCE(SUM(cost), 0)
+         FROM refinery_spending_history WHERE user_id = $1) AS refinery_spent
     SQL
 
-    pending_row = conn.select_one(<<~SQL, "ScrapsPending", [user_id])
-      SELECT COALESCE(SUM(scraps_awarded - CASE WHEN scraps_paid_amount > 0 THEN scraps_paid_amount ELSE 0 END), 0) AS total
-      FROM projects
-      WHERE user_id = $1
-        AND status = 'shipped'
-        AND (deleted = 0 OR deleted IS NULL)
-        AND scraps_paid_at IS NULL
-        AND scraps_awarded > 0
-    SQL
-
-    bonus_row = conn.select_one(<<~SQL, "ScrapsBonus", [user_id])
-      SELECT COALESCE(SUM(amount), 0) AS total FROM user_bonuses WHERE user_id = $1
-    SQL
-
-    shop_spent_row = conn.select_one(<<~SQL, "ScrapsShopSpent", [user_id])
-      SELECT COALESCE(SUM(total_price), 0) AS total
-      FROM shop_orders
-      WHERE user_id = $1 AND status NOT IN ('cancelled', 'deleted')
-    SQL
-
-    refinery_spent_row = conn.select_one(<<~SQL, "ScrapsRefinerySpent", [user_id])
-      SELECT COALESCE(SUM(cost), 0) AS total FROM refinery_spending_history WHERE user_id = $1
-    SQL
-
-    project_earned = earned_row["total"].to_f.round
-    pending = pending_row["total"].to_f.round
-    bonus_earned = bonus_row["total"].to_f.round
+    project_earned = row["project_earned"].to_f.round
+    pending = row["pending"].to_f.round
+    bonus_earned = row["bonus_earned"].to_f.round
     earned = project_earned + bonus_earned
-    shop_spent = shop_spent_row["total"].to_f.round
-    upgrade_spent = refinery_spent_row["total"].to_f.round
+    shop_spent = row["shop_spent"].to_f.round
+    upgrade_spent = row["refinery_spent"].to_f.round
     spent = shop_spent + upgrade_spent
     balance = earned - spent
 
