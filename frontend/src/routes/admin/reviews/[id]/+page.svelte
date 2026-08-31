@@ -275,7 +275,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
 				body: JSON.stringify({
-					action: confirmAction,
+					decision: confirmAction,
 					feedbackForAuthor,
 					internalJustification: internalJustification || undefined,
 					hoursOverride: hoursOverride !== undefined ? hoursOverride : undefined,

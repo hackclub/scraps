@@ -63,8 +63,7 @@
 		currentPath === '/leaderboard' || currentPath === '/shop' || currentPath === '/refinery'
 	);
 	let adminMoreActive = $derived(
-		currentPath.startsWith('/admin/second-pass') ||
-			currentPath.startsWith('/admin/shop') ||
+		currentPath.startsWith('/admin/shop') ||
 			currentPath.startsWith('/admin/news') ||
 			currentPath.startsWith('/admin/orders')
 	);
@@ -304,21 +303,6 @@
 				</a>
 
 				{#if isAdminOnly}
-					{#if isAdminOnly}
-						<!-- Visible on xl+ only -->
-						<a
-							href="/admin/second-pass"
-							class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath.startsWith(
-								'/admin/second-pass'
-							)
-								? 'border-yellow-500 bg-yellow-500 text-white'
-								: 'border-yellow-500 hover:border-dashed'}"
-						>
-							<ClipboardList size={18} />
-							<span class="text-lg font-bold">2nd pass</span>
-						</a>
-					{/if}
-
 					<a
 						href="/admin/shop"
 						class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath.startsWith(
@@ -371,20 +355,6 @@
 							<div
 								class="absolute top-full left-0 z-50 mt-2 min-w-48 overflow-hidden rounded-2xl border-4 border-black bg-white"
 							>
-								{#if isAdminOnly}
-									<a
-										href="/admin/second-pass"
-										onclick={closeMoreMenu}
-										class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 transition-colors hover:bg-gray-100 {currentPath.startsWith(
-											'/admin/second-pass'
-										)
-											? 'bg-yellow-50'
-											: ''}"
-									>
-										<ClipboardList size={18} />
-										<span class="font-bold">2nd pass</span>
-									</a>
-								{/if}
 								<a
 									href="/admin/shop"
 									onclick={closeMoreMenu}
@@ -757,21 +727,6 @@
 						<ClipboardList size={20} />
 						<span class="text-lg font-bold">{$t.nav.reviews}</span>
 					</a>
-
-					{#if isAdminOnly}
-						<a
-							href="/admin/second-pass"
-							onclick={handleMobileNavClick}
-							class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath.startsWith(
-								'/admin/second-pass'
-							)
-								? 'border-yellow-500 bg-yellow-500 text-white'
-								: 'border-yellow-500 hover:border-dashed'}"
-						>
-							<ClipboardList size={20} />
-							<span class="text-lg font-bold">2nd pass</span>
-						</a>
-					{/if}
 
 					<a
 						href="/admin/users"

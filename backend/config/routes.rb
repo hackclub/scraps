@@ -115,11 +115,6 @@ Rails.application.routes.draw do
     get    "reviews/:id",                     to: "admin#show_review"
     post   "reviews/:id",                     to: "admin#submit_review"
 
-    # Second pass
-    get    "second-pass",                     to: "admin#second_pass"
-    get    "second-pass/:id",                 to: "admin#show_second_pass"
-    post   "second-pass/:id",                 to: "admin#second_pass_submit"
-
     # Scraps payout
     get    "scraps-payout",                   to: "admin#scraps_payout_info"
     post   "scraps-payout",                   to: "admin#trigger_payout"

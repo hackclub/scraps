@@ -1,6 +1,6 @@
 class AdminController < ApplicationController
-  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review second_pass show_second_pass export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus second_pass_submit orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news scraps_payout_info trigger_payout reject_payout compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news scraps_payout_info trigger_payout reject_payout compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def stats
@@ -308,7 +308,8 @@ class AdminController < ApplicationController
   end
 
   def submit_review
-    action = params[:action].to_s
+    # NB: not params[:action] — Rails' routing reserves :action for the controller method name.
+    action = params[:decision].presence.to_s
     feedback = params[:feedbackForAuthor].to_s.strip
     rejection_reason = params[:rejectionReason].to_s.strip
     hours_override = params[:hoursOverride]&.to_f
@@ -338,9 +339,10 @@ class AdminController < ApplicationController
       VALUES (#{project_id}, #{current_user.id}, #{conn.quote(action)}, #{conn.quote(feedback)}, #{conn.quote(params[:internalJustification].to_s.presence)}, NOW())
     SQL
 
-    can_ship = %w[admin creator].include?(current_user.role)
+    # No second pass: any reviewer's approval ships the project immediately.
+    can_ship = true
     new_status = case action
-    when "approved" then can_ship ? "shipped" : "pending_admin_approval"
+    when "approved" then "shipped"
     when "denied" then "in_progress"
     when "permanently_rejected" then "permanently_rejected"
     end
@@ -369,7 +371,7 @@ class AdminController < ApplicationController
         conn.execute("INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{project['user_id'].to_i}, #{project_id}, #{conn.quote(previously_shipped ? "earned #{scraps_awarded} additional scraps (update)" : "earned #{scraps_awarded} scraps")}, NOW())")
       end
       conn.execute("INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{project['user_id'].to_i}, #{project_id}, '#{previously_shipped ? 'project_updated' : 'project_shipped'}', NOW())")
-      AirtableSyncJob.perform_later rescue nil
+      AirtableSyncJob.perform_later(project_id) rescue nil
     end
 
     if user_notes.present? && user_notes.length <= 2500
@@ -406,114 +408,6 @@ class AdminController < ApplicationController
     end
 
     render_json({ success: true })
-  end
-
-  def second_pass
-    page = [params[:page].to_i, 1].max
-    limit = [[params[:limit].to_i.nonzero? || 20, 100].min, 1].max
-    offset = (page - 1) * limit
-    sort = params[:sort] == "newest" ? "DESC" : "ASC"
-
-    conn = ActiveRecord::Base.connection
-    rows = conn.select_all(<<~SQL).to_a
-      SELECT p.*, COALESCE((SELECT MAX(pa.created_at) FROM project_activity pa WHERE pa.project_id = p.id AND pa.action = 'project_submitted'), p.updated_at) AS submitted_at
-      FROM projects p
-      WHERE p.status = 'pending_admin_approval'
-      ORDER BY submitted_at #{sort}
-      LIMIT #{limit} OFFSET #{offset}
-    SQL
-    total = conn.select_one("SELECT COUNT(*) AS cnt FROM projects WHERE status = 'pending_admin_approval'")["cnt"].to_i
-
-    data = rows.map { |p| eff = EffectiveHoursService.compute_for_project(p); p.merge("effective_hours" => eff[:effective_hours], "deducted_hours" => eff[:deducted_hours]) }
-    render_json({ data: data, pagination: { page: page, limit: limit, total: total, total_pages: (total.to_f / limit).ceil } })
-  end
-
-  def show_second_pass
-    conn = ActiveRecord::Base.connection
-    project = conn.select_one("SELECT * FROM projects WHERE id = #{params[:id].to_i}")
-    return render_json({ error: "Project not found!" }, status: :not_found) unless project
-    return render_json({ error: "Project is not pending admin approval" }) unless project["status"] == "pending_admin_approval"
-
-    project_user = conn.select_one("SELECT id, username, email, slack_id, avatar, internal_notes FROM users WHERE id = #{project['user_id'].to_i}")
-    reviews_rows = conn.select_all("SELECT * FROM reviews WHERE project_id = #{params[:id].to_i}").to_a
-    reviewer_ids = reviews_rows.map { |r| r["reviewer_id"].to_i }.uniq
-    reviewers = {}
-    conn.select_all("SELECT id, username, avatar FROM users WHERE id IN (#{reviewer_ids.join(',')})").each { |u| reviewers[u["id"].to_i] = u } if reviewer_ids.any?
-
-    ht_user_id = nil; ht_suspected = false; ht_banned = false
-    if project_user&.dig("email")
-      begin
-        ht = HackatimeService.get_user(project_user["email"], project_user["slack_id"])
-        if ht; ht_user_id = ht[:user_id]; ht_suspected = ht[:suspected] || false; ht_banned = ht[:banned] || false; end
-      rescue StandardError; end
-    end
-
-    eff = EffectiveHoursService.compute_for_project(project)
-    render_json({
-      project: project.merge("hackatime_project" => HackatimeService.strip_hackatime_ids(project["hackatime_project"])),
-      hackatime_user_id: ht_user_id,
-      hackatime_suspected: ht_suspected,
-      hackatime_banned: ht_banned,
-      user: project_user ? { id: project_user["id"].to_i, username: project_user["username"], email: project_user["email"], avatar: project_user["avatar"], internal_notes: project_user["internal_notes"] } : nil,
-      reviews: reviews_rows.map { |r| r.merge("reviewer_name" => reviewers[r["reviewer_id"].to_i]&.dig("username"), "reviewer_avatar" => reviewers[r["reviewer_id"].to_i]&.dig("avatar")) },
-      effective_hours: eff[:effective_hours],
-      deducted_hours: eff[:deducted_hours]
-    })
-  end
-
-  def second_pass_submit
-    action = params[:action].to_s
-    return render_json({ error: 'Invalid action. Must be "accept" or "reject"' }) unless %w[accept reject].include?(action)
-
-    project_id = params[:id].to_i
-    conn = ActiveRecord::Base.connection
-    project = conn.select_one("SELECT * FROM projects WHERE id = #{project_id}")
-    return render_json({ error: "Project not found" }, status: :not_found) unless project
-    return render_json({ error: "Project is not pending admin approval" }) unless project["status"] == "pending_admin_approval"
-
-    if action == "accept"
-      hours_override = params[:hoursOverride]&.to_f
-      conn.execute("UPDATE projects SET hours_override = #{hours_override} WHERE id = #{project_id}") if hours_override
-      proj_for_calc = conn.select_one("SELECT * FROM projects WHERE id = #{project_id}")
-      tier = (proj_for_calc["tier_override"] || proj_for_calc["tier"] || 1).to_i
-      eff = EffectiveHoursService.compute_for_project(proj_for_calc)
-      new_scraps = ScrapsService.calculate_scraps_from_hours(eff[:effective_hours], tier)
-      previously_shipped = conn.select_one("SELECT 1 FROM project_activity WHERE project_id = #{project_id} AND action = 'project_shipped' LIMIT 1")
-      scraps_awarded = (previously_shipped && project["scraps_awarded"].to_i > 0) ? [0, new_scraps - project["scraps_awarded"].to_i].max : new_scraps
-
-      set_sql = "status = 'shipped', scraps_awarded = #{new_scraps}, updated_at = NOW()"
-      set_sql += ", scraps_paid_at = NULL" if previously_shipped
-      conn.execute("UPDATE projects SET #{set_sql} WHERE id = #{project_id}")
-
-      if scraps_awarded > 0
-        conn.execute("INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{project['user_id'].to_i}, #{project_id}, #{conn.quote(previously_shipped ? "earned #{scraps_awarded} additional scraps (update)" : "earned #{scraps_awarded} scraps")}, NOW())")
-      end
-      conn.execute("INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{project['user_id'].to_i}, #{project_id}, '#{previously_shipped ? 'project_updated' : 'project_shipped'}', NOW())")
-
-      if ENV["SLACK_BOT_TOKEN"].present?
-        author = conn.select_one("SELECT slack_id FROM users WHERE id = #{project['user_id'].to_i}")
-        if author&.dig("slack_id")
-          SlackService.notify_project_review(user_slack_id: author["slack_id"], project_name: project["name"], project_id: project_id, action: "approved", feedback_for_author: "Your project has been approved and shipped!", reviewer_slack_id: current_user.slack_id, admin_slack_ids: [], scraps_awarded: scraps_awarded, frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" }, token: ENV["SLACK_BOT_TOKEN"]) rescue nil
-        end
-      end
-      AirtableSyncJob.perform_later rescue nil
-      render_json({ success: true, scraps_awarded: scraps_awarded })
-    else
-      conn.execute("DELETE FROM reviews WHERE project_id = #{project_id} AND action = 'approved'")
-      feedback = params[:feedbackForAuthor].to_s.presence || "The admin has rejected the initial approval. Please make improvements and resubmit."
-      conn.execute(<<~SQL)
-        INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, internal_justification, created_at)
-        VALUES (#{project_id}, #{current_user.id}, 'denied', #{conn.quote(feedback)}, 'Second-pass rejection', NOW())
-      SQL
-      conn.execute("UPDATE projects SET status = 'in_progress', updated_at = NOW() WHERE id = #{project_id}")
-      if ENV["SLACK_BOT_TOKEN"].present?
-        author = conn.select_one("SELECT slack_id FROM users WHERE id = #{project['user_id'].to_i}")
-        if author&.dig("slack_id")
-          SlackService.notify_project_review(user_slack_id: author["slack_id"], project_name: project["name"], project_id: project_id, action: "denied", feedback_for_author: feedback, reviewer_slack_id: current_user.slack_id, admin_slack_ids: [], scraps_awarded: 0, frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" }, token: ENV["SLACK_BOT_TOKEN"]) rescue nil
-        end
-      end
-      render_json({ success: true })
-    end
   end
 
   def scraps_payout_info
@@ -1050,10 +944,39 @@ class AdminController < ApplicationController
     return render_json({ error: "Invalid type" }, status: :bad_request) unless LoginAllowlistEntry::TYPES.include?(type)
 
     identifier = type == "email" ? raw.downcase : raw
-    entry = LoginAllowlistEntry.new(identifier: identifier, identifier_type: type, note: params[:note].to_s.strip.presence, added_by_user_id: current_user.id)
-    return render_json({ error: entry.errors.full_messages.join(", ") }, status: :unprocessable_entity) unless entry.save
+    note = params[:note].to_s.strip.presence
 
-    render_json({ id: entry.id, identifier: entry.identifier, identifier_type: entry.identifier_type, note: entry.note, created_at: entry.created_at }, status: :created)
+    # Build the set of (type, identifier) pairs to add. If this identifier belongs to
+    # a known user, pull their other identifier from the users table and add it too,
+    # so an email and Slack ID for the same person are always listed together.
+    pairs = [[type, identifier]]
+    conn = ActiveRecord::Base.connection
+    matched = if type == "email"
+      conn.select_one("SELECT email, slack_id FROM users WHERE LOWER(email) = #{conn.quote(identifier)} LIMIT 1")
+    else
+      conn.select_one("SELECT email, slack_id FROM users WHERE slack_id = #{conn.quote(identifier)} LIMIT 1")
+    end
+    if matched
+      pairs << ["email", matched["email"].to_s.downcase] if matched["email"].present?
+      pairs << ["slack_id", matched["slack_id"]] if matched["slack_id"].present?
+    end
+
+    created = pairs.uniq.filter_map do |t, id|
+      next if id.blank?
+      e = LoginAllowlistEntry.find_or_initialize_by(identifier_type: t, identifier: id)
+      next unless e.new_record?
+      e.assign_attributes(note: note, added_by_user_id: current_user.id)
+      e if e.save
+    end
+
+    if created.empty? && LoginAllowlistEntry.where(identifier_type: pairs.first[0], identifier: pairs.first[1]).none?
+      return render_json({ error: "Could not add entry" }, status: :unprocessable_entity)
+    end
+
+    render_json({
+      linked_user: matched.present?,
+      entries: created.map { |e| { id: e.id, identifier: e.identifier, identifier_type: e.identifier_type, note: e.note, created_at: e.created_at } }
+    }, status: :created)
   end
 
   def delete_login_allowlist
