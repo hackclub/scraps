@@ -16,6 +16,9 @@
 		'not-eligible': {
 			key: 'notEligible'
 		},
+		'not-allowed': {
+			key: 'notEligible'
+		},
 		'auth-failed': {
 			key: 'authFailed'
 		},

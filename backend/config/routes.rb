@@ -94,6 +94,11 @@ Rails.application.routes.draw do
     get    "unified-duplicates",              to: "admin#unified_duplicates"
     post   "recalculate-shop-pricing",        to: "admin#recalculate_shop_pricing"
 
+    # Login allowlist
+    get    "login-allowlist",                 to: "admin#login_allowlist"
+    post   "login-allowlist",                 to: "admin#add_login_allowlist"
+    delete "login-allowlist/:id",             to: "admin#delete_login_allowlist"
+
     # Users
     get    "users",                           to: "admin#users"
     get    "users/:id",                       to: "admin#show_user"

@@ -50,6 +50,10 @@ class AuthController < ApplicationController
       return redirect_to "#{frontend_url}/auth/error?reason=not-eligible", allow_other_host: true
     end
 
+    unless login_permitted?(identity)
+      return redirect_to "#{frontend_url}/auth/error?reason=not-allowed", allow_other_host: true
+    end
+
     begin
       user = create_or_update_user(identity, tokens)
     rescue => e
@@ -287,6 +291,20 @@ class AuthController < ApplicationController
       SQL
       User.find_by!(sub: identity["id"])
     end
+  end
+
+  # Login allowlist gate. Open while the table is empty; once entries exist, only
+  # listed emails / Slack IDs may log in. Existing admins/creators always pass so
+  # the list can't lock everyone out.
+  def login_permitted?(identity)
+    return true if LoginAllowlistEntry.permits?(
+      email: identity["primary_email"], slack_id: identity["slack_id"]
+    )
+
+    existing = ActiveRecord::Base.connection.select_value(
+      "SELECT role FROM users WHERE sub = #{ActiveRecord::Base.connection.quote(identity['id'])}"
+    )
+    %w[admin creator].include?(existing)
   end
 
   # The user's primary address from Hack Club Auth (identity["addresses"]), or {}.

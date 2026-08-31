@@ -48,7 +48,10 @@
 	<!-- Greeting -->
 	{#if user}
 		<h1 class="mb-2 text-4xl font-bold md:text-5xl">
-			{$t.dashboard.hello.replace('{name}', (user.username || 'friend').toLocaleLowerCase())}
+			{$t.dashboard.hello.replace(
+				'{name}',
+				(user.username || 'friend').trim().split(/\s+/)[0].toLocaleLowerCase()
+			)}
 		</h1>
 		<p class="mb-8 text-lg text-gray-600">{randomPhrase}</p>
 	{/if}

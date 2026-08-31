@@ -1,6 +1,6 @@
 class AdminController < ApplicationController
   before_action :authenticate_reviewer, only: %i[stats users show_user update_notes reviews show_review submit_review second_pass show_second_pass export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus second_pass_submit orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news scraps_payout_info trigger_payout reject_payout compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus second_pass_submit orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news scraps_payout_info trigger_payout reject_payout compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def stats
@@ -993,6 +993,36 @@ class AdminController < ApplicationController
 
   def sync_airtable
     AirtableSyncJob.perform_later
+    render_json({ success: true })
+  end
+
+  # --- Login allowlist ---
+
+  def login_allowlist
+    rows = LoginAllowlistEntry.order(created_at: :desc).map do |e|
+      { id: e.id, identifier: e.identifier, identifier_type: e.identifier_type, note: e.note, created_at: e.created_at }
+    end
+    render_json({ gating: LoginAllowlistEntry.gating?, entries: rows })
+  end
+
+  def add_login_allowlist
+    raw = params[:identifier].to_s.strip
+    return render_json({ error: "Identifier required" }, status: :bad_request) if raw.blank?
+
+    type = params[:identifier_type].to_s.presence || (raw.include?("@") ? "email" : "slack_id")
+    return render_json({ error: "Invalid type" }, status: :bad_request) unless LoginAllowlistEntry::TYPES.include?(type)
+
+    identifier = type == "email" ? raw.downcase : raw
+    entry = LoginAllowlistEntry.new(identifier: identifier, identifier_type: type, note: params[:note].to_s.strip.presence, added_by_user_id: current_user.id)
+    return render_json({ error: entry.errors.full_messages.join(", ") }, status: :unprocessable_entity) unless entry.save
+
+    render_json({ id: entry.id, identifier: entry.identifier, identifier_type: entry.identifier_type, note: entry.note, created_at: entry.created_at }, status: :created)
+  end
+
+  def delete_login_allowlist
+    entry = LoginAllowlistEntry.find_by(id: params[:id])
+    return render_json({ error: "Not found" }, status: :not_found) unless entry
+    entry.destroy
     render_json({ success: true })
   end
 

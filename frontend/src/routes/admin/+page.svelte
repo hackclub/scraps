@@ -771,6 +771,23 @@
 	<div class="mx-auto max-w-4xl px-6 pb-24 md:px-12">
 		<h2 class="mb-4 text-2xl font-bold">admin actions</h2>
 
+		<!-- Allowed to Log In -->
+		<a
+			href="/admin/allowlist"
+			class="mb-6 flex items-center justify-between rounded-2xl border-4 border-black p-6 transition-all hover:border-dashed"
+		>
+			<div>
+				<h3 class="flex items-center gap-2 text-lg font-bold">
+					<ShieldAlert size={20} />
+					allowed to log in
+				</h3>
+				<p class="text-sm text-gray-500">
+					restrict sign-in to specific emails / slack ids (leave empty to allow everyone)
+				</p>
+			</div>
+			<span class="text-xl font-bold">→</span>
+		</a>
+
 		<!-- Scraps Payout -->
 		<div class="mb-6 rounded-2xl border-4 border-black p-6">
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_30_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_31_030000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -90,6 +90,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_30_160000) do
     t.string "status"
     t.datetime "updated_at", null: false
     t.index ["creator_id"], name: "index_blazer_queries_on_creator_id"
+  end
+
+  create_table "login_allowlist_entries", force: :cascade do |t|
+    t.bigint "added_by_user_id"
+    t.datetime "created_at", null: false
+    t.text "identifier", null: false
+    t.text "identifier_type", null: false
+    t.text "note"
+    t.datetime "updated_at", null: false
+    t.index ["identifier_type", "identifier"], name: "idx_on_identifier_type_identifier_9d4040f940", unique: true
   end
 
   create_table "news", id: :serial, force: :cascade do |t|

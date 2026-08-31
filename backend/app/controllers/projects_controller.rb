@@ -1,6 +1,6 @@
 class ProjectsController < ApplicationController
   ALLOWED_IMAGE_DOMAIN = "cdn.hackclub.com"
-  ALLOWED_SLACK_ID = "U0A0T0DFVKR"
+  ALLOWED_SLACK_ID = "U0828FYS2UC"
 
   def explore
     page = [params[:page].to_i, 1].max
@@ -392,12 +392,12 @@ class ProjectsController < ApplicationController
 
     if ENV["SLACK_BOT_TOKEN"].present? && current_user.slack_id.present?
       SlackService.notify_project_submitted(
-        user_slack_id: current_user.slack_id,
-        project_name: updated["name"],
-        project_id: updated["id"].to_i,
-        frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" },
-        token: ENV["SLACK_BOT_TOKEN"]
-      )
+        token: ENV["SLACK_BOT_TOKEN"],
+        reviewer_channel_id: ENV["SLACK_REVIEWER_CHANNEL_ID"],
+        submitter_slack_id: current_user.slack_id,
+        project: updated,
+        frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" }
+      ) rescue nil
     end
 
     render_json(project_row_to_h(updated, strip_ids: true))

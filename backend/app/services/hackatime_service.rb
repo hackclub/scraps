@@ -1,6 +1,6 @@
 module HackatimeService
   HACKATIME_API = "https://hackatime.hackclub.com/api/admin/v1"
-  SCRAPS_START_DATE = "2026-02-03"
+  SCRAPS_START_DATE = "2026-08-01"
 
   # Thread-safe in-memory caches (reset per Sidekiq job run)
   @user_cache = {}
