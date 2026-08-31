@@ -131,7 +131,7 @@
 
 	onMount(async () => {
 		user = await getUser();
-		if (!user || (user.role !== 'creator')) {
+		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
 			goto('/dashboard');
 			return;
 		}
@@ -491,7 +491,9 @@
 				{/if}
 				{#if hackatimeUserId}
 					<a
-						href="https://joe.fraud.hackclub.com/profile/{hackatimeUserId}"
+						href="https://telescreen.hackclub.com/workbench/hackatime/overview?u={hackatimeUserId}&p={encodeURIComponent(
+						project.hackatimeProject ?? ''
+					)}"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"

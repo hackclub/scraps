@@ -149,6 +149,7 @@ Rails.application.routes.draw do
     # Projects (admin actions)
     post   "projects/:id/sync-hours",         to: "admin#sync_hours"
     post   "projects/:id/unship",             to: "admin#unship_project"
+    put    "projects/:id/notes",              to: "admin#update_project_notes"
 
     # Exports
     get    "export/review-csv",               to: "admin#export_review_csv"

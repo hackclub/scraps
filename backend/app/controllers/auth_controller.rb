@@ -199,9 +199,9 @@ class AuthController < ApplicationController
       cachet = fetch_cachet_profile(identity["slack_id"])
       if cachet
         username = cachet["displayName"].presence || cachet["realName"].presence
-        # Store the Cachet permalink (302s to the current image) rather than the
-        # slack-edge URL, so the avatar never goes stale.
-        avatar_url = "https://cachet.dunkirk.sh/users/#{identity['slack_id']}/r" if cachet["imageUrl"].present?
+        # Store the direct slack-edge URL (refreshed each login) rather than the
+        # Cachet permalink, so the avatar keeps working if Cachet is unreachable.
+        avatar_url = cachet["imageUrl"].presence
       end
     end
 

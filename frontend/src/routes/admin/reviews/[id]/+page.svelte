@@ -101,17 +101,19 @@
 	let hackatimeUserId = $state<number | null>(null);
 	let hackatimeSuspected = $state(false);
 	let hackatimeBanned = $state(false);
+	let hackatimeProjects = $state<{ name: string; hours: number; found: boolean }[]>([]);
 	let yswsDuplicates = $state<YswsDuplicate[]>([]);
 	let loading = $state(true);
 	let submitting = $state(false);
 	let savingNotes = $state(false);
-	let syncing = $state(false);
 	let error = $state<string | null>(null);
 	let _scraps = $derived(user?.scraps ?? 0);
 
 	let feedbackForAuthor = $state('');
 	let internalJustification = $state('');
 	let userInternalNotes = $state('');
+	let projectInternalNotes = $state('');
+	let savingProjectNotes = $state(false);
 	let hoursOverride = $state<number | undefined>(undefined);
 	let tierOverride = $state<number | undefined>(undefined);
 
@@ -172,6 +174,8 @@
 				hackatimeUserId = data.hackatimeUserId ?? null;
 				hackatimeSuspected = data.hackatimeSuspected || false;
 				hackatimeBanned = data.hackatimeBanned || false;
+				hackatimeProjects = data.hackatimeProjects ?? [];
+				projectInternalNotes = data.projectInternalNotes || '';
 				yswsDuplicates = data.yswsDuplicates || [];
 				userInternalNotes = data.user?.internalNotes || '';
 
@@ -204,31 +208,20 @@
 		}
 	}
 
-	async function syncHours() {
-		if (!project || syncing) return;
-		syncing = true;
+	async function saveProjectNotes() {
+		if (!project) return;
+		savingProjectNotes = true;
 		try {
-			const response = await fetch(`${API_URL}/admin/projects/${projectId}/sync-hours`, {
-				method: 'POST',
-				credentials: 'include'
+			await fetch(`${API_URL}/admin/projects/${project.id}/notes`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ internalNotes: projectInternalNotes })
 			});
-			const data = await response.json();
-			if (data.error) {
-				error = data.error;
-			} else if (data.updated && project) {
-				project = { ...project, hours: data.hours };
-			}
-			if (data.yswsDuplicates) {
-				yswsDuplicates = data.yswsDuplicates;
-			}
-			if (data.otherYswsDeduction > 0) {
-				error = `Note: ${data.otherYswsDeduction}h deducted from other YSWS programs. Effective hours: ${data.effectiveHours}h`;
-			}
 		} catch (e) {
-			console.error('Failed to sync hours:', e);
-			error = 'Failed to sync hours';
+			console.error('Failed to save project notes:', e);
 		} finally {
-			syncing = false;
+			savingProjectNotes = false;
 		}
 	}
 
@@ -288,6 +281,7 @@
 					hoursOverride: hoursOverride !== undefined ? hoursOverride : undefined,
 					tierOverride: tierOverride !== undefined ? tierOverride : undefined,
 					userInternalNotes: userInternalNotes || undefined,
+					projectInternalNotes: projectInternalNotes,
 					rejectionReason:
 						confirmAction === 'permanently_rejected' && rejectionReason.trim()
 							? rejectionReason.trim()
@@ -576,27 +570,38 @@
 			<div class="flex flex-wrap items-center gap-3 text-sm">
 				{#if deductedHours > 0}
 					<span
-						class="rounded-full border-2 border-black bg-gray-100 px-3 py-1 font-bold text-gray-400 line-through"
-						>{formatHours(project.hours)}h logged</span
-					>
-					<span
 						class="rounded-full border-2 border-yellow-500 bg-yellow-100 px-3 py-1 font-bold text-yellow-800"
 						>{formatHours(effectiveHours)}h effective</span
-					>
-				{:else}
-					<span class="rounded-full border-2 border-black bg-gray-100 px-3 py-1 font-bold"
-						>{formatHours(project.hours)}h logged</span
-					>
-				{/if}
-				{#if project.hackatimeProject}
-					<span class="rounded-full border-2 border-black bg-gray-100 px-3 py-1 font-bold"
-						>hackatime: {project.hackatimeProject}</span
 					>
 				{/if}
 				<span class="rounded-full border-2 border-black bg-gray-100 px-3 py-1 font-bold"
 					>tier {project.tier}</span
 				>
 			</div>
+
+			{#if hackatimeProjects.length > 0}
+				<div class="mt-4 rounded-lg border-2 border-black bg-gray-50 p-4">
+					<p class="mb-2 text-sm font-bold">hackatime projects attached</p>
+					<ul class="space-y-1 text-sm">
+						{#each hackatimeProjects as hp}
+							<li class="flex items-center justify-between gap-2">
+								<span class="font-mono">{hp.name}</span>
+								{#if hp.found}
+									<span class="font-bold">{formatHours(hp.hours)}h</span>
+								{:else}
+									<span class="text-red-600">not found on hackatime</span>
+								{/if}
+							</li>
+						{/each}
+						<li
+							class="mt-1 flex items-center justify-between gap-2 border-t-2 border-black pt-1 font-bold"
+						>
+							<span>total</span>
+							<span>{formatHours(hackatimeProjects.reduce((s, h) => s + h.hours, 0))}h</span>
+						</li>
+					</ul>
+				</div>
+			{/if}
 
 			{#if overlappingProjects.length > 0}
 				<div class="mt-4 rounded-lg border-2 border-dashed border-yellow-500 bg-yellow-50 p-4">
@@ -668,14 +673,14 @@
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
 					>
 						<Github size={18} />
-						<span>{$t.project.viewOnGithub}</span>
+						<span>repo</span>
 					</a>
 				{:else}
 					<span
 						class="inline-flex cursor-not-allowed items-center gap-2 rounded-full border-4 border-dashed border-gray-300 px-4 py-2 font-bold text-gray-400"
 					>
 						<Github size={18} />
-						<span>{$t.project.viewOnGithub}</span>
+						<span>repo</span>
 					</span>
 				{/if}
 				{#if project.playableUrl}
@@ -686,29 +691,21 @@
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-solid border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
 					>
 						<Globe size={18} />
-						<span>{$t.project.tryItOut}</span>
+						<span>demo link</span>
 					</a>
 				{:else}
 					<span
 						class="inline-flex cursor-not-allowed items-center gap-2 rounded-full border-4 border-dashed border-gray-300 px-4 py-2 font-bold text-gray-400"
 					>
 						<Globe size={18} />
-						<span>{$t.project.tryItOut}</span>
+						<span>demo link</span>
 					</span>
-				{/if}
-				{#if (user?.role === 'admin' || user?.role === 'creator') && project.status !== 'shipped'}
-					<button
-						onclick={syncHours}
-						disabled={syncing}
-						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-					>
-						<RefreshCw size={18} class={syncing ? 'animate-spin' : ''} />
-						<span>{syncing ? 'syncing...' : 'sync hours'}</span>
-					</button>
 				{/if}
 				{#if hackatimeUserId}
 					<a
-						href="https://joe.fraud.hackclub.com/profile/{hackatimeUserId}"
+						href="https://telescreen.hackclub.com/workbench/hackatime/overview?u={hackatimeUserId}&p={encodeURIComponent(
+							hackatimeProjects.map((h) => h.name).join(',')
+						)}"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
@@ -853,6 +850,27 @@
 				{error}
 			</div>
 		{/if}
+
+		<!-- Project Internal Notes Section (always interactive) -->
+		<div class="mb-6 rounded-2xl border-4 border-black bg-white p-6">
+			<h2 class="mb-4 text-xl font-bold">project internal notes</h2>
+			<textarea
+				bind:value={projectInternalNotes}
+				rows="3"
+				placeholder="Notes about this project (visible to reviewers only)"
+				class="w-full resize-none rounded-lg border-2 border-black bg-white px-4 py-2 focus:border-dashed focus:outline-none"
+			></textarea>
+			<div class="mt-3 flex items-center justify-between">
+				<p class="text-xs text-gray-500">attached to this project only</p>
+				<button
+					onclick={saveProjectNotes}
+					disabled={savingProjectNotes}
+					class="cursor-pointer rounded-full bg-black px-4 py-2 text-sm font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
+				>
+					{savingProjectNotes ? $t.common.saving : 'save notes'}
+				</button>
+			</div>
+		</div>
 
 		<!-- User Internal Notes Section (always interactive) -->
 		{#if projectUser}

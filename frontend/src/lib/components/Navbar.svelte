@@ -304,7 +304,7 @@
 				</a>
 
 				{#if isAdminOnly}
-					{#if user?.role === 'creator'}
+					{#if isAdminOnly}
 						<!-- Visible on xl+ only -->
 						<a
 							href="/admin/second-pass"
@@ -371,7 +371,7 @@
 							<div
 								class="absolute top-full left-0 z-50 mt-2 min-w-48 overflow-hidden rounded-2xl border-4 border-black bg-white"
 							>
-								{#if user?.role === 'creator'}
+								{#if isAdminOnly}
 									<a
 										href="/admin/second-pass"
 										onclick={closeMoreMenu}
@@ -758,7 +758,7 @@
 						<span class="text-lg font-bold">{$t.nav.reviews}</span>
 					</a>
 
-					{#if user?.role === 'creator'}
+					{#if isAdminOnly}
 						<a
 							href="/admin/second-pass"
 							onclick={handleMobileNavClick}

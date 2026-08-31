@@ -1,5 +1,5 @@
 class AdminController < ApplicationController
-  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes reviews show_review submit_review second_pass show_second_pass export_review_csv export_review_json sync_hours]
+  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review second_pass show_second_pass export_review_csv export_review_json sync_hours]
   before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus second_pass_submit orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news scraps_payout_info trigger_payout reject_payout compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
@@ -172,6 +172,16 @@ class AdminController < ApplicationController
     render_json({ success: true })
   end
 
+  def update_project_notes
+    notes = params[:internalNotes].to_s
+    return render_json({ error: "Note is too long or it's malformed!" }, status: :bad_request) if notes.length > 2500
+
+    conn = ActiveRecord::Base.connection
+    updated = conn.select_one("UPDATE projects SET internal_notes = #{conn.quote(notes)}, updated_at = NOW() WHERE id = #{params[:id].to_i} RETURNING id")
+    return render_json({ error: "Not Found" }, status: :not_found) unless updated
+    render_json({ success: true })
+  end
+
   def create_bonus
     amount = params[:amount].to_i
     reason = params[:reason].to_s.strip
@@ -259,15 +269,36 @@ class AdminController < ApplicationController
 
     is_admin_user = %w[admin creator].include?(current_user.role)
     masked_project = (!is_admin_user && project["status"] == "pending_admin_approval") ? project.merge("status" => "waiting_for_review") : project
+    # Show the bare Hackatime project name(s) in the review UI, not the stored "<id>:name" form.
+    masked_project = masked_project.merge("hackatime_project" => HackatimeService.strip_hackatime_ids(masked_project["hackatime_project"]))
     visible_reviews = (!is_admin_user && project["status"] == "pending_admin_approval") ? reviews_rows.reject { |r| r["action"] == "approved" } : reviews_rows
 
     eff = EffectiveHoursService.compute_for_project(project)
+
+    # Per-Hackatime-project hour breakdown for the project(s) attached to this submission.
+    ht_breakdown = []
+    if ht_user_id && project["hackatime_project"].present?
+      begin
+        target_names = HackatimeService.strip_hackatime_ids(project["hackatime_project"])
+          .to_s.split(",").map(&:strip).reject(&:empty?)
+        by_name = (HackatimeService.fetch_user_projects(ht_user_id) || [])
+          .group_by { |p| HackatimeService.strip_hackatime_ids(p["name"]) }
+        ht_breakdown = target_names.map do |name|
+          secs = (by_name[name] || []).sum { |p| p["total_duration"].to_f }
+          { name: name, hours: (secs / 3600.0 * 100).round / 100.0, found: by_name.key?(name) }
+        end
+      rescue StandardError
+        ht_breakdown = []
+      end
+    end
 
     render_json({
       project: masked_project,
       hackatime_user_id: ht_user_id,
       hackatime_suspected: ht_suspected,
       hackatime_banned: ht_banned,
+      hackatime_projects: ht_breakdown,
+      project_internal_notes: project["internal_notes"],
       ysws_duplicates: ysws_dupes,
       user: project_user ? { id: project_user["id"].to_i, username: project_user["username"], email: is_admin_user ? project_user["email"] : nil, avatar: project_user["avatar"], internal_notes: project_user["internal_notes"] } : nil,
       reviews: visible_reviews.map { |r| r.merge("reviewer_name" => reviewers[r["reviewer_id"].to_i]&.dig("username"), "reviewer_avatar" => reviewers[r["reviewer_id"].to_i]&.dig("avatar")) },
@@ -283,6 +314,7 @@ class AdminController < ApplicationController
     hours_override = params[:hoursOverride]&.to_f
     tier_override = params[:tierOverride]&.to_i
     user_notes = params[:userInternalNotes]
+    project_notes = params[:projectInternalNotes]
 
     return render_json({ error: "Invalid action" }) unless %w[approved denied permanently_rejected].include?(action)
     return render_json({ error: "Feedback for author is required" }) if feedback.blank?
@@ -342,6 +374,11 @@ class AdminController < ApplicationController
 
     if user_notes.present? && user_notes.length <= 2500
       conn.execute("UPDATE users SET internal_notes = #{conn.quote(user_notes)}, updated_at = NOW() WHERE id = #{project['user_id'].to_i}")
+    end
+
+    unless project_notes.nil?
+      pn = project_notes.to_s
+      conn.execute("UPDATE projects SET internal_notes = #{conn.quote(pn)}, updated_at = NOW() WHERE id = #{project_id}") if pn.length <= 2500
     end
 
     should_notify = can_ship || action != "approved"
@@ -413,7 +450,7 @@ class AdminController < ApplicationController
 
     eff = EffectiveHoursService.compute_for_project(project)
     render_json({
-      project: project,
+      project: project.merge("hackatime_project" => HackatimeService.strip_hackatime_ids(project["hackatime_project"])),
       hackatime_user_id: ht_user_id,
       hackatime_suspected: ht_suspected,
       hackatime_banned: ht_banned,
