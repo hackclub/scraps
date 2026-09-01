@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { newsStore, newsLoading, fetchNews } from '$lib/stores';
-	import { t, locale } from '$lib/i18n';
+	import { t } from '$lib/i18n';
 
 	let currentIndex = $state(0);
 	let isPaused = $state(false);
@@ -34,7 +34,7 @@
 	}
 
 	function formatDate(dateString: string) {
-		return new Date(dateString).toLocaleDateString($locale === 'es' ? 'es-ES' : 'en-US', {
+		return new Date(dateString).toLocaleDateString('en-US', {
 			month: 'short',
 			day: 'numeric',
 			year: 'numeric'

@@ -5,6 +5,7 @@ export default {
 		about: 'about',
 		dashboard: 'dashboard',
 		leaderboard: 'leaderboard',
+		referrals: 'invite',
 		shop: 'shop',
 		refinery: 'refinery',
 		explore: 'explore',

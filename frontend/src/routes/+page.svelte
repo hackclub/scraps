@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Origami } from '@lucide/svelte';
 	import Superscript from '$lib/components/Superscript.svelte';
-	import { login, getUser } from '$lib/auth-client';
+	import { login, getUser, captureReferralCode } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { t } from '$lib/i18n';
 
@@ -100,6 +100,7 @@
 	let totalSetWidth = $derived(scrapItems.length * (ITEM_WIDTH + GAP));
 
 	onMount(() => {
+		captureReferralCode();
 		(async () => {
 			const user = await getUser();
 			isLoggedIn = !!user;

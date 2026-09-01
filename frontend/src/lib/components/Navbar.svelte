@@ -21,12 +21,10 @@
 		BarChart3,
 		Menu,
 		X,
-		Globe,
-		Languages,
 		ChevronDown
 	} from '@lucide/svelte';
 	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
-	import { t, locale, setLocale, type Locale } from '$lib/i18n';
+	import { t } from '$lib/i18n';
 
 	interface User {
 		id: number;
@@ -145,10 +143,6 @@
 		showMobileMenu = false;
 	}
 
-	function toggleLanguage() {
-		const newLocale: Locale = $locale === 'en' ? 'es' : 'en';
-		setLocale(newLocale);
-	}
 </script>
 
 <svelte:window
@@ -203,14 +197,6 @@
 			>
 				<Info size={18} />
 				<span class="text-lg font-bold">{$t.nav.about}</span>
-			</button>
-			<button
-				onclick={toggleLanguage}
-				class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-6 py-2 transition-all duration-300 hover:border-dashed"
-				title={$locale === 'en' ? 'Cambiar a Español' : 'Switch to English'}
-			>
-				<Languages size={18} />
-				<span class="text-lg font-bold">{$locale === 'en' ? 'ES' : 'EN'}</span>
 			</button>
 		</div>
 	{:else if isInAdminSection}
@@ -393,6 +379,17 @@
 			</a>
 
 			<a
+				href="/referrals"
+				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
+				'/referrals'
+					? 'border-black bg-black text-white'
+					: 'border-black hover:border-dashed'}"
+			>
+				<Users size={18} />
+				<span class="text-lg font-bold">{$t.nav.referrals}</span>
+			</a>
+
+			<a
 				href="/shop"
 				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
 				'/shop'
@@ -519,13 +516,6 @@
 								<p class="truncate text-sm text-gray-500">{user.email}</p>
 							</div>
 							<button
-								onclick={toggleLanguage}
-								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100"
-							>
-								<Globe size={18} />
-								<span class="font-bold">{$locale === 'en' ? 'Español' : 'English'}</span>
-							</button>
-							<button
 								onclick={handleLogout}
 								class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-gray-100"
 							>
@@ -627,13 +617,6 @@
 				>
 					<Info size={20} />
 					<span class="text-lg font-bold">{$t.nav.about}</span>
-				</button>
-				<button
-					onclick={toggleLanguage}
-					class="flex cursor-pointer items-center gap-3 rounded-full border-4 border-black px-4 py-3 transition-all duration-300 hover:border-dashed"
-				>
-					<Languages size={20} />
-					<span class="text-lg font-bold">{$locale === 'en' ? 'Español' : 'English'}</span>
 				</button>
 			</div>
 		{:else if isInAdminSection}
@@ -762,6 +745,18 @@
 				</a>
 
 				<a
+					href="/referrals"
+					onclick={handleMobileNavClick}
+					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
+					'/referrals'
+						? 'border-black bg-black text-white'
+						: 'border-black hover:border-dashed'}"
+				>
+					<Users size={20} />
+					<span class="text-lg font-bold">{$t.nav.referrals}</span>
+				</a>
+
+				<a
 					href="/shop"
 					onclick={handleMobileNavClick}
 					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
@@ -834,13 +829,6 @@
 							<span class="font-bold">{$userScrapsStore}</span>
 						</div>
 					</div>
-					<button
-						onclick={toggleLanguage}
-						class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 transition-all duration-200 hover:border-dashed"
-					>
-						<Globe size={18} />
-						<span class="font-bold">{$locale === 'en' ? 'ES' : 'EN'}</span>
-					</button>
 					<button
 						onclick={handleLogout}
 						class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 transition-all duration-200 hover:border-dashed"

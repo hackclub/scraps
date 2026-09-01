@@ -47,6 +47,12 @@ Rails.application.routes.draw do
     get    "addresses",                    to: "shop#addresses"
   end
 
+  # Referrals
+  scope :referrals do
+    get "me",          to: "referrals#me"
+    get "leaderboard", to: "referrals#leaderboard"
+  end
+
   # Leaderboard
   scope :leaderboard do
     get "/",                  to: "leaderboard#index"
@@ -93,6 +99,9 @@ Rails.application.routes.draw do
     post   "fix-negative-balances",           to: "admin#fix_negative_balances"
     get    "unified-duplicates",              to: "admin#unified_duplicates"
     post   "recalculate-shop-pricing",        to: "admin#recalculate_shop_pricing"
+
+    # Referrals
+    get    "referrals",                       to: "referrals#admin_list"
 
     # Login allowlist
     get    "login-allowlist",                 to: "admin#login_allowlist"

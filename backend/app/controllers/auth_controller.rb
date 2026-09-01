@@ -1,13 +1,11 @@
 class AuthController < ApplicationController
   HACKCLUB_AUTH_URL = "https://auth.hackclub.com"
 
-  # Community-tier scopes. Once Hack Club HQ grants this OAuth app the elevated
-  # scopes, append them here (or set HCAUTH_SCOPE in the env, no deploy needed):
-  #   basic_info  -> legal_first_name, legal_last_name, birthday
-  #   addresses   -> addresses[] (line_1/2, city, state, postal_code, country)
-  #   phone       -> phone_number
-  # e.g. "openid email name profile verification_status slack_id basic_info addresses phone"
-  OAUTH_SCOPE = ENV.fetch("HCAUTH_SCOPE", "openid email name profile verification_status slack_id")
+  # Scopes granted to this client by HQ (confirmed 2026-09-01). Override via HCAUTH_SCOPE.
+  #   phone     -> phone_number
+  #   birthdate -> birthdate
+  #   address   -> address (OIDC address claim object)
+  OAUTH_SCOPE = ENV.fetch("HCAUTH_SCOPE", "openid email name profile verification_status slack_id phone birthdate address")
 
   def collect_email
     email = params[:email].to_s.strip
@@ -19,7 +17,7 @@ class AuthController < ApplicationController
   end
 
   def login
-    redirect_to authorization_url, allow_other_host: true
+    redirect_to authorization_url(params[:r]), allow_other_host: true
   end
 
   def callback
@@ -42,12 +40,11 @@ class AuthController < ApplicationController
 
     identity = me_response["identity"]
 
-    if identity["verification_status"] == "needs_submission"
-      return redirect_to "#{frontend_url}/auth/error?reason=needs-verification", allow_other_host: true
-    end
-
-    if identity["verification_status"] == "ineligible"
-      return redirect_to "#{frontend_url}/auth/error?reason=not-eligible", allow_other_host: true
+    # Only "verified" and "pending" get in. Everything else (needs_submission,
+    # ineligible, unverified, null, or any future value) is turned away.
+    unless %w[verified pending].include?(identity["verification_status"])
+      reason = identity["verification_status"] == "needs_submission" ? "needs-verification" : "not-eligible"
+      return redirect_to "#{frontend_url}/auth/error?reason=#{reason}", allow_other_host: true
     end
 
     unless login_permitted?(identity)
@@ -65,6 +62,13 @@ class AuthController < ApplicationController
     end
 
     UserActivity.create!(user_id: user.id, email: identity["primary_email"], action: "auth_completed")
+
+    begin
+      ReferralService.attach(user, params[:state]) if @new_user && params[:state].present?
+      ReferralService.sync_reward(user)
+    rescue StandardError => e
+      Rails.logger.error("[AUTH] referral sync failed: #{e.message}")
+    end
 
     AirtableUserSyncJob.perform_later(user.id, first_name: @airtable_first_name, last_name: @airtable_last_name)
 
@@ -146,14 +150,17 @@ class AuthController < ApplicationController
 
   private
 
-  def authorization_url
-    params = URI.encode_www_form(
+  def authorization_url(referral_code = nil)
+    query = {
       client_id: ENV["HCAUTH_CLIENT_ID"],
       redirect_uri: ENV.fetch("HCAUTH_REDIRECT_URI") { "http://localhost:3000/api/auth/callback/hackclub" },
       response_type: "code",
       scope: OAUTH_SCOPE
-    )
-    "#{HACKCLUB_AUTH_URL}/oauth/authorize?#{params}"
+    }
+    # HC Auth echoes `state` back to the callback unchanged — we use it to carry
+    # the referral code through the redirect (the SPA has no server session).
+    query[:state] = referral_code.to_s.strip if referral_code.present?
+    "#{HACKCLUB_AUTH_URL}/oauth/authorize?#{URI.encode_www_form(query)}"
   end
 
   def exchange_code_for_tokens(code)
@@ -222,12 +229,16 @@ class AuthController < ApplicationController
     @airtable_last_name ||= identity["last_name"]
 
     conn = ActiveRecord::Base.connection
-    # Only present once HQ grants `basic_info` / `addresses` / `phone` scopes; nil otherwise.
+    # Present once the `address` / `birthdate` / `phone` scopes are granted; {} / nil otherwise.
     addr = primary_address(identity)
+    # HC Auth has no top-level legal name; the primary address carries the legal name.
+    legal_first = identity["legal_first_name"].presence || addr["first_name"].presence
+    legal_last  = identity["legal_last_name"].presence || addr["last_name"].presence
 
     existing = conn.select_one(
       "SELECT id FROM users WHERE sub = #{conn.quote(identity['id'])}"
     )
+    @new_user = existing.nil?
 
     if existing
       conn.execute(<<~SQL)
@@ -243,8 +254,8 @@ class AuthController < ApplicationController
           ysws_eligible = #{conn.quote(identity['ysws_eligible'])},
           phone = COALESCE(#{conn.quote(identity['phone_number'])}, phone),
           birthday = COALESCE(#{conn.quote(identity['birthday'])}, birthday),
-          legal_first_name = COALESCE(#{conn.quote(identity['legal_first_name'])}, legal_first_name),
-          legal_last_name = COALESCE(#{conn.quote(identity['legal_last_name'])}, legal_last_name),
+          legal_first_name = COALESCE(#{conn.quote(legal_first)}, legal_first_name),
+          legal_last_name = COALESCE(#{conn.quote(legal_last)}, legal_last_name),
           address_line1 = COALESCE(#{conn.quote(addr['line_1'])}, address_line1),
           address_line2 = COALESCE(#{conn.quote(addr['line_2'])}, address_line2),
           address_city = COALESCE(#{conn.quote(addr['city'])}, address_city),
@@ -276,8 +287,8 @@ class AuthController < ApplicationController
           #{conn.quote(identity['ysws_eligible'])},
           #{conn.quote(identity['phone_number'])},
           #{conn.quote(identity['birthday'])},
-          #{conn.quote(identity['legal_first_name'])},
-          #{conn.quote(identity['legal_last_name'])},
+          #{conn.quote(legal_first)},
+          #{conn.quote(legal_last)},
           #{conn.quote(addr['line_1'])},
           #{conn.quote(addr['line_2'])},
           #{conn.quote(addr['city'])},

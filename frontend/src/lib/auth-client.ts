@@ -18,7 +18,25 @@ let cachedUser: User | null | undefined = undefined;
 let fetchPromise: Promise<User | null> | null = null;
 
 export function login() {
-	window.location.href = `${API_URL}/auth/login`;
+	let ref: string | null = null;
+	try {
+		ref =
+			new URLSearchParams(window.location.search).get('r') || localStorage.getItem('referralCode');
+	} catch {
+		ref = null;
+	}
+	const qs = ref ? `?r=${encodeURIComponent(ref)}` : '';
+	window.location.href = `${API_URL}/auth/login${qs}`;
+}
+
+// Call on any public page load so a ?r= code survives until the user logs in.
+export function captureReferralCode() {
+	try {
+		const code = new URLSearchParams(window.location.search).get('r');
+		if (code) localStorage.setItem('referralCode', code);
+	} catch {
+		/* ignore */
+	}
 }
 
 export async function logout() {

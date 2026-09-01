@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_31_050000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_01_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -152,6 +152,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_050000) do
     t.index ["views"], name: "index_projects_on_views"
   end
 
+  create_table "referrals", force: :cascade do |t|
+    t.text "code", null: false
+    t.datetime "created_at", null: false
+    t.bigint "referred_user_id", null: false
+    t.bigint "referrer_id", null: false
+    t.integer "reward_amount", default: 0, null: false
+    t.boolean "rewarded", default: false, null: false
+    t.datetime "updated_at", null: false
+    t.index ["referred_user_id"], name: "index_referrals_on_referred_user_id", unique: true
+    t.index ["referrer_id"], name: "index_referrals_on_referrer_id"
+  end
+
   create_table "refinery_orders", id: :serial, force: :cascade do |t|
     t.float "boost_amount", null: false
     t.integer "cost", null: false
@@ -280,6 +292,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_050000) do
     t.text "legal_first_name"
     t.text "legal_last_name"
     t.text "phone"
+    t.text "referral_code"
     t.text "refresh_token"
     t.text "role", default: "member", null: false
     t.text "slack_id"
@@ -289,7 +302,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_31_050000) do
     t.text "username"
     t.text "verification_status"
     t.boolean "ysws_eligible"
-
+    t.index ["referral_code"], name: "index_users_on_referral_code", unique: true
     t.unique_constraint ["sub"], name: "users_sub_key"
   end
 

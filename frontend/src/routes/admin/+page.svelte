@@ -481,6 +481,21 @@
 			<span class="text-xl font-bold">→</span>
 		</a>
 
+		<!-- Referrals -->
+		<a
+			href="/admin/referrals"
+			class="mb-6 flex items-center justify-between rounded-2xl border-4 border-black p-6 transition-all hover:border-dashed"
+		>
+			<div>
+				<h3 class="flex items-center gap-2 text-lg font-bold">
+					<Users size={20} />
+					referrals
+				</h3>
+				<p class="text-sm text-gray-500">who invited whom, and whether the invitee verified</p>
+			</div>
+			<span class="text-xl font-bold">→</span>
+		</a>
+
 		<!-- Sync to YSWS -->
 		<div class="mb-6 rounded-2xl border-4 border-black p-6">
 			<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
