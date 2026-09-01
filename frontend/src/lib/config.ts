@@ -9,7 +9,6 @@ export const API_URL =
 
 export interface ServerConfig {
 	scrapsPerDollar: number;
-	dollarsPerHour: number;
 	tierMultipliers: Record<number, number>;
 }
 

@@ -54,7 +54,6 @@
 		avatar: string | null;
 		role: 'admin' | 'reviewer' | 'creator' | 'member' | 'banned';
 		scraps: number;
-		scrapsPending?: number;
 		createdAt: string;
 	}
 
@@ -230,9 +229,6 @@
 						<Spool size={28} />
 						<p class="text-3xl font-bold sm:text-4xl">{profileUser.scraps}</p>
 					</div>
-					{#if profileUser.scrapsPending && profileUser.scrapsPending > 0}
-						<p class="text-sm text-gray-400">+{profileUser.scrapsPending} pending</p>
-					{/if}
 					<p class="text-sm text-gray-500">{$t.profile.scraps}</p>
 				</div>
 			</div>

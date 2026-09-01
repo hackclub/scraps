@@ -258,7 +258,16 @@ class ShopController < ApplicationController
       end
 
       if roll_result[:won]
-        SlackService.notify_shop_win(current_user.id, item["name"], item["image"].to_s) rescue nil
+        if ENV["SLACK_BOT_TOKEN"].present?
+          SlackService.notify_shop_win(
+            token: ENV["SLACK_BOT_TOKEN"],
+            user_slack_id: current_user.slack_id,
+            item_name: item["name"],
+            item_image: item["image"].to_s.presence,
+            frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" },
+            activity_channel_id: ENV["SLACK_ACTIVITY_CHANNEL_ID"]
+          ) rescue nil
+        end
         render_json({ success: true, won: true, order_id: roll_result[:order_id], effective_probability: roll_result[:effective_probability], rolled: roll_result[:rolled], roll_cost: roll_result[:roll_cost], refinery_reset: true, probability_halved: true })
       else
         render_json({ success: true, won: false, consolation_order_id: roll_result[:consolation_order_id], effective_probability: roll_result[:effective_probability], rolled: roll_result[:rolled], roll_cost: roll_result[:roll_cost] })

@@ -1,6 +1,6 @@
 class AdminController < ApplicationController
   before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news scraps_payout_info trigger_payout reject_payout compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def stats
@@ -31,11 +31,8 @@ class AdminController < ApplicationController
 
     tier_cost_breakdown = tier_breakdown.map do |tier, data|
       mult = ScrapsService::TIER_MULTIPLIERS[tier] || 1.0
-      dph = ScrapsService::DOLLARS_PER_HOUR * mult
-      { tier: tier, multiplier: mult, dollars_per_hour: (dph * 100).round / 100.0, hours: (data[:hours] * 10).round / 10.0, projects: data[:projects], total_cost: (data[:hours] * dph * 100).round / 100.0 }
+      { tier: tier, multiplier: mult, hours: (data[:hours] * 10).round / 10.0, projects: data[:projects] }
     end.sort_by { |t| t[:tier] }
-
-    total_tier_cost = tier_cost_breakdown.sum { |t| t[:total_cost] }
 
     shop_row = conn.select_one(<<~SQL)
       SELECT
@@ -50,14 +47,6 @@ class AdminController < ApplicationController
     shop_total = shop_row["total_spent"].to_f
     refinery_total = refinery_row["total"].to_f
     total_scraps_spent = shop_total + refinery_total
-
-    hcb_balance_cents = 0
-    if ENV["HCB_ORG_SLUG"].present?
-      begin
-        resp = HTTParty.get("https://hcb.hackclub.com/api/v3/organizations/#{ENV['HCB_ORG_SLUG']}", headers: { "Accept" => "application/json" })
-        hcb_balance_cents = resp.parsed_response.dig("balances", "balance_cents").to_i if resp.success?
-      rescue StandardError; end
-    end
 
     render_json({
       total_users: users_count,
@@ -75,9 +64,7 @@ class AdminController < ApplicationController
         shop_luck_wins: shop_row["luck_win_spent"].to_f,
         refinery_upgrades: refinery_total
       },
-      tier_cost_breakdown: tier_cost_breakdown,
-      total_tier_cost: (total_tier_cost * 100).round / 100.0,
-      hcb_balance_cents: hcb_balance_cents
+      tier_cost_breakdown: tier_cost_breakdown
     })
   end
 
@@ -360,7 +347,9 @@ class AdminController < ApplicationController
       previously_shipped = conn.select_one("SELECT 1 FROM project_activity WHERE project_id = #{project_id} AND action = 'project_shipped' LIMIT 1")
       scraps_awarded = (previously_shipped && project["scraps_awarded"].to_i > 0) ? [0, new_scraps - project["scraps_awarded"].to_i].max : new_scraps
       set_parts << "scraps_awarded = #{new_scraps}"
-      set_parts << "scraps_paid_at = NULL" if previously_shipped
+      # No payout step — scraps are earned/spendable the moment a project ships.
+      set_parts << "scraps_paid_at = NOW()"
+      set_parts << "scraps_paid_amount = #{new_scraps}"
     end
 
     conn.execute("UPDATE projects SET #{set_parts.join(', ')} WHERE id = #{project_id}")
@@ -408,49 +397,6 @@ class AdminController < ApplicationController
     end
 
     render_json({ success: true })
-  end
-
-  def scraps_payout_info
-    conn = ActiveRecord::Base.connection
-    pending = conn.select_all("SELECT p.id, p.name, p.image, p.scraps_awarded, p.hours, p.hours_override, p.user_id, p.status, p.created_at FROM projects p WHERE p.status = 'shipped' AND p.scraps_paid_at IS NULL AND p.scraps_awarded > 0 AND (p.deleted = 0 OR p.deleted IS NULL)").to_a
-    user_ids = pending.map { |p| p["user_id"].to_i }.uniq
-    users = {}
-    conn.select_all("SELECT id, username, avatar FROM users WHERE id IN (#{user_ids.join(',')})").each { |u| users[u["id"].to_i] = u } if user_ids.any?
-
-    render_json({
-      pending_projects: pending.length,
-      pending_scraps: pending.sum { |p| p["scraps_awarded"].to_i },
-      projects: pending.map { |p| p.merge("owner" => users[p["user_id"].to_i]) },
-      next_payout_date: ScrapsService.next_payout_date.iso8601
-    })
-  end
-
-  def trigger_payout
-    result = ScrapPayoutJob.perform_now_sync
-    render_json({ success: true, paid_count: result[:paid_count], total_scraps: result[:total_scraps] })
-  rescue StandardError => e
-    render_json({ error: "Failed to trigger payout: #{e.message}" }, status: :internal_server_error)
-  end
-
-  def reject_payout
-    project_id = params[:projectId].to_i
-    reason = params[:reason].to_s.strip
-    return render_json({ error: "Project ID is required" }, status: :bad_request) unless project_id > 0
-    return render_json({ error: "A reason is required" }, status: :bad_request) if reason.blank?
-
-    conn = ActiveRecord::Base.connection
-    project = conn.select_one("SELECT id, user_id, scraps_awarded, scraps_paid_at, status, name FROM projects WHERE id = #{project_id}")
-    return render_json({ error: "Project not found" }, status: :not_found) unless project
-    return render_json({ error: "Scraps have already been paid out" }, status: :bad_request) if project["scraps_paid_at"]
-    return render_json({ error: "No scraps to reject" }, status: :bad_request) if project["scraps_awarded"].to_i <= 0
-
-    previous = project["scraps_awarded"].to_i
-    conn.execute("UPDATE projects SET scraps_awarded = 0, status = 'in_progress', updated_at = NOW() WHERE id = #{project_id}")
-    conn.execute(<<~SQL)
-      INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, created_at)
-      VALUES (#{project_id}, #{current_user.id}, 'scraps_unawarded', #{conn.quote("Payout rejected (#{previous} scraps): #{reason}")}, NOW())
-    SQL
-    render_json({ success: true, previous_scraps: previous })
   end
 
   def orders
@@ -936,6 +882,27 @@ class AdminController < ApplicationController
     render_json({ gating: LoginAllowlistEntry.gating?, entries: rows })
   end
 
+  # Signed-up users, for the "pick a user" flow in the allowlist UI.
+  def login_allowlist_users
+    conn = ActiveRecord::Base.connection
+    q = params[:q].to_s.strip
+    where = "1=1"
+    if q.present?
+      like = conn.quote("%#{q}%")
+      where = "(username ILIKE #{like} OR email ILIKE #{like} OR slack_id ILIKE #{like})"
+    end
+    rows = conn.select_all("SELECT id, username, avatar, slack_id, email FROM users WHERE #{where} ORDER BY created_at DESC LIMIT 20").to_a
+
+    listed = LoginAllowlistEntry.pluck(:identifier_type, :identifier)
+    emails = listed.select { |t, _| t == "email" }.map { |_, i| i.downcase }.to_set
+    slacks = listed.select { |t, _| t == "slack_id" }.map { |_, i| i }.to_set
+
+    render_json(rows.map { |u|
+      on_list = emails.include?(u["email"].to_s.downcase) || slacks.include?(u["slack_id"])
+      { id: u["id"].to_i, username: u["username"], avatar: u["avatar"], slack_id: u["slack_id"], email: u["email"], on_list: on_list }
+    })
+  end
+
   def add_login_allowlist
     raw = params[:identifier].to_s.strip
     return render_json({ error: "Identifier required" }, status: :bad_request) if raw.blank?
@@ -1038,7 +1005,6 @@ class AdminController < ApplicationController
   def pricing_config
     render_json({
       scraps_per_dollar: ScrapsService::SCRAPS_PER_DOLLAR,
-      dollars_per_hour: ScrapsService::DOLLARS_PER_HOUR,
       tier_multipliers: ScrapsService::TIER_MULTIPLIERS
     })
   end

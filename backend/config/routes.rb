@@ -96,6 +96,7 @@ Rails.application.routes.draw do
 
     # Login allowlist
     get    "login-allowlist",                 to: "admin#login_allowlist"
+    get    "login-allowlist/users",           to: "admin#login_allowlist_users"
     post   "login-allowlist",                 to: "admin#add_login_allowlist"
     delete "login-allowlist/:id",             to: "admin#delete_login_allowlist"
 
@@ -115,10 +116,6 @@ Rails.application.routes.draw do
     get    "reviews/:id",                     to: "admin#show_review"
     post   "reviews/:id",                     to: "admin#submit_review"
 
-    # Scraps payout
-    get    "scraps-payout",                   to: "admin#scraps_payout_info"
-    post   "scraps-payout",                   to: "admin#trigger_payout"
-    post   "scraps-payout/reject",            to: "admin#reject_payout"
 
     # Orders
     get    "orders",                          to: "admin#orders"

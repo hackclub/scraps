@@ -8,15 +8,11 @@ export interface User {
 	avatar: string | null;
 	slackId: string | null;
 	scraps: number;
-	scrapsPending: number;
-	nextPayoutDate: string;
 	role: string;
 	tutorialCompleted: boolean;
 }
 
 export const userScrapsStore = writable<number>(0);
-export const userScrapsPendingStore = writable<number>(0);
-export const nextPayoutDateStore = writable<string>('');
 
 let cachedUser: User | null | undefined = undefined;
 let fetchPromise: Promise<User | null> | null = null;
@@ -58,8 +54,6 @@ export async function getUser(forceRefresh = false): Promise<User | null> {
 			cachedUser = (data.user as User) || null;
 			if (cachedUser) {
 				userScrapsStore.set(cachedUser.scraps);
-				userScrapsPendingStore.set(cachedUser.scrapsPending ?? 0);
-				nextPayoutDateStore.set(cachedUser.nextPayoutDate ?? '');
 			}
 			return cachedUser;
 		} catch {

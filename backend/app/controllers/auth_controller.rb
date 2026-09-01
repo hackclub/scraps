@@ -127,8 +127,6 @@ class AuthController < ApplicationController
         avatar: current_user.avatar,
         slack_id: current_user.slack_id,
         scraps: balance[:balance],
-        scraps_pending: balance[:pending],
-        next_payout_date: ScrapsService.next_payout_date.iso8601,
         role: current_user.role,
         tutorial_completed: current_user.tutorial_completed
       }

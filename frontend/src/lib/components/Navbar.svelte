@@ -25,13 +25,7 @@
 		Languages,
 		ChevronDown
 	} from '@lucide/svelte';
-	import {
-		logout,
-		getUser,
-		userScrapsStore,
-		userScrapsPendingStore,
-		nextPayoutDateStore
-	} from '$lib/auth-client';
+	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
 	import { t, locale, setLocale, type Locale } from '$lib/i18n';
 
 	interface User {
@@ -51,7 +45,6 @@
 	let showMoreMenu = $state(false);
 	let activeSection = $state('home');
 	let isScrolling = $state(false);
-	let countdownText = $state('');
 
 	let currentPath = $derived(page.url.pathname);
 	let isHomePage = $derived(currentPath === '/');
@@ -101,42 +94,7 @@
 
 		return () => {
 			if (observer) observer.disconnect();
-			if (countdownInterval) clearInterval(countdownInterval);
 		};
-	});
-
-	function updateCountdown() {
-		const payoutDate = $nextPayoutDateStore;
-		if (!payoutDate) {
-			countdownText = '';
-			return;
-		}
-		const target = new Date(payoutDate).getTime();
-		const now = Date.now();
-		const diff = target - now;
-		if (diff <= 0) {
-			countdownText = 'payout soon!';
-			return;
-		}
-		const hours = Math.floor(diff / (1000 * 60 * 60));
-		const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-		if (hours >= 24) {
-			const days = Math.floor(hours / 24);
-			const remainingHours = hours % 24;
-			countdownText = `${days}d ${remainingHours}h`;
-		} else {
-			countdownText = `${hours}h ${minutes}m`;
-		}
-	}
-
-	let countdownInterval: ReturnType<typeof setInterval> | null = null;
-
-	$effect(() => {
-		// Re-run whenever nextPayoutDateStore changes
-		$nextPayoutDateStore;
-		updateCountdown();
-		if (countdownInterval) clearInterval(countdownInterval);
-		countdownInterval = setInterval(updateCountdown, 60_000);
 	});
 
 	function scrollToSection(sectionId: string) {
@@ -525,28 +483,11 @@
 				<!-- Skeleton for profile -->
 				<div class="h-10 w-10 animate-pulse rounded-full border-4 border-black bg-gray-200"></div>
 			{:else if user}
-				<div
-					data-tutorial="scraps-counter"
-					class="relative"
-					title={$userScrapsPendingStore > 0
-						? `+${$userScrapsPendingStore} pending — payout in ${countdownText}`
-						: countdownText
-							? `next payout in ${countdownText}`
-							: ''}
-				>
+				<div data-tutorial="scraps-counter" class="relative">
 					<div class="flex items-center gap-2 rounded-full border-4 border-black px-6 py-2">
 						<Spool size={20} />
 						<span class="text-lg font-bold">{$userScrapsStore}</span>
-						{#if $userScrapsPendingStore > 0}
-							<span class="text-sm text-gray-500">+{$userScrapsPendingStore}</span>
-						{/if}
 					</div>
-					{#if countdownText}
-						<span
-							class="absolute top-full left-1/2 mt-0.5 -translate-x-1/2 text-xs whitespace-nowrap text-gray-500"
-							>⏱ {countdownText}</span
-						>
-					{/if}
 				</div>
 
 				<div class="profile-menu-container relative">
@@ -891,13 +832,7 @@
 						<div class="flex items-center gap-2 rounded-full border-4 border-black px-4 py-2">
 							<Spool size={18} />
 							<span class="font-bold">{$userScrapsStore}</span>
-							{#if $userScrapsPendingStore > 0}
-								<span class="text-sm text-gray-400">(+{$userScrapsPendingStore})</span>
-							{/if}
 						</div>
-						{#if countdownText}
-							<span class="pl-2 text-xs text-gray-400">⏱ payout in {countdownText}</span>
-						{/if}
 					</div>
 					<button
 						onclick={toggleLanguage}

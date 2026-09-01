@@ -15,9 +15,3 @@
     active_job: true
     queue: default
     description: "Sync shipped projects to Airtable every 5 minutes"
-  scrap_payout:
-    cron: "0 * * * *"
-    class: "ScrapPayoutJob"
-    active_job: true
-    queue: default
-    description: "Process pending scraps payouts hourly"

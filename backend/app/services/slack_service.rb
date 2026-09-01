@@ -51,15 +51,24 @@ module SlackService
     end
   end
 
-  def self.notify_shop_win(token:, user_slack_id:, item_name:, item_image: nil, frontend_url: SCRAPS_URL)
-    return unless token.present? && user_slack_id.present?
+  def self.notify_shop_win(token:, user_slack_id:, item_name:, item_image: nil, frontend_url: SCRAPS_URL, activity_channel_id: nil)
+    return unless token.present?
 
-    blocks = [
-      { type: "section", text: { type: "mrkdwn", text: ":tada: *You won #{item_name} from the Scraps shop!*\nCheck your orders to set your shipping address." } },
-      { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View Orders" }, url: "#{frontend_url}/shop/orders", action_id: "view_orders" }] }
-    ]
+    if user_slack_id.present?
+      blocks = [
+        { type: "section", text: { type: "mrkdwn", text: ":tada: *You won #{item_name} from the Scraps shop!*\nCheck your orders to set your shipping address." } },
+        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View Orders" }, url: "#{frontend_url}/shop/orders", action_id: "view_orders" }] }
+      ]
+      post(token, "chat.postMessage", { channel: user_slack_id, text: "You won #{item_name}!", blocks: blocks }) rescue nil
+    end
 
-    post(token, "chat.postMessage", { channel: user_slack_id, text: "You won #{item_name}!", blocks: blocks }) rescue nil
+    # Public announcement in the scraps activity channel.
+    if activity_channel_id.present?
+      who = user_slack_id.present? ? "<@#{user_slack_id}>" : "Someone"
+      feed_blocks = [{ type: "section", text: { type: "mrkdwn", text: ":scraps: :tada: #{who} just won *#{item_name}* from the shop!" } }]
+      feed_blocks << { type: "image", image_url: item_image, alt_text: item_name } if item_image.present?
+      post(token, "chat.postMessage", { channel: activity_channel_id, text: "#{user_slack_id.present? ? 'A user' : 'Someone'} won #{item_name}", blocks: feed_blocks, unfurl_links: false }) rescue nil
+    end
   end
 
   def self.notify_order_fulfilled(user_slack_id:, item_name:, tracking_number: nil, token:, frontend_url: SCRAPS_URL)

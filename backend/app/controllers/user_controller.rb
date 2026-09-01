@@ -13,7 +13,6 @@ class UserController < ApplicationController
       scraps: balance[:balance],
       scraps_earned: balance[:earned],
       scraps_spent: balance[:spent],
-      scraps_pending: balance[:pending],
       tutorial_completed: current_user.tutorial_completed,
       language: current_user.language
     })
@@ -128,7 +127,6 @@ class UserController < ApplicationController
         avatar: target["avatar"],
         role: target["role"],
         scraps: balance[:balance],
-        scraps_pending: balance[:pending],
         created_at: target["created_at"]
       },
       is_admin: %w[admin creator].include?(current_user.role),

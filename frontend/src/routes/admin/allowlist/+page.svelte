@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Plus, Trash2, Mail, Hash, ShieldCheck, ShieldOff } from '@lucide/svelte';
+	import { Plus, Trash2, Mail, Hash, ShieldCheck, ShieldOff, Check } from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 
@@ -11,6 +11,15 @@
 		identifierType: 'email' | 'slack_id';
 		note: string | null;
 		createdAt: string;
+	}
+
+	interface SignedUpUser {
+		id: number;
+		username: string | null;
+		avatar: string | null;
+		slackId: string | null;
+		email: string | null;
+		onList: boolean;
 	}
 
 	interface User {
@@ -29,6 +38,12 @@
 	let formError = $state<string | null>(null);
 	let deleteConfirmId = $state<number | null>(null);
 
+	let userQuery = $state('');
+	let userResults = $state<SignedUpUser[]>([]);
+	let searchingUsers = $state(false);
+	let addingUserId = $state<number | null>(null);
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
 	onMount(async () => {
 		user = await getUser();
 		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
@@ -36,7 +51,50 @@
 			return;
 		}
 		await fetchEntries();
+		await searchUsers();
 	});
+
+	function onUserQueryInput() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(searchUsers, 250);
+	}
+
+	async function searchUsers() {
+		searchingUsers = true;
+		try {
+			const res = await fetch(
+				`${API_URL}/admin/login-allowlist/users?q=${encodeURIComponent(userQuery.trim())}`,
+				{ credentials: 'include' }
+			);
+			if (res.ok) userResults = await res.json();
+		} catch (e) {
+			console.error('user search failed:', e);
+		} finally {
+			searchingUsers = false;
+		}
+	}
+
+	async function addUser(u: SignedUpUser) {
+		const identifier = u.email || u.slackId;
+		if (!identifier) return;
+		addingUserId = u.id;
+		try {
+			const res = await fetch(`${API_URL}/admin/login-allowlist`, {
+				method: 'POST',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ identifier, note: u.username || undefined })
+			});
+			if (res.ok) {
+				await fetchEntries();
+				await searchUsers();
+			}
+		} catch (e) {
+			console.error('add user failed:', e);
+		} finally {
+			addingUserId = null;
+		}
+	}
 
 	async function fetchEntries() {
 		loading = true;
@@ -52,6 +110,7 @@
 		} finally {
 			loading = false;
 		}
+		if (userResults.length) searchUsers();
 	}
 
 	async function addEntry() {
@@ -152,6 +211,50 @@
 		<p class="mt-2 px-4 text-xs text-gray-500">
 			Type is detected automatically: contains <code>@</code> → email, otherwise Slack ID.
 		</p>
+	</div>
+
+	<!-- Pick a signed-up user -->
+	<div class="mb-8 rounded-2xl border-4 border-black bg-white p-5">
+		<p class="mb-3 font-bold">Or add a signed-up user</p>
+		<input
+			bind:value={userQuery}
+			oninput={onUserQueryInput}
+			placeholder="search by name, email, or slack id"
+			class="w-full rounded-full border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+		/>
+		<ul class="mt-3 flex flex-col gap-2">
+			{#each userResults as u (u.id)}
+				<li class="flex items-center gap-3 rounded-xl border-2 border-gray-200 px-3 py-2">
+					{#if u.avatar}
+						<img src={u.avatar} alt="" class="h-8 w-8 shrink-0 rounded-full" />
+					{:else}
+						<div class="h-8 w-8 shrink-0 rounded-full bg-gray-200"></div>
+					{/if}
+					<div class="min-w-0 flex-1">
+						<p class="truncate text-sm font-bold">{u.username || 'unknown'}</p>
+						<p class="truncate text-xs text-gray-500">{u.email || u.slackId}</p>
+					</div>
+					{#if u.onList}
+						<span class="flex shrink-0 items-center gap-1 text-sm font-bold text-green-600">
+							<Check size={16} /> on list
+						</span>
+					{:else}
+						<button
+							onclick={() => addUser(u)}
+							disabled={addingUserId === u.id}
+							class="flex shrink-0 items-center gap-1 rounded-full bg-black px-3 py-1 text-sm font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
+						>
+							<Plus size={14} /> Add
+						</button>
+					{/if}
+				</li>
+			{:else}
+				<li class="py-3 text-center text-sm text-gray-400">
+					{searchingUsers ? 'Searching…' : 'No users found'}
+				</li>
+			{/each}
+		</ul>
+		<p class="mt-2 text-xs text-gray-500">Adds their email and Slack ID together.</p>
 	</div>
 
 	<!-- List -->

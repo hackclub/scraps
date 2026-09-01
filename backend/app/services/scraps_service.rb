@@ -91,13 +91,4 @@ module ScrapsService
     end
     next_cost
   end
-
-  def self.next_payout_date
-    epoch = Time.utc(2026, 2, 3)
-    now = Time.now.utc
-    ms_since_epoch = (now - epoch) * 1000
-    days_since_epoch = ms_since_epoch / (24 * 3600 * 1000)
-    cycles_passed = (days_since_epoch / 2).floor
-    epoch + (cycles_passed + 1) * 2 * 24 * 3600
-  end
 end
