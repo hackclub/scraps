@@ -304,6 +304,7 @@ class AdminController < ApplicationController
     tier_override = params[:tierOverride]&.to_i
     user_notes = params[:userInternalNotes]
     project_notes = params[:projectInternalNotes]
+    reship_flag = params.key?(:isReship) ? ActiveModel::Type::Boolean.new.cast(params[:isReship]) : nil
 
     return render_json({ error: "Invalid action" }) unless %w[approved denied permanently_rejected].include?(action)
     return render_json({ error: "Feedback for author is required" }) if feedback.blank?
@@ -337,6 +338,7 @@ class AdminController < ApplicationController
 
     set_parts = ["status = '#{new_status}'", "updated_at = NOW()"]
     set_parts << "tier_override = #{tier_override}" if tier_override
+    set_parts << "is_reship = #{reship_flag ? 'true' : 'false'}" unless reship_flag.nil?
 
     # On approval the reviewer's "hours to approve" value is final — store it as
     # hours_override and grant on it directly (deductions were already shown in

@@ -67,6 +67,7 @@
 		tierOverride: number | null;
 		deleted: number | null;
 		updateDescription: string | null;
+		isReship: boolean;
 		aiDescription: string | null;
 		reviewerNotes: string | null;
 		scrapsAwarded: number;
@@ -113,6 +114,7 @@
 	let savingProjectNotes = $state(false);
 	let hoursOverride = $state<number | undefined>(undefined);
 	let tierOverride = $state<number | undefined>(undefined);
+	let isReship = $state(false);
 
 	let deductedHours = $derived(
 		overlappingProjects.reduce((sum: number, op: OverlappingProject) => sum + op.hours, 0)
@@ -173,6 +175,7 @@
 					return;
 				}
 				project = data.project;
+				isReship = data.project?.isReship ?? false;
 				projectUser = data.user;
 				reviews = data.reviews || [];
 				overlappingProjects = data.overlappingProjects || [];
@@ -285,6 +288,7 @@
 					internalJustification: internalJustification || undefined,
 					hoursOverride: hoursOverride !== undefined ? hoursOverride : undefined,
 					tierOverride: tierOverride !== undefined ? tierOverride : undefined,
+					isReship,
 					userInternalNotes: userInternalNotes || undefined,
 					projectInternalNotes: projectInternalNotes,
 					rejectionReason:
@@ -949,6 +953,19 @@
 			<div class="rounded-2xl border-4 border-black p-6">
 				<h2 class="mb-4 text-xl font-bold">submit review</h2>
 				<div class="space-y-4">
+					<label class="flex cursor-pointer items-center gap-3">
+						<input
+							type="checkbox"
+							bind:checked={isReship}
+							class="h-5 w-5 cursor-pointer accent-black"
+						/>
+						<span class="text-sm font-bold"
+							>reship <span class="font-normal text-gray-500"
+								>(this project was shipped before — drives the Airtable hours justification)</span
+							></span
+						>
+					</label>
+
 					<div>
 						<label class="mb-1 block text-sm font-bold"
 							>hours to approve <span class="font-normal text-gray-500"

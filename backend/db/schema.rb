@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_01_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_02_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -133,6 +133,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_01_120000) do
     t.float "hours_override"
     t.text "image"
     t.text "internal_notes"
+    t.boolean "is_reship", default: false, null: false
     t.text "name", default: "", null: false
     t.text "playable_url"
     t.text "reviewer_notes"

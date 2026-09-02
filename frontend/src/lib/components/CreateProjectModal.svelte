@@ -204,6 +204,7 @@
 					hackatimeProject: hackatimeValue,
 					tier: selectedTier,
 					updateDescription: isUpdate ? updateDescription : null,
+					isReship: isUpdate,
 					aiDescription: usedAi ? aiDescription : null
 				})
 			});

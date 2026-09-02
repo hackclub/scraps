@@ -213,6 +213,7 @@ class ProjectsController < ApplicationController
         scraps_awarded: project["scraps_awarded"].to_i,
         views: project["views"].to_i,
         update_description: project["update_description"],
+        is_reship: ActiveModel::Type::Boolean.new.cast(project["is_reship"]),
         ai_description: is_owner ? project["ai_description"] : nil,
         reviewer_notes: is_owner ? project["reviewer_notes"] : nil,
         used_ai: project["ai_description"].present?,
@@ -245,7 +246,7 @@ class ProjectsController < ApplicationController
 
     conn = ActiveRecord::Base.connection
     result = conn.select_one(<<~SQL)
-      INSERT INTO projects (user_id, name, description, image, github_url, hackatime_project, hours, tier, update_description, ai_description, status, deleted, views, created_at, updated_at)
+      INSERT INTO projects (user_id, name, description, image, github_url, hackatime_project, hours, tier, update_description, is_reship, ai_description, status, deleted, views, created_at, updated_at)
       VALUES (
         #{current_user.id},
         #{conn.quote(params[:name])},
@@ -255,6 +256,7 @@ class ProjectsController < ApplicationController
         #{conn.quote(prefixed_ht)},
         0, #{tier},
         #{conn.quote(params[:updateDescription].to_s.presence)},
+        #{ActiveModel::Type::Boolean.new.cast(params[:isReship]) ? 'true' : 'false'},
         #{conn.quote(params[:aiDescription].to_s.presence)},
         'in_progress', 0, 0, NOW(), NOW()
       ) RETURNING *
@@ -314,6 +316,7 @@ class ProjectsController < ApplicationController
       set_parts << "tier = #{t}"
     end
     set_parts << "update_description = #{conn.quote(params[:updateDescription].to_s.presence)}" if params.key?(:updateDescription)
+    set_parts << "is_reship = #{ActiveModel::Type::Boolean.new.cast(params[:isReship]) ? 'true' : 'false'}" if params.key?(:isReship)
     set_parts << "ai_description = #{conn.quote(params[:aiDescription].to_s.presence)}" if params.key?(:aiDescription)
     set_parts << "reviewer_notes = #{conn.quote(params[:reviewerNotes].to_s.presence)}" if params.key?(:reviewerNotes)
 
@@ -529,6 +532,7 @@ class ProjectsController < ApplicationController
       scraps_paid_amount: p["scraps_paid_amount"].to_i,
       views: p["views"].to_i,
       update_description: p["update_description"],
+      is_reship: ActiveModel::Type::Boolean.new.cast(p["is_reship"]),
       ai_description: p["ai_description"],
       reviewer_notes: p["reviewer_notes"],
       created_at: p["created_at"],
