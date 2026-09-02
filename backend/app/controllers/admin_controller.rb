@@ -299,7 +299,8 @@ class AdminController < ApplicationController
     action = params[:decision].presence.to_s
     feedback = params[:feedbackForAuthor].to_s.strip
     rejection_reason = params[:rejectionReason].to_s.strip
-    hours_override = params[:hoursOverride]&.to_f
+    # The reviewer-confirmed hours to grant on (the "hours to approve" field).
+    approved_hours = params[:hoursOverride]&.to_f
     tier_override = params[:tierOverride]&.to_i
     user_notes = params[:userInternalNotes]
     project_notes = params[:projectInternalNotes]
@@ -312,7 +313,7 @@ class AdminController < ApplicationController
     conn = ActiveRecord::Base.connection
     project = conn.select_one("SELECT * FROM projects WHERE id = #{project_id}")
     return render_json({ error: "Project not found" }, status: :not_found) unless project
-    return render_json({ error: "Hours override cannot exceed project hours" }) if hours_override && hours_override > project["hours"].to_f
+    return render_json({ error: "Approved hours cannot exceed logged hours" }) if approved_hours && approved_hours > project["hours"].to_f
     return render_json({ error: "Cannot review a deleted project" }) if project["deleted"].to_i == 1
     return render_json({ error: "Project is not marked for review" }) unless project["status"] == "waiting_for_review"
 
@@ -335,15 +336,23 @@ class AdminController < ApplicationController
     end
 
     set_parts = ["status = '#{new_status}'", "updated_at = NOW()"]
-    set_parts << "hours_override = #{hours_override}" if hours_override
     set_parts << "tier_override = #{tier_override}" if tier_override
+
+    # On approval the reviewer's "hours to approve" value is final — store it as
+    # hours_override and grant on it directly (deductions were already shown in
+    # the review UI to inform the number, not re-applied here).
+    grant_hours =
+      if approved_hours
+        approved_hours
+      else
+        EffectiveHoursService.compute_for_project(project)[:effective_hours]
+      end
+    set_parts << "hours_override = #{grant_hours}" if action == "approved" && approved_hours
 
     scraps_awarded = 0
     if action == "approved" && can_ship
       tier = (tier_override || project["tier_override"] || project["tier"] || 1).to_i
-      proj_with_override = project.merge("hours_override" => hours_override || project["hours_override"])
-      eff = EffectiveHoursService.compute_for_project(proj_with_override)
-      new_scraps = ScrapsService.calculate_scraps_from_hours(eff[:effective_hours], tier)
+      new_scraps = ScrapsService.calculate_scraps_from_hours(grant_hours, tier)
       previously_shipped = conn.select_one("SELECT 1 FROM project_activity WHERE project_id = #{project_id} AND action = 'project_shipped' LIMIT 1")
       scraps_awarded = (previously_shipped && project["scraps_awarded"].to_i > 0) ? [0, new_scraps - project["scraps_awarded"].to_i].max : new_scraps
       set_parts << "scraps_awarded = #{new_scraps}"

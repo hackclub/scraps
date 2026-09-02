@@ -482,19 +482,31 @@
 		</a>
 
 		<!-- Referrals -->
-		<a
-			href="/admin/referrals"
-			class="mb-6 flex items-center justify-between rounded-2xl border-4 border-black p-6 transition-all hover:border-dashed"
-		>
-			<div>
-				<h3 class="flex items-center gap-2 text-lg font-bold">
-					<Users size={20} />
-					referrals
-				</h3>
-				<p class="text-sm text-gray-500">who invited whom, and whether the invitee verified</p>
+		<div class="mb-6 rounded-2xl border-4 border-black p-6">
+			<div class="flex items-center justify-between">
+				<div>
+					<h3 class="flex items-center gap-2 text-lg font-bold">
+						<Users size={20} />
+						referrals
+					</h3>
+					<p class="text-sm text-gray-500">who invited whom, and whether the invitee verified</p>
+				</div>
 			</div>
-			<span class="text-xl font-bold">→</span>
-		</a>
+			<div class="mt-4 flex flex-wrap gap-3">
+				<a
+					href="/admin/referrals"
+					class="rounded-full bg-black px-5 py-2 font-bold text-white transition-all hover:bg-gray-800"
+				>
+					admin view →
+				</a>
+				<a
+					href="/referrals"
+					class="rounded-full border-2 border-black px-5 py-2 font-bold transition-all hover:border-dashed"
+				>
+					public page →
+				</a>
+			</div>
+		</div>
 
 		<!-- Sync to YSWS -->
 		<div class="mb-6 rounded-2xl border-4 border-black p-6">

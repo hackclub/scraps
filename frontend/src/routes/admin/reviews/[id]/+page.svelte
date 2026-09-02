@@ -66,9 +66,6 @@
 		tier: number;
 		tierOverride: number | null;
 		deleted: number | null;
-		feedbackSource: string | null;
-		feedbackGood: string | null;
-		feedbackImprove: string | null;
 		updateDescription: string | null;
 		aiDescription: string | null;
 		reviewerNotes: string | null;
@@ -120,9 +117,17 @@
 	let deductedHours = $derived(
 		overlappingProjects.reduce((sum: number, op: OverlappingProject) => sum + op.hours, 0)
 	);
-	let effectiveHours = $derived(
-		project ? Math.max(0, (hoursOverride ?? project.hours) - deductedHours) : 0
-	);
+	// The pre-filled suggestion: logged hours minus overlap deductions.
+	let suggestedHours = $derived(project ? Math.max(0, project.hours - deductedHours) : 0);
+	// The reviewer's "hours to approve" — what scraps are granted on and what goes
+	// to Airtable. Defaults to the suggestion until the reviewer edits it.
+	let effectiveHours = $derived(hoursOverride ?? suggestedHours);
+
+	$effect(() => {
+		if (project && hoursOverride === undefined) {
+			hoursOverride = suggestedHours;
+		}
+	});
 
 	const PHI = (1 + Math.sqrt(5)) / 2;
 	const MULTIPLIER = 10;
@@ -139,7 +144,7 @@
 
 	let hoursOverrideError = $derived(
 		hoursOverride !== undefined && project && hoursOverride > project.hours
-			? `Hours override cannot exceed project hours (${formatHours(project.hours)}h)`
+			? `Approved hours cannot exceed logged hours (${formatHours(project.hours)}h)`
 			: null
 	);
 
@@ -571,7 +576,7 @@
 				{#if deductedHours > 0}
 					<span
 						class="rounded-full border-2 border-yellow-500 bg-yellow-100 px-3 py-1 font-bold text-yellow-800"
-						>{formatHours(effectiveHours)}h effective</span
+						>−{formatHours(deductedHours)}h overlap</span
 					>
 				{/if}
 				<span class="rounded-full border-2 border-black bg-gray-100 px-3 py-1 font-bold"
@@ -626,15 +631,15 @@
 						<span
 							class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
 						>
-							total: {formatHours(hoursOverride ?? project.hours)}h
+							logged: {formatHours(project.hours)}h
 						</span>
 						<span
 							class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
 						>
-							deducted: -{formatHours(deductedHours)}h
+							overlap: -{formatHours(deductedHours)}h
 						</span>
 						<span class="rounded-full border-2 border-black bg-yellow-200 px-3 py-1 text-black">
-							effective: {formatHours(effectiveHours)}h
+							suggested: {formatHours(suggestedHours)}h
 						</span>
 					</div>
 				</div>
@@ -756,32 +761,6 @@
 			{/if}
 		</div>
 
-		<!-- Author Feedback -->
-		{#if project.feedbackSource || project.feedbackGood || project.feedbackImprove}
-			<div class="mb-6 rounded-2xl border-4 border-black bg-white p-6">
-				<h2 class="mb-4 text-xl font-bold">author feedback</h2>
-				<div class="space-y-4">
-					{#if project.feedbackSource}
-						<div>
-							<p class="mb-1 text-sm font-bold text-gray-500">How did you hear about this?</p>
-							<p class="text-gray-700">{project.feedbackSource}</p>
-						</div>
-					{/if}
-					{#if project.feedbackGood}
-						<div>
-							<p class="mb-1 text-sm font-bold text-gray-500">What are we doing well?</p>
-							<p class="text-gray-700">{project.feedbackGood}</p>
-						</div>
-					{/if}
-					{#if project.feedbackImprove}
-						<div>
-							<p class="mb-1 text-sm font-bold text-gray-500">How can we improve?</p>
-							<p class="text-gray-700">{project.feedbackImprove}</p>
-						</div>
-					{/if}
-				</div>
-			</div>
-		{/if}
 
 		<!-- Previous Reviews -->
 		{#if reviews.length > 0}
@@ -972,10 +951,11 @@
 				<div class="space-y-4">
 					<div>
 						<label class="mb-1 block text-sm font-bold"
-							>hours override {#if deductedHours > 0}<span class="font-normal text-yellow-600"
-									>(effective: {formatHours(effectiveHours)}h after -{formatHours(deductedHours)}h
-									deduction)</span
-								>{/if}</label
+							>hours to approve <span class="font-normal text-gray-500"
+								>(logged {formatHours(project.hours)}h{#if deductedHours > 0}, −{formatHours(
+										deductedHours
+									)}h overlap{/if} → suggested {formatHours(suggestedHours)}h)</span
+							></label
 						>
 						<input
 							type="number"
@@ -983,7 +963,6 @@
 							min="0"
 							max={project.hours}
 							bind:value={hoursOverride}
-							placeholder="{formatHours(project.hours)} ({formatHours(effectiveHours)}h effective)"
 							class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {hoursOverrideError
 								? 'border-red-500'
 								: 'border-black'}"

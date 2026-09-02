@@ -60,10 +60,6 @@
 	let loadingProjects = $state(false);
 	let showDropdown = $state(false);
 	let selectedTier = $state(1);
-	let feedbackSource = $state('');
-	let feedbackGood = $state('');
-	let feedbackImprove = $state('');
-	let hasSubmittedFeedbackBefore = $state(false);
 	let isShippedUpdate = $state(false);
 	let updateDescription = $state('');
 	let usedAi = $state(false);
@@ -87,12 +83,6 @@
 	let hasName = $derived(
 		(project?.name?.trim().length ?? 0) > 0 && (project?.name?.trim().length ?? 0) <= NAME_MAX
 	);
-	let hasFeedback = $derived(
-		hasSubmittedFeedbackBefore ||
-			(feedbackSource.trim().length > 0 &&
-				feedbackGood.trim().length > 0 &&
-				feedbackImprove.trim().length > 0)
-	);
 	let hasUpdateDescription = $derived(!isShippedUpdate || updateDescription.trim().length > 0);
 	let hasAiDescription = $derived(!usedAi || aiDescription.trim().length > 0);
 	let allRequirementsMet = $derived(
@@ -102,7 +92,6 @@
 			hasPlayableUrl &&
 			hasDescription &&
 			hasName &&
-			hasFeedback &&
 			hasUpdateDescription &&
 			hasAiDescription
 	);
@@ -130,7 +119,6 @@
 			}
 			project = responseData.project;
 			imagePreview = project?.image || null;
-			hasSubmittedFeedbackBefore = responseData.hasSubmittedFeedback ?? false;
 			isShippedUpdate = project?.status === 'shipped';
 			reviewerNotes = project?.reviewerNotes || '';
 			if (project?.hackatimeProject) {
@@ -293,11 +281,7 @@
 					'Content-Type': 'application/json'
 				},
 				credentials: 'include',
-				body: JSON.stringify({
-					feedbackSource,
-					feedbackGood,
-					feedbackImprove
-				})
+				body: JSON.stringify({})
 			});
 
 			const submitData = await submitResponse.json().catch(() => ({}));
@@ -657,49 +641,6 @@
 				></textarea>
 			</div>
 
-			<!-- Feedback -->
-			<div class="mb-6 space-y-4">
-				<div>
-					<label for="feedbackSource" class="mb-2 block text-sm font-bold"
-						>{$t.submit.feedbackSourceLabel}
-						{#if !hasSubmittedFeedbackBefore}<span class="text-red-500">*</span>{/if}
-					</label>
-					<textarea
-						id="feedbackSource"
-						bind:value={feedbackSource}
-						rows="2"
-						placeholder={$t.submit.feedbackSourcePlaceholder}
-						class="w-full resize-none rounded-lg border-2 border-black px-4 py-3 focus:border-dashed focus:outline-none"
-					></textarea>
-				</div>
-				<div>
-					<label for="feedbackGood" class="mb-2 block text-sm font-bold"
-						>{$t.submit.feedbackGoodLabel}
-						{#if !hasSubmittedFeedbackBefore}<span class="text-red-500">*</span>{/if}
-					</label>
-					<textarea
-						id="feedbackGood"
-						bind:value={feedbackGood}
-						rows="2"
-						placeholder={$t.submit.feedbackGoodPlaceholder}
-						class="w-full resize-none rounded-lg border-2 border-black px-4 py-3 focus:border-dashed focus:outline-none"
-					></textarea>
-				</div>
-				<div>
-					<label for="feedbackImprove" class="mb-2 block text-sm font-bold"
-						>{$t.submit.feedbackImproveLabel}
-						{#if !hasSubmittedFeedbackBefore}<span class="text-red-500">*</span>{/if}
-					</label>
-					<textarea
-						id="feedbackImprove"
-						bind:value={feedbackImprove}
-						rows="2"
-						placeholder={$t.submit.feedbackImprovePlaceholder}
-						class="w-full resize-none rounded-lg border-2 border-black px-4 py-3 focus:border-dashed focus:outline-none"
-					></textarea>
-				</div>
-			</div>
-
 			<!-- Requirements Checklist -->
 			<div class="mb-6 rounded-lg border-2 border-black p-4">
 				<p class="mb-3 font-bold">{$t.project.requirementsChecklist}</p>
@@ -799,18 +740,6 @@
 								{#if hasAiDescription}<Check size={12} />{/if}
 							</span>
 							<span class={hasAiDescription ? '' : 'text-gray-500'}>ai usage described</span>
-						</li>
-					{/if}
-					{#if !hasSubmittedFeedbackBefore}
-						<li class="flex items-center gap-2 text-sm">
-							<span
-								class="flex h-5 w-5 items-center justify-center rounded-full border-2 border-black {hasFeedback
-									? 'bg-black text-white'
-									: ''}"
-							>
-								{#if hasFeedback}<Check size={12} />{/if}
-							</span>
-							<span class={hasFeedback ? '' : 'text-gray-500'}>{$t.project.feedbackCompleted}</span>
 						</li>
 					{/if}
 				</ul>

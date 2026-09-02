@@ -34,10 +34,6 @@
 	let error = $state<string | null>(null);
 	let _scraps = $derived(user?.scraps ?? 0);
 
-	let feedbackSource = $state('');
-	let feedbackGood = $state('');
-	let feedbackImprove = $state('');
-
 	let eligibleProjects = $derived(projects.filter((p) => p.status === 'in_progress'));
 
 	onMount(async () => {
@@ -76,11 +72,7 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({
-					feedbackSource,
-					feedbackGood,
-					feedbackImprove
-				})
+				body: JSON.stringify({})
 			});
 
 			const data = await response.json();
@@ -169,45 +161,6 @@
 				</div>
 			</div>
 
-			<!-- Feedback Questions -->
-			<div>
-				<label for="feedbackSource" class="mb-2 block text-sm font-bold"
-					>{$t.submit.feedbackSourceLabel}</label
-				>
-				<textarea
-					id="feedbackSource"
-					bind:value={feedbackSource}
-					rows="3"
-					placeholder={$t.submit.feedbackSourcePlaceholder}
-					class="w-full resize-none rounded-lg border-4 border-black px-4 py-3 transition-all focus:border-dashed focus:outline-none"
-				></textarea>
-			</div>
-
-			<div>
-				<label for="feedbackGood" class="mb-2 block text-sm font-bold"
-					>{$t.submit.feedbackGoodLabel}</label
-				>
-				<textarea
-					id="feedbackGood"
-					bind:value={feedbackGood}
-					rows="3"
-					placeholder={$t.submit.feedbackGoodPlaceholder}
-					class="w-full resize-none rounded-lg border-4 border-black px-4 py-3 transition-all focus:border-dashed focus:outline-none"
-				></textarea>
-			</div>
-
-			<div>
-				<label for="feedbackImprove" class="mb-2 block text-sm font-bold"
-					>{$t.submit.feedbackImproveLabel}</label
-				>
-				<textarea
-					id="feedbackImprove"
-					bind:value={feedbackImprove}
-					rows="3"
-					placeholder={$t.submit.feedbackImprovePlaceholder}
-					class="w-full resize-none rounded-lg border-4 border-black px-4 py-3 transition-all focus:border-dashed focus:outline-none"
-				></textarea>
-			</div>
 		{/if}
 
 		<button

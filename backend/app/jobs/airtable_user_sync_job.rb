@@ -37,7 +37,15 @@ class AirtableUserSyncJob < ApplicationJob
       false
     end
 
+    referred_by = conn.select_value(<<~SQL) || "none"
+      SELECT ref.username
+      FROM referrals r JOIN users ref ON ref.id = r.referrer_id
+      WHERE r.referred_user_id = #{user_id.to_i}
+      LIMIT 1
+    SQL
+
     fields = {
+      "Referred By" => referred_by,
       "Email" => user["email"],
       "First Name" => first_name,
       "Last Name" => last_name,

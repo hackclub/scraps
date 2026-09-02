@@ -19,9 +19,11 @@ class AirtableSyncJob < ApplicationJob
     where << " AND p.id = #{project_id.to_i}" if project_id
 
     conn.select_all(<<~SQL).to_a.each do |project|
-      SELECT p.id, p.name, p.github_url, p.playable_url, p.description, p.image,
-             p.hours, p.hours_override, p.update_description, p.airtable_id,
-             p.feedback_source, p.feedback_good, p.feedback_improve, p.scraps_awarded,
+      SELECT p.id, p.github_url, p.playable_url, p.description, p.image,
+             p.hours, p.hours_override, p.airtable_id,
+             (SELECT r.internal_justification FROM reviews r
+              WHERE r.project_id = p.id AND r.action = 'approved'
+              ORDER BY r.created_at DESC LIMIT 1) AS review_justification,
              u.email, u.slack_id, u.username, u.phone, u.birthday,
              u.legal_first_name, u.legal_last_name,
              u.address_line1, u.address_line2, u.address_city, u.address_state,
@@ -61,15 +63,17 @@ class AirtableSyncJob < ApplicationJob
       "City" => project["address_city"],
       "State / Province" => project["address_state"],
       "Country" => project["address_country"],
-      "ZIP / Postal Code" => project["address_postal_code"],
-      "How did you hear about this?" => project["feedback_source"],
-      "What are we doing well?" => project["feedback_good"],
-      "How can we improve?" => project["feedback_improve"],
-      "Reship?" => project["update_description"].present?
+      "ZIP / Postal Code" => project["address_postal_code"]
     }.compact
 
-    hours_override = project["hours_override"]
-    fields["Optional - Override Hours Spent"] = hours_override.to_f if hours_override.present?
+    # Always send the scraps-approved hours (the reviewer's "hours to approve"
+    # value, stored as hours_override; falls back to the raw logged total).
+    approved_hours = project["hours_override"].presence || project["hours"]
+    if approved_hours.present?
+      fields["Optional - Override Hours Spent"] = approved_hours.to_f
+      fields["Optional - Override Hours Spent Justification"] =
+        project["review_justification"].presence || "Hours approved by scraps reviewer."
+    end
 
     img = project["image"].to_s
     fields["Screenshot"] = [{ url: img }] if img.start_with?("http")
@@ -77,17 +81,28 @@ class AirtableSyncJob < ApplicationJob
     headers = { "Authorization" => "Bearer #{token}", "Content-Type" => "application/json" }
     body = { fields: fields, typecast: true }.to_json
 
-    if project["airtable_id"].present?
-      resp = HTTParty.patch("#{AIRTABLE_BASE_URL}/#{base_id}/#{table_id}/#{project['airtable_id']}", headers: headers, body: body)
-      Rails.logger.warn("[AirtableSyncJob] PATCH failed for project #{project['id']}: #{resp.body}") unless resp.success?
-    else
-      resp = HTTParty.post("#{AIRTABLE_BASE_URL}/#{base_id}/#{table_id}", headers: headers, body: body)
-      if resp.success?
-        airtable_id = resp.parsed_response["id"]
-        conn.execute("UPDATE projects SET airtable_id = #{conn.quote(airtable_id)}, updated_at = NOW() WHERE id = #{project['id'].to_i}") if airtable_id
+    stored_id = project["airtable_id"].presence
+    if stored_id
+      resp = HTTParty.patch("#{AIRTABLE_BASE_URL}/#{base_id}/#{table_id}/#{stored_id}", headers: headers, body: body)
+      return if resp.success?
+
+      # Stored record is gone (base re-pointed, row deleted). Drop the stale id and
+      # create a fresh row instead of retrying a dead PATCH forever.
+      if resp.body.to_s =~ /NOT_FOUND|MODEL_NOT_FOUND|INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND/
+        conn.execute("UPDATE projects SET airtable_id = NULL WHERE id = #{project['id'].to_i}")
+        stored_id = nil
       else
-        Rails.logger.warn("[AirtableSyncJob] POST failed for project #{project['id']}: #{resp.body}")
+        Rails.logger.warn("[AirtableSyncJob] PATCH failed for project #{project['id']}: #{resp.body}")
+        return
       end
+    end
+
+    resp = HTTParty.post("#{AIRTABLE_BASE_URL}/#{base_id}/#{table_id}", headers: headers, body: body)
+    if resp.success?
+      airtable_id = resp.parsed_response["id"]
+      conn.execute("UPDATE projects SET airtable_id = #{conn.quote(airtable_id)}, updated_at = NOW() WHERE id = #{project['id'].to_i}") if airtable_id
+    else
+      Rails.logger.warn("[AirtableSyncJob] POST failed for project #{project['id']}: #{resp.body}")
     end
   end
 

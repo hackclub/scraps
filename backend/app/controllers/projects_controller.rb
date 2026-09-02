@@ -191,14 +191,6 @@ class ProjectsController < ApplicationController
     activity << { type: "created", created_at: project["created_at"] }
     activity.sort_by! { |a| a[:created_at] ? -Time.parse(a[:created_at].to_s).to_i : 0 }
 
-    has_submitted_feedback = false
-    if is_owner
-      fb = conn.select_one(
-        "SELECT id FROM projects WHERE user_id = #{current_user.id} AND (feedback_source IS NOT NULL OR feedback_good IS NOT NULL OR feedback_improve IS NOT NULL) LIMIT 1"
-      )
-      has_submitted_feedback = !fb.nil?
-    end
-
     eff = EffectiveHoursService.compute_for_project(project)
     project_hours = (project["hours_override"] || project["hours"]).to_f
 
@@ -231,7 +223,6 @@ class ProjectsController < ApplicationController
       },
       owner: project["user_id"] ? { id: project["user_id"].to_i, username: project["owner_username"], avatar: project["owner_avatar"] } : nil,
       is_owner: is_owner,
-      has_submitted_feedback: is_owner ? has_submitted_feedback : nil,
       activity: activity
     })
   end
@@ -371,16 +362,9 @@ class ProjectsController < ApplicationController
       HackatimeSyncJob.perform_now(params[:id].to_i)
     end
 
-    feedback_source = params[:feedbackSource].to_s.presence
-    feedback_good = params[:feedbackGood].to_s.presence
-    feedback_improve = params[:feedbackImprove].to_s.presence
-
     updated = conn.select_one(<<~SQL)
       UPDATE projects SET
         status = 'waiting_for_review',
-        feedback_source = #{conn.quote(feedback_source)},
-        feedback_good = #{conn.quote(feedback_good)},
-        feedback_improve = #{conn.quote(feedback_improve)},
         updated_at = NOW()
       WHERE id = #{params[:id].to_i}
       RETURNING *
