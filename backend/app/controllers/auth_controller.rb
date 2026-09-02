@@ -246,6 +246,7 @@ class AuthController < ApplicationController
           username = COALESCE(#{conn.quote(username)}, username),
           email = COALESCE(#{conn.quote(identity['primary_email'])}, email),
           slack_id = #{conn.quote(identity['slack_id'])},
+          first_name = COALESCE(#{conn.quote(identity['first_name'])}, first_name),
           avatar = COALESCE(#{conn.quote(avatar_url)}, avatar),
           access_token = #{conn.quote(tokens['access_token'])},
           refresh_token = #{conn.quote(tokens['refresh_token'])},
@@ -269,7 +270,7 @@ class AuthController < ApplicationController
     else
       conn.execute(<<~SQL)
         INSERT INTO users (
-          sub, slack_id, username, email, avatar, access_token, refresh_token, id_token,
+          sub, slack_id, username, first_name, email, avatar, access_token, refresh_token, id_token,
           verification_status, ysws_eligible, phone, birthday, legal_first_name, legal_last_name,
           address_line1, address_line2, address_city, address_state, address_postal_code, address_country,
           role, tutorial_completed, language, created_at, updated_at
@@ -278,6 +279,7 @@ class AuthController < ApplicationController
           #{conn.quote(identity['id'])},
           #{conn.quote(identity['slack_id'])},
           #{conn.quote(username)},
+          #{conn.quote(identity['first_name'])},
           #{conn.quote(identity['primary_email'] || '')},
           #{conn.quote(avatar_url)},
           #{conn.quote(tokens['access_token'])},

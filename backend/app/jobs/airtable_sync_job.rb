@@ -21,9 +21,13 @@ class AirtableSyncJob < ApplicationJob
     conn.select_all(<<~SQL).to_a.each do |project|
       SELECT p.id, p.github_url, p.playable_url, p.description, p.image,
              p.hours, p.hours_override, p.airtable_id, p.hackatime_project, p.is_reship,
+             u.first_name AS builder_first_name,
              (SELECT r.internal_justification FROM reviews r
               WHERE r.project_id = p.id AND r.action = 'approved'
               ORDER BY r.created_at DESC LIMIT 1) AS review_justification,
+             (SELECT ru.slack_id FROM reviews r JOIN users ru ON ru.id = r.reviewer_id
+              WHERE r.project_id = p.id AND r.action = 'approved'
+              ORDER BY r.created_at DESC LIMIT 1) AS reviewer_slack_id,
              (SELECT ru.username FROM reviews r JOIN users ru ON ru.id = r.reviewer_id
               WHERE r.project_id = p.id AND r.action = 'approved'
               ORDER BY r.created_at DESC LIMIT 1) AS reviewer_username,
@@ -44,7 +48,9 @@ class AirtableSyncJob < ApplicationJob
       WHERE #{where}
     SQL
       begin
-        sync_project_to_airtable(token, base_id, table_id, project, conn)
+        # Only hit the Hackatime + Lapse APIs on a targeted single-project sync
+        # (a fresh approval). The 5-min bulk backstop just keeps fields in sync.
+        sync_project_to_airtable(token, base_id, table_id, project, conn, include_lapse: !project_id.nil?)
       rescue StandardError => e
         Rails.logger.error("[AirtableSyncJob] Failed for project #{project['id']}: #{e.message}")
       end
@@ -55,7 +61,7 @@ class AirtableSyncJob < ApplicationJob
 
   private
 
-  def sync_project_to_airtable(token, base_id, table_id, project, conn)
+  def sync_project_to_airtable(token, base_id, table_id, project, conn, include_lapse: false)
     first, last = names_for(project)
 
     fields = {
@@ -82,7 +88,7 @@ class AirtableSyncJob < ApplicationJob
     approved_hours = project["hours_override"].presence || project["hours"]
     if approved_hours.present?
       fields["Optional - Override Hours Spent"] = approved_hours.to_f
-      fields["Optional - Override Hours Spent Justification"] = build_justification(project, approved_hours.to_f)
+      fields["Optional - Override Hours Spent Justification"] = build_justification(project, approved_hours.to_f, include_lapse: include_lapse)
     end
 
     img = project["image"].to_s
@@ -123,40 +129,74 @@ class AirtableSyncJob < ApplicationJob
   # Templated "Optional - Override Hours Spent Justification" — mirrors the-game's
   # macro: tracked vs approved time, submission/reship context, Hackatime projects
   # and the date range the work covers, and who reviewed it.
-  def build_justification(project, approved)
+  def build_justification(project, approved, include_lapse: false)
     raw = project["hours"].to_f
     reship = ActiveModel::Type::Boolean.new.cast(project["is_reship"])
-    username = project["username"].presence || "the builder"
-    ht_names = HackatimeService.strip_hackatime_ids(project["hackatime_project"]).to_s
-                               .split(",").map(&:strip).reject(&:empty?).join(", ")
-    submit_d = fmt_date(project["submitted_at"])
+    # HC Auth top-level first name (stable-ish preferred name), never the mutable
+    # Slack display name for the person.
+    builder = project["builder_first_name"].presence || project["username"].presence || "The builder"
+    ht_names_list = HackatimeService.strip_hackatime_ids(project["hackatime_project"]).to_s
+                                    .split(",").map(&:strip).reject(&:empty?)
+    ht_names = ht_names_list.join(", ")
+    submit_t = parse_time(project["submitted_at"]) || Time.now.utc
+    submit_d = submit_t.strftime("%Y-%m-%d")
     review_d = fmt_date(project["reviewed_at"])
-    reviewer = project["reviewer_username"].presence
-    prior_d  = fmt_date(project["prior_reviewed_at"])
+    # Slack ID is immutable; username is not.
+    reviewer_ref =
+      if project["reviewer_slack_id"].present? then "<@#{project['reviewer_slack_id']}>"
+      elsif project["reviewer_username"].present? then "@#{project['reviewer_username']}"
+      end
+    prior_t = parse_time(project["prior_reviewed_at"])
+    prior_d = prior_t&.strftime("%Y-%m-%d")
 
     time_summary =
       if (raw - approved).abs < 0.05
-        "@#{username} tracked #{fmt_hours(raw)} on Hackatime and was approved for the full tracked time."
+        "#{builder} tracked #{fmt_hours(raw)} on Hackatime and was approved for the full tracked time."
       else
-        "@#{username} tracked #{fmt_hours(raw)} on Hackatime; approved for #{fmt_hours(approved)} after review (−#{fmt_hours(raw - approved)})."
+        "#{builder} tracked #{fmt_hours(raw)} on Hackatime; approved for #{fmt_hours(approved)} after review (−#{fmt_hours(raw - approved)})."
       end
 
     if reship && prior_d
       submission_line = "Reshipped on #{submit_d}. Previously shipped on #{prior_d}."
       range_line = "This ship covers work from #{prior_d} to #{submit_d}."
+      range_start = prior_t
     elsif reship
       submission_line = "Reshipped on #{submit_d}."
       range_line = "This ship covers work up to #{submit_d}."
+      range_start = Time.parse("#{PROGRAM_START}T00:00:00Z")
     else
       submission_line = "Submitted on #{submit_d}."
       range_line = "This covers work from #{PROGRAM_START} to #{submit_d}."
+      range_start = Time.parse("#{PROGRAM_START}T00:00:00Z")
     end
 
     ht_line = ht_names.present? ? "Hackatime projects submitted: #{ht_names}. #{range_line}" : range_line
-    reviewed_line = reviewer ? "Reviewed by @#{reviewer} on #{review_d}." : nil
+    reviewed_line = reviewer_ref ? "Reviewed by #{reviewer_ref} on #{review_d}." : nil
+    lapse_line = include_lapse ? lapse_section(project, ht_names_list, range_start, submit_t) : ""
 
-    [time_summary, project["review_justification"].presence, submission_line, ht_line, reviewed_line]
+    [time_summary, project["review_justification"].presence, submission_line, ht_line, reviewed_line, lapse_line]
       .compact.map(&:strip).reject(&:empty?).join("\n\n")
+  end
+
+  # Lapse timelapses the builder recorded for these Hackatime projects in-window.
+  def lapse_section(project, ht_names, start_time, end_time)
+    ht = HackatimeService.get_user(project["email"], project["slack_id"])
+    return "" unless ht && ht[:user_id]
+
+    tls = LapseService.timelapses_for(
+      hackatime_user_id: ht[:user_id], project_names: ht_names,
+      start_time: start_time, end_time: end_time
+    )
+    LapseService.justification_section(tls)
+  rescue StandardError
+    ""
+  end
+
+  def parse_time(value)
+    return nil if value.blank?
+    Time.parse(value.to_s)
+  rescue StandardError
+    nil
   end
 
   def fmt_hours(hours)
