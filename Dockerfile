@@ -51,6 +51,11 @@ RUN bundle install && \
 
 COPY backend/ .
 
+# Stamp the built image with the deployed commit so the app can show it.
+# Pass with: docker build --build-arg GIT_SHA=$(git rev-parse HEAD) .
+ARG GIT_SHA=""
+RUN echo "${GIT_SHA}" > REVISION
+
 RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
 RUN chmod +x bin/* && \

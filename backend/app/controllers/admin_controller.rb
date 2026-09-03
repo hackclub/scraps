@@ -684,6 +684,7 @@ class AdminController < ApplicationController
       VALUES (#{conn.quote(title)}, #{conn.quote(content)}, #{active ? 'true' : 'false'}, NOW(), NOW())
       RETURNING *
     SQL
+    bust_news_cache
     render_json(inserted, status: :created)
   end
 
@@ -696,12 +697,19 @@ class AdminController < ApplicationController
 
     updated = conn.select_one("UPDATE news SET #{set_parts.join(', ')} WHERE id = #{params[:id].to_i} RETURNING *")
     return render_json({ error: "Not found" }, status: :not_found) unless updated
+    bust_news_cache
     render_json(updated)
   end
 
   def delete_news
     ActiveRecord::Base.connection.execute("DELETE FROM news WHERE id = #{params[:id].to_i}")
+    bust_news_cache
     render_json({ success: true })
+  end
+
+  def bust_news_cache
+    Rails.cache.delete("news:index:v1")
+    Rails.cache.delete("news:latest:v1")
   end
 
   def compute_pricing
@@ -1016,7 +1024,10 @@ class AdminController < ApplicationController
   def pricing_config
     render_json({
       scraps_per_dollar: ScrapsService::SCRAPS_PER_DOLLAR,
-      tier_multipliers: ScrapsService::TIER_MULTIPLIERS
+      tier_multipliers: ScrapsService::TIER_MULTIPLIERS,
+      version: AppVersion::SHORT,
+      version_sha: AppVersion::SHA,
+      version_url: AppVersion.commit_url
     })
   end
 

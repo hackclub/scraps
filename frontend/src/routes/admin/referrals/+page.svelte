@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { ArrowRight, Check } from '@lucide/svelte';
+	import { ArrowRight } from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 
@@ -17,8 +17,6 @@
 		id: number;
 		code: string;
 		createdAt: string;
-		rewarded: boolean;
-		rewardAmount: number;
 		referrer: Person;
 		referred: Person;
 	}
@@ -27,7 +25,6 @@
 	let entries = $state<Entry[]>([]);
 	let total = $state(0);
 	let verifiedTotal = $state(0);
-	let rewardAmount = $state(0);
 
 	onMount(async () => {
 		const user = await getUser();
@@ -41,7 +38,6 @@
 			entries = data.entries;
 			total = data.total;
 			verifiedTotal = data.verifiedTotal;
-			rewardAmount = data.rewardAmount;
 		}
 		loading = false;
 	});
@@ -65,10 +61,6 @@
 		</div>
 		<div class="rounded-xl border-4 border-black bg-green-100 px-4 py-3">
 			<span class="text-2xl font-bold">{verifiedTotal}</span> <span class="text-gray-600">verified</span>
-		</div>
-		<div class="rounded-xl border-4 border-black bg-white px-4 py-3">
-			<span class="text-2xl font-bold">{rewardAmount}</span>
-			<span class="text-gray-500">scraps / verified invite {rewardAmount === 0 ? '(reward off)' : ''}</span>
 		</div>
 	</div>
 
@@ -109,11 +101,6 @@
 							<span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600"
 								>{e.referred.verificationStatus || 'unverified'}</span
 							>
-						{/if}
-						{#if e.rewarded}
-							<span class="flex items-center gap-1 rounded-full bg-black px-3 py-1 text-xs font-bold text-white">
-								<Check size={12} /> {e.rewardAmount}
-							</span>
 						{/if}
 						<span class="text-xs text-gray-400">{fmtDate(e.createdAt)}</span>
 					</div>

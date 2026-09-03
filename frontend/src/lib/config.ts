@@ -10,9 +10,16 @@ export const API_URL =
 export interface ServerConfig {
 	scrapsPerDollar: number;
 	tierMultipliers: Record<number, number>;
+	version: string;
+	versionSha: string;
+	versionUrl: string | null;
 }
 
 export const serverConfig: Partial<ServerConfig> = {};
+
+import { writable } from 'svelte/store';
+
+export const deployVersion = writable<{ short: string; url: string | null } | null>(null);
 
 export async function fetchServerConfig(): Promise<void> {
 	try {
@@ -20,6 +27,7 @@ export async function fetchServerConfig(): Promise<void> {
 		if (!res.ok) return;
 		const data = await res.json();
 		Object.assign(serverConfig, data);
+		if (data.version) deployVersion.set({ short: data.version, url: data.versionUrl ?? null });
 	} catch (_e) {
 		// Intentionally ignore errors — frontend can fall back to local constants if needed
 	}

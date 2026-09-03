@@ -14,7 +14,7 @@ class LeaderboardController < ApplicationController
           COUNT(p.id) AS project_count
         FROM users u
         LEFT JOIN projects p ON p.user_id = u.id AND (p.deleted = 0 OR p.deleted IS NULL) AND p.status != 'permanently_rejected'
-        WHERE u.role != 'banned'
+        WHERE u.role != 'banned' AND u.hackatime_banned = false
         GROUP BY u.id
         ORDER BY total_hours DESC
         LIMIT 20
@@ -30,7 +30,7 @@ class LeaderboardController < ApplicationController
           COUNT(p.id) AS project_count
         FROM users u
         LEFT JOIN projects p ON p.user_id = u.id AND (p.deleted = 0 OR p.deleted IS NULL) AND p.status != 'permanently_rejected'
-        WHERE u.role != 'banned'
+        WHERE u.role != 'banned' AND u.hackatime_banned = false
         GROUP BY u.id
         ORDER BY (
           COALESCE((SELECT SUM(scraps_awarded) FROM projects WHERE user_id = u.id AND scraps_paid_at IS NOT NULL AND status != 'permanently_rejected'), 0) +
@@ -42,7 +42,7 @@ class LeaderboardController < ApplicationController
       SQL
     end
 
-    filtered = filter_hackatime_banned(rows, email_col: "email", slack_col: "slack_id").first(10)
+    filtered = rows.first(10)
 
     render_json(filtered.each_with_index.map do |u, i|
       earned = u["scraps_earned"].to_f.round
@@ -72,11 +72,12 @@ class LeaderboardController < ApplicationController
       WHERE p.status = 'shipped'
         AND (p.deleted = 0 OR p.deleted IS NULL)
         AND u.role != 'banned'
+        AND u.hackatime_banned = false
       ORDER BY p.views DESC
       LIMIT 20
     SQL
 
-    filtered = filter_hackatime_banned(rows, email_col: "user_email", slack_col: "user_slack_id").first(10)
+    filtered = rows.first(10)
 
     user_ids = filtered.map { |r| r["user_id"].to_i }.uniq
     users = {}
@@ -145,18 +146,5 @@ class LeaderboardController < ApplicationController
         effective_probability: top_probability
       }
     end)
-  end
-
-  private
-
-  def filter_hackatime_banned(rows, email_col:, slack_col:)
-    rows.reject do |row|
-      begin
-        ht = HackatimeService.get_user(row[email_col], row[slack_col])
-        ht && ht[:banned]
-      rescue StandardError
-        false
-      end
-    end
   end
 end

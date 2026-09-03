@@ -7,7 +7,7 @@ class ReferralsController < ApplicationController
     code = ReferralService.share_code_for(current_user)
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(<<~SQL).to_a
-      SELECT u.id, u.username, u.avatar, u.verification_status, r.created_at, r.rewarded
+      SELECT u.id, u.username, u.avatar, u.verification_status, r.created_at
       FROM referrals r
       JOIN users u ON u.id = r.referred_user_id
       WHERE r.referrer_id = #{current_user.id.to_i}
@@ -19,15 +19,13 @@ class ReferralsController < ApplicationController
         username: r["username"],
         avatar: r["avatar"],
         verified: ReferralService::VERIFIED_STATUSES.include?(r["verification_status"]),
-        created_at: r["created_at"],
-        rewarded: r["rewarded"]
+        created_at: r["created_at"]
       }
     end
 
     render_json({
       code: code,
       link: "#{frontend_url}/?r=#{code}",
-      reward_amount: ReferralService.reward_amount,
       total: referrals.size,
       verified_count: referrals.count { |x| x[:verified] },
       referrals: referrals
@@ -66,7 +64,7 @@ class ReferralsController < ApplicationController
   def admin_list
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(<<~SQL).to_a
-      SELECT r.id, r.code, r.created_at, r.rewarded, r.reward_amount,
+      SELECT r.id, r.code, r.created_at,
         ref.id AS referrer_id, ref.username AS referrer_username, ref.avatar AS referrer_avatar,
         ru.id AS referred_id, ru.username AS referred_username, ru.avatar AS referred_avatar,
         ru.verification_status AS referred_status
@@ -81,8 +79,6 @@ class ReferralsController < ApplicationController
         id: r["id"],
         code: r["code"],
         created_at: r["created_at"],
-        rewarded: r["rewarded"],
-        reward_amount: r["reward_amount"].to_i,
         referrer: { id: r["referrer_id"], username: r["referrer_username"], avatar: r["referrer_avatar"] },
         referred: {
           id: r["referred_id"], username: r["referred_username"], avatar: r["referred_avatar"],
@@ -93,7 +89,6 @@ class ReferralsController < ApplicationController
     end
 
     render_json({
-      reward_amount: ReferralService.reward_amount,
       total: entries.size,
       verified_total: entries.count { |e| e[:referred][:verified] },
       entries: entries

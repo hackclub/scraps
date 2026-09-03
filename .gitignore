@@ -1,6 +1,5 @@
 node_modules
 
-# Output
 .output
 .vercel
 .netlify
@@ -30,9 +29,5 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# nathan please delete this manually </3
-cloudflared.exe 
 /.claude
-
-docs/
-master.key
+dev.ps1

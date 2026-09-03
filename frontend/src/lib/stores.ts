@@ -312,8 +312,10 @@ export async function fetchViewsLeaderboard(force = false) {
 export async function prefetchUserData() {
 	if (!browser) return;
 
-	// Prefetch in parallel
-	await Promise.all([fetchProjects(), fetchShopItems(), fetchLeaderboard('scraps'), fetchNews()]);
+	// Only warm what the dashboard (the post-login landing page) actually shows.
+	// Shop and leaderboard fetch their own data on navigation — prefetching those
+	// here just competes for the API's limited threads on every page load.
+	await Promise.all([fetchProjects(), fetchNews()]);
 }
 
 // Update helpers

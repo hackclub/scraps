@@ -1,16 +1,24 @@
 class NewsController < ApplicationController
+  # News is identical for every visitor and changes rarely; cache the payload so
+  # this isn't a remote-DB round trip on every page load. Admin writes bust it.
   def index
-    items = ActiveRecord::Base.connection.select_all(
-      "SELECT * FROM news WHERE active = true ORDER BY created_at DESC"
-    ).to_a
-    render_json(items.map { |n| news_to_h(n) })
+    payload = Rails.cache.fetch("news:index:v1", expires_in: 5.minutes) do
+      items = ActiveRecord::Base.connection.select_all(
+        "SELECT * FROM news WHERE active = true ORDER BY created_at DESC"
+      ).to_a
+      items.map { |n| news_to_h(n) }
+    end
+    render_json(payload)
   end
 
   def latest
-    item = ActiveRecord::Base.connection.select_one(
-      "SELECT * FROM news WHERE active = true ORDER BY created_at DESC LIMIT 1"
-    )
-    render_json(item ? news_to_h(item) : nil)
+    payload = Rails.cache.fetch("news:latest:v1", expires_in: 5.minutes) do
+      item = ActiveRecord::Base.connection.select_one(
+        "SELECT * FROM news WHERE active = true ORDER BY created_at DESC LIMIT 1"
+      )
+      item ? news_to_h(item) : nil
+    end
+    render_json(payload)
   end
 
   private

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_03_121000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -116,6 +116,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.integer "project_id"
     t.integer "user_id"
     t.index ["project_id"], name: "index_project_activity_on_project_id"
+    t.index ["user_id"], name: "index_project_activity_on_user_id"
   end
 
   create_table "projects", id: :serial, force: :cascade do |t|
@@ -172,6 +173,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.integer "shop_item_id", null: false
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_refinery_orders_on_user_id"
   end
 
   create_table "refinery_spending_history", id: :serial, force: :cascade do |t|
@@ -179,6 +181,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "shop_item_id", null: false
     t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_refinery_spending_history_on_user_id"
   end
 
   create_table "reviews", id: :serial, force: :cascade do |t|
@@ -202,7 +205,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "shop_item_id", null: false
     t.integer "user_id", null: false
-
+    t.index ["shop_item_id"], name: "index_shop_hearts_on_shop_item_id"
     t.unique_constraint ["user_id", "shop_item_id"], name: "shop_hearts_user_id_shop_item_id_key"
   end
 
@@ -239,6 +242,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.text "tracking_number"
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_shop_orders_on_user_id"
   end
 
   create_table "shop_penalties", id: :serial, force: :cascade do |t|
@@ -247,6 +251,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.integer "shop_item_id", null: false
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_shop_penalties_on_user_id"
   end
 
   create_table "shop_rolls", id: :serial, force: :cascade do |t|
@@ -256,6 +261,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.integer "threshold", null: false
     t.integer "user_id", null: false
     t.boolean "won", default: false, null: false
+    t.index ["user_id"], name: "index_shop_rolls_on_user_id"
   end
 
   create_table "user_activity", id: :serial, force: :cascade do |t|
@@ -263,6 +269,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.text "email"
     t.integer "user_id"
+    t.index ["email"], name: "index_user_activity_on_email"
+    t.index ["user_id"], name: "index_user_activity_on_user_id"
   end
 
   create_table "user_bonuses", id: :serial, force: :cascade do |t|
@@ -271,6 +279,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.integer "given_by"
     t.text "reason", null: false
     t.integer "user_id", null: false
+    t.index ["user_id"], name: "index_user_bonuses_on_user_id"
   end
 
   create_table "users", id: :serial, force: :cascade do |t|
@@ -287,6 +296,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_02_130000) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.text "email", default: "", null: false
     t.text "first_name"
+    t.datetime "hackatime_ban_checked_at"
+    t.boolean "hackatime_banned", default: false, null: false
     t.boolean "has_been_onboarded", default: false, null: false
     t.text "id_token"
     t.text "internal_notes"

@@ -17,13 +17,11 @@
 		avatar: string | null;
 		verified: boolean;
 		createdAt: string;
-		rewarded: boolean;
 	}
 
 	interface MyReferrals {
 		code: string;
 		link: string;
-		rewardAmount: number;
 		total: number;
 		verifiedCount: number;
 		referrals: Invitee[];
@@ -91,9 +89,6 @@
 				<span class="text-gray-500"
 					><span class="text-xl font-bold">{mine.total}</span> total invited</span
 				>
-				{#if mine.rewardAmount > 0}
-					<span class="text-gray-500">{mine.rewardAmount} scraps per verified invite</span>
-				{/if}
 			</div>
 		</div>
 

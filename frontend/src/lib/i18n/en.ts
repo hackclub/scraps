@@ -468,8 +468,8 @@ export default {
 	},
 	footer: {
 		madeWith: 'made with <3 by',
-		hackClub: 'hack club',
-		and: 'and'
+		hackClub: 'Hack Club',
+		commit: 'commit'
 	},
 	news: {
 		title: 'news',

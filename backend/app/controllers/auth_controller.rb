@@ -63,11 +63,12 @@ class AuthController < ApplicationController
 
     UserActivity.create!(user_id: user.id, email: identity["primary_email"], action: "auth_completed")
 
-    begin
-      ReferralService.attach(user, params[:state]) if @new_user && params[:state].present?
-      ReferralService.sync_reward(user)
-    rescue StandardError => e
-      Rails.logger.error("[AUTH] referral sync failed: #{e.message}")
+    if @new_user && params[:state].present?
+      begin
+        ReferralService.attach(user, params[:state])
+      rescue StandardError => e
+        Rails.logger.error("[AUTH] referral attach failed: #{e.message}")
+      end
     end
 
     AirtableUserSyncJob.perform_later(user.id, first_name: @airtable_first_name, last_name: @airtable_last_name)

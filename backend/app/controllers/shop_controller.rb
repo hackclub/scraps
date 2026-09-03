@@ -1,11 +1,15 @@
 class ShopController < ApplicationController
   def items
     conn = ActiveRecord::Base.connection
-    rows = conn.select_all(<<~SQL).to_a
-      SELECT si.*,
-        (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
-      FROM shop_items si
-    SQL
+    # The item list + heart counts are the same for everyone; only the per-user
+    # overlay below varies. Cache the shared part off the remote-DB hot path.
+    rows = Rails.cache.fetch("shop:items:v1", expires_in: 60.seconds) do
+      conn.select_all(<<~SQL).to_a
+        SELECT si.*,
+          (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
+        FROM shop_items si
+      SQL
+    end
 
     if current_user
       uid = current_user.id
