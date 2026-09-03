@@ -12,7 +12,6 @@
 		description: string;
 		image: string | null;
 		hours: number;
-		tier: number;
 		status: string;
 		views: number;
 		username: string | null;
@@ -31,14 +30,10 @@
 	let error = $state<string | null>(null);
 
 	let searchQuery = $state('');
-	let selectedTier = $state<number | null>(null);
-	let selectedStatus = $state<string | null>(null);
 	let sortBy = $state<'default' | 'views' | 'random'>('default');
 	let currentPage = $state(1);
 
 	let searchTimeout: ReturnType<typeof setTimeout>;
-
-	const TIERS = [1, 2, 3, 4];
 
 	async function fetchProjects() {
 		loading = true;
@@ -49,8 +44,6 @@
 			params.set('page', currentPage.toString());
 			params.set('limit', '18');
 			if (searchQuery.trim()) params.set('search', searchQuery.trim());
-			if (selectedTier) params.set('tier', selectedTier.toString());
-			if (selectedStatus) params.set('status', selectedStatus);
 			if (sortBy !== 'default') params.set('sortBy', sortBy);
 
 			const response = await fetch(`${API_URL}/projects/explore?${params}`, {
@@ -79,18 +72,6 @@
 			currentPage = 1;
 			fetchProjects();
 		}, 300);
-	}
-
-	function toggleTier(tier: number) {
-		selectedTier = selectedTier === tier ? null : tier;
-		currentPage = 1;
-		fetchProjects();
-	}
-
-	function toggleStatus(status: string) {
-		selectedStatus = selectedStatus === status ? null : status;
-		currentPage = 1;
-		fetchProjects();
 	}
 
 	function setSortBy(value: 'default' | 'views' | 'random') {
@@ -126,45 +107,6 @@
 			/>
 		</div>
 
-		<!-- Tier filters -->
-		<div class="flex flex-wrap items-center gap-2">
-			<span class="mr-2 self-center text-sm font-bold">{$t.explore.tier}</span>
-			{#each TIERS as tier}
-				<button
-					onclick={() => toggleTier(tier)}
-					class="cursor-pointer rounded-xl border-4 border-black px-3 py-1.5 text-sm font-bold transition-all duration-200 sm:px-4 sm:py-2 {selectedTier ===
-					tier
-						? 'bg-black text-white'
-						: 'hover:border-dashed'}"
-				>
-					{tier}
-				</button>
-			{/each}
-		</div>
-
-		<!-- Status filters -->
-		<div class="flex flex-wrap items-center gap-2">
-			<span class="mr-2 self-center text-sm font-bold">{$t.explore.status}</span>
-			<button
-				onclick={() => toggleStatus('shipped')}
-				class="cursor-pointer rounded-full border-4 border-black px-3 py-1.5 text-sm font-bold transition-all duration-200 sm:px-4 sm:py-2 {selectedStatus ===
-				'shipped'
-					? 'bg-black text-white'
-					: 'hover:border-dashed'}"
-			>
-				{$t.explore.shipped}
-			</button>
-			<button
-				onclick={() => toggleStatus('in_progress')}
-				class="cursor-pointer rounded-full border-4 border-black px-3 py-1.5 text-sm font-bold transition-all duration-200 sm:px-4 sm:py-2 {selectedStatus ===
-				'in_progress'
-					? 'bg-black text-white'
-					: 'hover:border-dashed'}"
-			>
-				{$t.explore.inProgress}
-			</button>
-		</div>
-
 		<!-- Sort options -->
 		<div class="flex flex-wrap items-center gap-2">
 			<span class="mr-2 self-center text-sm font-bold">{$t.explore.sort}</span>
@@ -195,11 +137,9 @@
 			>
 				{$t.explore.random}
 			</button>
-			{#if selectedTier || selectedStatus || sortBy !== 'default'}
+			{#if sortBy !== 'default'}
 				<button
 					onclick={() => {
-						selectedTier = null;
-						selectedStatus = null;
 						sortBy = 'default';
 						currentPage = 1;
 						fetchProjects();
@@ -259,8 +199,6 @@
 							>
 							<div class="flex items-center gap-3">
 								<span class="text-gray-500">{formatHours(project.hours)}h</span>
-								<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs">tier {project.tier}</span
-								>
 								<span class="flex items-center gap-1 text-gray-400">
 									<Eye size={14} />
 									{project.views}

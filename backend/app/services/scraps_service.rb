@@ -14,7 +14,6 @@ module ScrapsService
 
   UPGRADE_START_PERCENT = 0.25
   UPGRADE_DECAY = 1.05
-  UPGRADE_MAX_BUDGET_MULTIPLIER = 3
 
   def self.calculate_scraps_from_hours(hours, tier = 1)
     tier_multiplier = TIER_MULTIPLIERS[tier] || 1.0
@@ -73,22 +72,14 @@ module ScrapsService
   end
 
   def self.compute_roll_threshold(probability)
-    # 15% house edge
     [(probability * 17 / 20.0).floor, 1].max
   end
 
-  def self.get_upgrade_cost(price, upgrade_count, actual_spent = nil, base_upgrade_cost = nil)
-    max_budget = price * UPGRADE_MAX_BUDGET_MULTIPLIER
-    cumulative = actual_spent || 0
-    return nil if cumulative >= max_budget
-
+  # Cost of the next refinery upgrade. There is no scraps budget cap — a user can
+  # keep upgrading until their effective probability reaches 100% (that ceiling is
+  # enforced in ShopController#upgrade_probability). Cost decays each level.
+  def self.get_upgrade_cost(price, upgrade_count, _actual_spent = nil, base_upgrade_cost = nil)
     base = base_upgrade_cost || [1, (price * UPGRADE_START_PERCENT).floor].max
-    next_cost = [1, (base / (UPGRADE_DECAY**upgrade_count)).floor].max
-
-    if cumulative + next_cost > max_budget
-      remaining = (max_budget - cumulative).floor
-      return remaining > 0 ? remaining : nil
-    end
-    next_cost
+    [1, (base / (UPGRADE_DECAY**upgrade_count)).floor].max
   end
 end

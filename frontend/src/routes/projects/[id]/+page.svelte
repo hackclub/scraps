@@ -18,6 +18,7 @@
 		Eye,
 		RefreshCw,
 		Undo2,
+		Trash2,
 		Bot
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
@@ -74,12 +75,15 @@
 	let owner = $state<Owner | null>(null);
 	let isOwner = $state(false);
 	let isAdmin = $state(false);
+	let canDelete = $state(false);
 	let activity = $state<ActivityEntry[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let syncingHours = $state(false);
 	let showUnsubmitConfirm = $state(false);
 	let unsubmitting = $state(false);
+	let showDeleteConfirm = $state(false);
+	let deleting = $state(false);
 
 	onMount(async () => {
 		const user = await getUser();
@@ -88,6 +92,11 @@
 			return;
 		}
 		isAdmin = user.role === 'admin' || user.role === 'creator';
+		// Admins get the admin project view instead of the public one.
+		if (isAdmin) {
+			goto(`/admin/projects/${data.id}`, { replaceState: true });
+			return;
+		}
 
 		try {
 			const projectRes = await fetch(`${API_URL}/projects/${data.id}`, { credentials: 'include' });
@@ -104,6 +113,7 @@
 			project = result.project;
 			owner = result.owner;
 			isOwner = result.isOwner;
+			canDelete = result.canDelete;
 			activity = result.activity || [];
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load project';
@@ -111,6 +121,27 @@
 			loading = false;
 		}
 	});
+
+	async function handleDelete() {
+		if (deleting) return;
+		deleting = true;
+		try {
+			const res = await fetch(`${API_URL}/projects/${data.id}`, {
+				method: 'DELETE',
+				credentials: 'include'
+			});
+			const body = await res.json().catch(() => ({}));
+			if (!res.ok || body.error) {
+				error = body.error || 'Failed to delete project';
+				deleting = false;
+				return;
+			}
+			goto('/dashboard');
+		} catch {
+			error = 'Failed to delete project';
+			deleting = false;
+		}
+	}
 
 	function getReviewIcon(action: string) {
 		switch (action) {
@@ -497,6 +528,15 @@
 						{$t.project.unsubmitProject}
 					</button>
 				{/if}
+				{#if canDelete}
+					<button
+						onclick={() => (showDeleteConfirm = true)}
+						class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-red-500 px-4 py-3 text-sm font-bold text-red-600 transition-all duration-200 hover:border-dashed hover:bg-red-50 sm:px-6 sm:text-base"
+					>
+						<Trash2 size={18} />
+						delete project
+					</button>
+				{/if}
 			</div>
 
 			{#if error}
@@ -649,6 +689,41 @@
 				>
 					<Undo2 size={18} />
 					{unsubmitting ? $t.project.unsubmitting : $t.project.unsubmitProject}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Delete Confirmation Modal -->
+{#if showDeleteConfirm && project}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+		onclick={(e) => e.target === e.currentTarget && (showDeleteConfirm = false)}
+		onkeydown={(e) => e.key === 'Escape' && (showDeleteConfirm = false)}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div class="w-full max-w-lg rounded-2xl border-4 border-black bg-white p-6">
+			<h2 class="mb-4 text-2xl font-bold">delete this project?</h2>
+			<p class="mb-6 text-gray-700">
+				this permanently removes <span class="font-bold">{project.name}</span>. this can't be undone.
+			</p>
+			<div class="flex gap-4">
+				<button
+					onclick={() => (showDeleteConfirm = false)}
+					disabled={deleting}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-3 font-bold transition-all duration-200 hover:border-dashed disabled:opacity-50"
+				>
+					{$t.common.cancel}
+				</button>
+				<button
+					onclick={handleDelete}
+					disabled={deleting}
+					class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-red-600 bg-red-600 px-4 py-3 font-bold text-white transition-all duration-200 hover:bg-red-700 disabled:opacity-50"
+				>
+					<Trash2 size={18} />
+					{deleting ? 'deleting…' : 'delete project'}
 				</button>
 			</div>
 		</div>

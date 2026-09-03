@@ -9,18 +9,22 @@ module SlackService
     )
   end
 
-  def self.notify_project_submitted(token:, reviewer_channel_id:, submitter_slack_id:, project:, frontend_url: SCRAPS_URL)
-    return unless token.present? && reviewer_channel_id.present?
+  # Adds a user to a Slack channel. The bot must be a member of the channel and
+  # have channels:manage (public) / groups:write (private). Returns true if the
+  # user is in the channel afterwards (including "was already in it").
+  def self.invite_to_channel(token:, channel_id:, user_slack_id:)
+    return false unless token.present? && channel_id.present? && user_slack_id.present?
 
-    hours = project["hours_override"] || project["hours"]
-    post(token, "chat.postMessage", {
-      channel: reviewer_channel_id,
-      text: "New project submitted for review",
-      blocks: [
-        { type: "section", text: { type: "mrkdwn", text: "*New project submitted for review!* :eyes:\n*#{project['name']}* by <@#{submitter_slack_id}>\n*Hours:* #{hours}\n*Tier:* #{project['tier']}\n#{project['github_url'].present? ? "<#{project['github_url']}|Code URL>" : ""} #{project['playable_url'].present? ? "| <#{project['playable_url']}|Demo>" : ""}" } },
-        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Review Project" }, url: "#{frontend_url}/admin/review/#{project['id']}", action_id: "review_project" }] }
-      ]
-    }) rescue nil
+    resp = post(token, "conversations.invite", { channel: channel_id, users: user_slack_id })
+    body = resp.parsed_response.is_a?(Hash) ? resp.parsed_response : {}
+    return true if body["ok"]
+    return true if body["error"] == "already_in_channel"
+
+    Rails.logger.warn("[SlackService] invite #{user_slack_id} -> #{channel_id} failed: #{body['error'] || resp.code}")
+    false
+  rescue StandardError => e
+    Rails.logger.warn("[SlackService] invite error: #{e.message}")
+    false
   end
 
   def self.notify_project_review(user_slack_id:, project_name:, project_id:, action:, feedback_for_author:, reviewer_slack_id: nil, admin_slack_ids: [], scraps_awarded: 0, frontend_url: SCRAPS_URL, token:, rejection_reason: nil)

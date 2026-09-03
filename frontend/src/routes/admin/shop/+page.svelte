@@ -10,7 +10,8 @@
 		TrendingUp,
 		AlertTriangle,
 		ShieldCheck,
-		RotateCcw
+		RotateCcw,
+		Upload
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
@@ -26,10 +27,10 @@
 		count: number;
 		baseProbability: number;
 		baseUpgradeCost: number;
-		costMultiplier: number;
 		boostAmount: number;
 		rollCostOverride: number | null;
 		perRollMultiplier?: number | null;
+		fulfillmentCost?: number | null;
 		createdAt: string;
 		updatedAt: string;
 	}
@@ -57,8 +58,8 @@
 		bestPlayerLevel: number;
 		bestPlayerCost: number;
 		bestPlayerRatio: number;
-		isExploitable: boolean;
-		houseEdgePercent: number;
+		isUnderpriced: boolean;
+		marginPercent: number;
 	}
 
 	let user = $state<User | null>(null);
@@ -71,6 +72,34 @@
 
 	let formName = $state('');
 	let formImage = $state('');
+	let uploadingImage = $state(false);
+
+	async function handleImageUpload(event: Event) {
+		const file = (event.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (file.size > 5 * 1024 * 1024) {
+			formError = 'Image must be under 5MB';
+			return;
+		}
+		uploadingImage = true;
+		formError = null;
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			const res = await fetch(`${API_URL}/upload/image`, {
+				method: 'POST',
+				credentials: 'include',
+				body: fd
+			});
+			const data = await res.json();
+			if (data.error) throw new Error(data.error);
+			formImage = data.url;
+		} catch (e) {
+			formError = e instanceof Error ? e.message : 'Upload failed';
+		} finally {
+			uploadingImage = false;
+		}
+	}
 	let formDescription = $state('');
 	let formPrice = $state(0);
 	let formPriceOverride = $state(false);
@@ -78,16 +107,13 @@
 	let formCount = $state(0);
 	let formBaseProbability = $state(50);
 	let formBaseUpgradeCost = $state(10);
-	let formCostMultiplier = $state(110);
 	let formBoostAmount = $state(1);
 	let formRollCostOverride = $state<number | null>(null);
+	let formFulfillmentCost = $state<number | null>(null);
 	let formMonetaryValue = $state(0);
 	let formError = $state<string | null>(null);
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in template
 	let errorModal = $state<string | null>(null);
-	let resettingRefinery = $state(false);
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in template
-	let showResetConfirm = $state(false);
 
 	const PHI = (1 + Math.sqrt(5)) / 2;
 	const SCRAPS_PER_HOUR = PHI * 10;
@@ -108,7 +134,6 @@
 	}
 
 	// Must match backend computeRollThreshold exactly
-	// 15% house edge: displayed 50% → actual 42%, displayed 100% → actual 85%
 	function computeRollThreshold(probability: number): number {
 		return Math.max(1, Math.floor((probability * 17) / 20));
 	}
@@ -133,16 +158,14 @@
 
 		// Upgrades start at 25% of item price and decay by 1.05x per level
 		const baseUpgradeCost = Math.max(1, Math.floor(price * 0.25));
-		const costMultiplier = 105;
 
-		return { price, baseProbability, baseUpgradeCost, costMultiplier, boostAmount };
+		return { price, baseProbability, baseUpgradeCost, boostAmount };
 	}
 
 	function simulateEV(
 		price: number,
 		baseProbability: number,
 		baseUpgradeCost: number,
-		costMultiplier: number,
 		boostAmount: number,
 		rollCostOverride?: number | null
 	): EVSummary {
@@ -153,35 +176,19 @@
 		let bestLevel = 0;
 		let bestCost = Infinity;
 
-		// backend constants mirrored
+		// backend constants mirrored — no budget cap; upgrades run until 100%.
 		const UPGRADE_START_PERCENT = 0.25;
 		const UPGRADE_DECAY = 1.05;
-		const UPGRADE_MAX_BUDGET_MULTIPLIER = 3;
+		const startCost = baseUpgradeCost || Math.max(1, Math.floor(price * UPGRADE_START_PERCENT));
 
 		for (let k = 0; k <= maxUpgrades; k++) {
 			const boostPercent = k * boostAmount;
 			const effectiveProbability = Math.min(baseProbability + boostPercent, 100);
 
-			// Cumulative upgrade cost (decaying: price * 0.25 / 1.05^i, capped at 3x price)
-			const maxBudget = Math.max(0, Math.floor(price * UPGRADE_MAX_BUDGET_MULTIPLIER));
+			// Cumulative upgrade cost: startCost / 1.05^i per level, decaying.
 			let upgradeCostCumulative = 0;
-			let budgetExhausted = false;
 			for (let i = 0; i < k; i++) {
-				const ucost = Math.max(
-					1,
-					Math.floor((price * UPGRADE_START_PERCENT) / Math.pow(UPGRADE_DECAY, i))
-				);
-				if (upgradeCostCumulative + ucost > maxBudget) {
-					upgradeCostCumulative = maxBudget;
-					budgetExhausted = true;
-					break;
-				}
-				upgradeCostCumulative += ucost;
-			}
-
-			if (budgetExhausted) {
-				// If budget exhausted for this k, treat this k as invalid (stop exploring further)
-				break;
+				upgradeCostCumulative += Math.max(1, Math.floor(startCost / Math.pow(UPGRADE_DECAY, i)));
 			}
 
 			const rollCost = calculateRollCost(
@@ -191,7 +198,6 @@
 				baseProbability
 			);
 
-			// Backend applies 17/20 house edge via computeRollThreshold
 			const actualThreshold = computeRollThreshold(effectiveProbability);
 			const actualWinChance = actualThreshold / 100;
 			const expectedRolls = actualWinChance > 0 ? 1 / actualWinChance : Infinity;
@@ -221,10 +227,9 @@
 		}
 
 		const bestResult = results[bestLevel];
-		const isExploitable = bestCost < price;
+		const isUnderpriced = bestCost < price;
 
-		// House edge: at player's best strategy, how much more than price they spend
-		const houseEdgePercent =
+		const marginPercent =
 			bestResult && price > 0
 				? Math.round(((bestResult.expectedTotalCost - price) / price) * 1000) / 10
 				: 0;
@@ -234,8 +239,8 @@
 			bestPlayerLevel: bestLevel,
 			bestPlayerCost: Math.round(bestCost),
 			bestPlayerRatio: bestResult?.evRatio ?? 0,
-			isExploitable,
-			houseEdgePercent
+			isUnderpriced,
+			marginPercent
 		};
 	}
 
@@ -244,7 +249,6 @@
 			item.price,
 			item.baseProbability,
 			item.baseUpgradeCost,
-			item.costMultiplier,
 			item.boostAmount,
 			item.rollCostOverride
 		);
@@ -256,7 +260,6 @@
 					formPrice,
 					formBaseProbability,
 					formBaseUpgradeCost,
-					formCostMultiplier,
 					formBoostAmount,
 					formRollCostOverride
 				)
@@ -271,7 +274,6 @@
 		price: number;
 		baseProbability: number;
 		baseUpgradeCost: number;
-		costMultiplier: number;
 		boostAmount: number;
 		rollCost?: number;
 		expectedRollsAtBase?: number;
@@ -285,11 +287,16 @@
 			(formPrice !== optimalPricing?.price ||
 				formBaseProbability !== optimalPricing?.baseProbability ||
 				formBaseUpgradeCost !== optimalPricing?.baseUpgradeCost ||
-				formCostMultiplier !== optimalPricing?.costMultiplier ||
 				formBoostAmount !== optimalPricing?.boostAmount)
 	);
 
 	async function recalculatePricing(applyToForm = true) {
+		// Nothing to price until a dollar value is entered — skip the call (and the
+		// 400 it would return) rather than spam the console.
+		if (!(formMonetaryValue > 0)) {
+			optimalPricing = null;
+			return;
+		}
 		// Call server-side compute endpoint so admin previews exactly match backend
 		try {
 			const body = {
@@ -318,21 +325,25 @@
 					}
 					formBaseProbability = pricing.baseProbability;
 					formBaseUpgradeCost = pricing.baseUpgradeCost;
-					formCostMultiplier = pricing.costMultiplier;
 					formBoostAmount = pricing.boostAmount;
 				}
 				return;
 			}
-			const pricing = await res.json();
+			const raw = await res.json();
+			// Server sends scrapsPrice / rollCostEstimate; normalise to the shape
+			// the form uses so `formPrice` doesn't come back undefined (→ NaN).
+			const pricing = {
+				...raw,
+				price: raw.scrapsPrice ?? raw.price,
+				rollCost: raw.rollCostEstimate ?? raw.rollCost
+			};
 			optimalPricing = pricing;
 			if (applyToForm) {
-				// Server returns canonical pricing object
 				if (!formPriceOverride) {
 					formPrice = pricing.price;
 				}
 				formBaseProbability = pricing.baseProbability;
 				formBaseUpgradeCost = pricing.baseUpgradeCost;
-				formCostMultiplier = pricing.costMultiplier;
 				formBoostAmount = pricing.boostAmount;
 			}
 		} catch (err) {
@@ -350,7 +361,6 @@
 				}
 				formBaseProbability = pricing.baseProbability;
 				formBaseUpgradeCost = pricing.baseUpgradeCost;
-				formCostMultiplier = pricing.costMultiplier;
 				formBoostAmount = pricing.boostAmount;
 			}
 		}
@@ -421,14 +431,15 @@
 		formCount = 0;
 		formBaseProbability = 50;
 		formBaseUpgradeCost = 10;
-		formCostMultiplier = 110;
 		formBoostAmount = 1;
 		formRollCostOverride = null;
+		formFulfillmentCost = null;
 		formError = null;
 		showDetailedEV = false;
-		// Prefetch canonical pricing so modal EV/optimal UI matches backend
-		await recalculatePricing();
 		showModal = true;
+		// Prefetch canonical pricing so modal EV/optimal UI matches backend — never
+		// let a pricing hiccup keep the modal from opening.
+		recalculatePricing().catch((e) => console.error('[ADMIN] pricing prefetch failed', e));
 	}
 
 	async function openEditModal(item: ShopItem) {
@@ -444,14 +455,14 @@
 		formCount = item.count;
 		formBaseProbability = item.baseProbability;
 		formBaseUpgradeCost = item.baseUpgradeCost;
-		formCostMultiplier = item.costMultiplier;
 		formBoostAmount = item.boostAmount ?? 1;
 		formRollCostOverride = item.rollCostOverride ?? null;
+		formFulfillmentCost = item.fulfillmentCost ?? null;
 		formError = null;
 		showDetailedEV = false;
-		// Fetch optimal pricing for comparison, but don't overwrite the item's saved values
-		await recalculatePricing(false);
 		showModal = true;
+		// Comparison pricing only — must not block the modal from opening.
+		recalculatePricing(false).catch((e) => console.error('[ADMIN] pricing prefetch failed', e));
 	}
 
 	function closeModal() {
@@ -486,9 +497,9 @@
 					count: formCount,
 					baseProbability: formBaseProbability,
 					baseUpgradeCost: formBaseUpgradeCost,
-					costMultiplier: formCostMultiplier,
 					boostAmount: formBoostAmount,
-					rollCostOverride: formRollCostOverride
+					rollCostOverride: formRollCostOverride,
+					fulfillmentCost: formFulfillmentCost
 				})
 			});
 
@@ -533,29 +544,6 @@
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- called from template
-	async function resetNonBuyerRefinery() {
-		resettingRefinery = true;
-		try {
-			const response = await fetch(`${API_URL}/admin/shop/reset-non-buyer-refinery`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			const data = await response.json();
-			if (response.ok && data.success) {
-				errorModal = `Reset ${data.resetCount} user-item combos: ${data.deletedOrders} refinery orders and ${data.deletedHistory} history entries deleted`;
-				await fetchItems();
-			} else {
-				errorModal = data.error || 'Failed to reset refinery orders';
-			}
-		} catch (e) {
-			console.error('Failed to reset refinery:', e);
-			errorModal = 'Failed to reset refinery orders';
-		} finally {
-			resettingRefinery = false;
-			showResetConfirm = false;
-		}
-	}
 </script>
 
 <svelte:head>
@@ -570,13 +558,6 @@
 		</div>
 		<div class="flex gap-3">
 			<button
-				onclick={() => (showResetConfirm = true)}
-				disabled={resettingRefinery}
-				class="cursor-pointer rounded-full border-4 border-red-600 px-4 py-2 font-bold text-red-600 transition-all duration-200 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-			>
-				{resettingRefinery ? 'resetting...' : 'reset non-buyer refinery'}
-			</button>
-			<button
 				onclick={openCreateModal}
 				class="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white transition-all duration-200 hover:bg-gray-800"
 			>
@@ -588,17 +569,10 @@
 
 	<div class="mb-8 rounded-2xl border-4 border-black p-4">
 		<h3 class="mb-3 font-bold">scraps per hour reference</h3>
-		<div class="grid grid-cols-4 gap-4 text-center text-sm">
-			{#each [0.8, 1, 1.25, 1.5] as mult}
-				<div class="rounded-lg bg-gray-100 p-3">
-					<div class="mb-1 text-gray-500">{mult}x</div>
-					<div class="flex items-center justify-center gap-1 font-bold">
-						<Spool size={14} />
-						{Math.round(SCRAPS_PER_HOUR * mult)}
-					</div>
-					<div class="text-xs text-gray-500">${(DOLLARS_PER_HOUR * mult).toFixed(2)}/hr</div>
-				</div>
-			{/each}
+		<div class="flex items-center gap-2 text-sm">
+			<Spool size={16} />
+			<span class="font-bold">{Math.round(SCRAPS_PER_HOUR)} scraps</span>
+			<span class="text-gray-500">≈ 1 hour of tracked work ≈ ${DOLLARS_PER_HOUR.toFixed(2)}</span>
 		</div>
 	</div>
 
@@ -607,28 +581,24 @@
 			<TrendingUp size={18} />
 			pricing model reference
 		</h3>
-		<div class="grid grid-cols-2 gap-4 text-sm md:grid-cols-4">
+		<div class="grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
 			<div class="rounded-lg bg-gray-100 p-3">
 				<div class="mb-1 text-xs text-gray-500">roll cost</div>
 				<div class="font-bold">price × effective% / 100</div>
 			</div>
 			<div class="rounded-lg bg-gray-100 p-3">
-				<div class="mb-1 text-xs text-gray-500">roll cost is</div>
-				<div class="font-bold">scales with effective probability (includes upgrades)</div>
+				<div class="mb-1 text-xs text-gray-500">upgrades</div>
+				<div class="font-bold">continue until effective% = 100</div>
 			</div>
 			<div class="rounded-lg bg-gray-100 p-3">
-				<div class="mb-1 text-xs text-gray-500">upgrade budget</div>
-				<div class="font-bold">3.0× price</div>
-			</div>
-			<div class="rounded-lg bg-gray-100 p-3">
-				<div class="mb-1 text-xs text-gray-500">win threshold</div>
-				<div class="font-bold">eff% × 17/20</div>
+				<div class="mb-1 text-xs text-gray-500">upgrade cost</div>
+				<div class="font-bold">base ÷ 1.05^level, decaying</div>
 			</div>
 		</div>
 		<p class="mt-2 text-xs text-gray-500">
-			roll cost scales with effective probability (including upgrades). upgrades increase win chance
-			and roll cost together. actual win threshold = floor(effective% × 17/20), giving ~15% house
-			edge. upgrade budget = 3.0× item price spread across a geometric cost series.
+			roll cost scales with effective probability (including upgrades). upgrades raise the win chance
+			and the roll cost together, with no scraps cap — a user can keep upgrading until they reach 100%
+			effective probability.
 		</p>
 	</div>
 
@@ -641,7 +611,7 @@
 			{#each items as item}
 				{@const ev = getItemEVSummary(item)}
 				<div
-					class="rounded-2xl border-4 p-4 transition-all {ev.isExploitable
+					class="rounded-2xl border-4 p-4 transition-all {ev.isUnderpriced
 						? 'border-red-600 bg-red-50'
 						: 'border-black'}"
 				>
@@ -695,7 +665,7 @@
 
 					<!-- EV Summary Bar -->
 					<div
-						class="mt-3 flex flex-wrap items-center gap-3 rounded-lg px-3 py-2 text-xs {ev.isExploitable
+						class="mt-3 flex flex-wrap items-center gap-3 rounded-lg px-3 py-2 text-xs {ev.isUnderpriced
 							? 'bg-red-100'
 							: 'bg-gray-100'}"
 					>
@@ -704,10 +674,10 @@
 							<div class="flex items-center gap-3">
 								<div class="font-bold">level {ev.bestPlayerLevel}</div>
 								<div class="text-gray-600">cost {ev.bestPlayerCost} scraps</div>
-								{#if ev.isExploitable}
-									<div class="font-bold text-red-600">exploitable</div>
+								{#if ev.isUnderpriced}
+									<div class="font-bold text-red-600">underpriced</div>
 								{/if}
-								<div class="text-gray-500">house edge {ev.houseEdgePercent}%</div>
+								<div class="text-gray-500">margin {ev.marginPercent}%</div>
 							</div>
 						</div>
 						<div class="flex gap-2">
@@ -749,8 +719,12 @@
 						</div>
 					{/if}
 				</div>
+			{/each}
+		</div>
+	{/if}
+</div>
 
-				{#if showModal}
+{#if showModal}
 					<div
 						class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
 						onclick={(e) => e.target === e.currentTarget && closeModal()}
@@ -793,12 +767,36 @@
 								</div>
 
 								<div>
-									<label for="image" class="mb-1 block text-sm font-bold">image URL</label>
+									<span class="mb-1 block text-sm font-bold">image</span>
+									<div class="flex items-center gap-3">
+										{#if formImage}
+											<img
+												src={formImage}
+												alt=""
+												class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
+											/>
+										{/if}
+										<label
+											class="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-black px-4 py-2 font-bold transition-all hover:border-dashed {uploadingImage
+												? 'opacity-50'
+												: ''}"
+										>
+											<Upload size={16} />
+											{uploadingImage ? 'uploading…' : formImage ? 'replace' : 'upload'}
+											<input
+												type="file"
+												accept="image/*"
+												onchange={handleImageUpload}
+												disabled={uploadingImage}
+												class="hidden"
+											/>
+										</label>
+									</div>
 									<input
-										id="image"
 										type="text"
 										bind:value={formImage}
-										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										placeholder="…or paste an image URL"
+										class="mt-2 w-full rounded-lg border-2 border-black px-4 py-2 text-sm focus:border-dashed focus:outline-none"
 									/>
 								</div>
 
@@ -861,6 +859,26 @@
 									</div>
 								</div>
 
+								<div>
+									<label for="fulfillmentCost" class="mb-1 block text-sm font-bold"
+										>fulfillment cost ($)</label
+									>
+									<input
+										id="fulfillmentCost"
+										type="number"
+										min="0"
+										step="0.01"
+										value={formFulfillmentCost ?? ''}
+										oninput={(e) => {
+											const v = e.currentTarget.value;
+											formFulfillmentCost = v === '' ? null : parseFloat(v);
+										}}
+										placeholder="what it actually costs to ship one"
+										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+									/>
+									<p class="mt-1 text-xs text-gray-500">manual — not derived from value</p>
+								</div>
+
 								<div class="grid grid-cols-2 gap-4">
 									<div>
 										<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
@@ -872,7 +890,7 @@
 											min="0"
 											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 										/>
-										<p class="mt-1 text-xs text-gray-500">affects rarity calculation</p>
+										<p class="mt-1 text-xs text-gray-500">how many can be won/bought before it's out of stock</p>
 									</div>
 									<div>
 										<label for="category" class="mb-1 block text-sm font-bold">categories</label>
@@ -905,8 +923,7 @@
 												</span>
 												<span class="ml-2 text-gray-500">
 													optimal: {optimalPricing?.baseProbability}% base · +{optimalPricing?.boostAmount}%/upgrade
-													· {optimalPricing?.baseUpgradeCost} base cost · {optimalPricing?.costMultiplier}%
-													mult
+													· {optimalPricing?.baseUpgradeCost} base upgrade cost
 												</span>
 											</div>
 											{#if hasCustomPricing}
@@ -917,7 +934,6 @@
 														formPrice = optimalPricing.price;
 														formBaseProbability = optimalPricing.baseProbability;
 														formBaseUpgradeCost = optimalPricing.baseUpgradeCost;
-														formCostMultiplier = optimalPricing.costMultiplier;
 														formBoostAmount = optimalPricing.boostAmount;
 														formPriceOverride = false;
 														// ensure EV and server parity
@@ -962,31 +978,20 @@
 									</div>
 								</div>
 
-								<div class="grid grid-cols-2 gap-4">
-									<div>
-										<label for="baseUpgradeCost" class="mb-1 block text-sm font-bold"
-											>base upgrade cost</label
-										>
-										<input
-											id="baseUpgradeCost"
-											type="number"
-											bind:value={formBaseUpgradeCost}
-											min="1"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-									</div>
-									<div>
-										<label for="costMultiplier" class="mb-1 block text-sm font-bold"
-											>cost multiplier (%)</label
-										>
-										<input
-											id="costMultiplier"
-											type="number"
-											bind:value={formCostMultiplier}
-											min="100"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-									</div>
+								<div>
+									<label for="baseUpgradeCost" class="mb-1 block text-sm font-bold"
+										>base upgrade cost</label
+									>
+									<input
+										id="baseUpgradeCost"
+										type="number"
+										bind:value={formBaseUpgradeCost}
+										min="1"
+										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+									/>
+									<p class="mt-1 text-xs text-gray-500">
+										first refinery upgrade; each next one decays ×1.05, no cap until 100%
+									</p>
 								</div>
 
 								<div>
@@ -1019,27 +1024,27 @@
 
 								{#if formEV}
 									<div
-										class="mt-4 rounded-xl border-4 p-4 {formEV.isExploitable
+										class="mt-4 rounded-xl border-4 p-4 {formEV.isUnderpriced
 											? 'border-red-600 bg-red-50'
 											: 'border-green-600 bg-green-50'}"
 									>
 										<div class="mb-3 flex items-center justify-between">
 											<h3
-												class="flex items-center gap-2 text-sm font-bold {formEV.isExploitable
+												class="flex items-center gap-2 text-sm font-bold {formEV.isUnderpriced
 													? 'text-red-700'
 													: 'text-green-700'}"
 											>
-												{#if formEV.isExploitable}
+												{#if formEV.isUnderpriced}
 													<AlertTriangle size={16} />
-													EV ANALYSIS — EXPLOITABLE
+													EV ANALYSIS — UNDERPRICED
 												{:else}
 													<ShieldCheck size={16} />
-													EV ANALYSIS — SAFE
+													EV ANALYSIS — OK
 												{/if}
 											</h3>
 											<button
 												onclick={() => (showDetailedEV = !showDetailedEV)}
-												class="cursor-pointer text-xs font-bold underline {formEV.isExploitable
+												class="cursor-pointer text-xs font-bold underline {formEV.isUnderpriced
 													? 'text-red-600'
 													: 'text-green-700'}"
 											>
@@ -1049,8 +1054,8 @@
 
 										<div class="grid grid-cols-2 gap-3 text-xs">
 											<div>
-												<span class="text-gray-500">house edge:</span>
-												<span class="ml-1 font-bold">+{formEV.houseEdgePercent}%</span>
+												<span class="text-gray-500">margin:</span>
+												<span class="ml-1 font-bold">+{formEV.marginPercent}%</span>
 											</div>
 											<div>
 												<span class="text-gray-500">base roll cost:</span>
@@ -1083,7 +1088,7 @@
 											</div>
 										</div>
 
-										{#if formEV.isExploitable}
+										{#if formEV.isUnderpriced}
 											<div class="mt-3 rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
 												⚠ Users can profit at upgrade level {formEV.bestPlayerLevel} — expected cost ({formEV.bestPlayerCost})
 												is below item price ({formPrice}). Consider increasing upgrade costs or
@@ -1154,10 +1159,6 @@
 						</div>
 					</div>
 				{/if}
-			{/each}
-		</div>
-	{/if}
-</div>
 
 {#if deleteConfirmId}
 	{@const deleteItem = items.find((i) => i.id === deleteConfirmId)}

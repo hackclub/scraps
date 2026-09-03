@@ -655,7 +655,6 @@ class ShopController < ApplicationController
       count: item["count"].to_i,
       base_probability: item["base_probability"].to_f,
       base_upgrade_cost: item["base_upgrade_cost"]&.to_i,
-      cost_multiplier: item["cost_multiplier"]&.to_f,
       boost_amount: item["boost_amount"].to_f,
       roll_cost_override: item["roll_cost_override"]&.to_i,
       per_roll_multiplier: (item["per_roll_multiplier"] || 0.05).to_f,

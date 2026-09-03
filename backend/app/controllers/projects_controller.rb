@@ -7,31 +7,17 @@ class ProjectsController < ApplicationController
     limit = [[params[:limit].to_i.nonzero? || 18, 48].min, 1].max
     offset = (page - 1) * limit
     search = params[:search].to_s.strip
-    tier = params[:tier].to_i.nonzero?
-    status_filter = params[:status].to_s.presence
     sort_by = params[:sortBy].to_s.presence || "default"
 
-    visible_statuses = %w[shipped in_progress waiting_for_review pending_admin_approval]
-
-    where_parts = ["(p.deleted = 0 OR p.deleted IS NULL)", "p.status IN ('shipped','in_progress','waiting_for_review','pending_admin_approval')"]
+    # Only surface projects that have been shipped or are in review/awaiting approval.
+    # In-progress (unsubmitted) projects are no longer listed.
+    where_parts = ["(p.deleted = 0 OR p.deleted IS NULL)", "p.status IN ('shipped','waiting_for_review','pending_admin_approval')"]
     bind_values = []
 
     if search.present?
       bind_idx = bind_values.size + 1
       where_parts << "(p.name ILIKE $#{bind_idx} OR p.description ILIKE $#{bind_idx + 1})"
       bind_values << "%#{search}%" << "%#{search}%"
-    end
-
-    if tier && tier.between?(1, 4)
-      bind_idx = bind_values.size + 1
-      where_parts << "p.tier = $#{bind_idx}"
-      bind_values << tier
-    end
-
-    if status_filter == "shipped" || status_filter == "in_progress"
-      where_parts[1] = "p.status = '#{ActiveRecord::Base.connection.quote_string(status_filter)}'"
-    elsif status_filter == "waiting_for_review"
-      where_parts[1] = "p.status IN ('waiting_for_review','pending_admin_approval')"
     end
 
     where_sql = where_parts.join(" AND ")
@@ -46,7 +32,7 @@ class ProjectsController < ApplicationController
     # Single round trip: join the username in directly and use a window function
     # to get the total count alongside the page, instead of separate queries.
     rows = conn.select_all(
-      "SELECT p.id, p.name, p.description, p.image, p.hours, p.hours_override, p.tier, p.status, p.views, p.user_id, u.username,
+      "SELECT p.id, p.name, p.description, p.image, p.hours, p.hours_override, p.status, p.views, p.user_id, u.username,
               COUNT(*) OVER() AS full_count
        FROM projects p
        LEFT JOIN users u ON u.id = p.user_id
@@ -77,7 +63,6 @@ class ProjectsController < ApplicationController
         description: desc_truncated,
         image: p["image"],
         hours: (p["hours_override"] || p["hours"]).to_f,
-        tier: p["tier"].to_i,
         status: display_status,
         views: p["views"].to_i,
         username: p["username"]
@@ -138,12 +123,18 @@ class ProjectsController < ApplicationController
     is_owner = project["user_id"].to_i == current_user.id
     is_staff = %w[admin reviewer creator].include?(current_user.role)
 
-    visible_statuses = %w[shipped in_progress waiting_for_review pending_admin_approval]
-    unless is_owner || visible_statuses.include?(project["status"])
+    # Soft-deleted projects stay in the DB and remain visible to staff, but are
+    # gone for everyone else — including the original owner.
+    if project["deleted"].to_i == 1 && !is_staff
       return render_json({ error: "Not found" }, status: :not_found)
     end
 
-    conn.execute("UPDATE projects SET views = views + 1 WHERE id = #{params[:id].to_i}") unless is_owner
+    visible_statuses = %w[shipped in_progress waiting_for_review pending_admin_approval]
+    unless is_owner || is_staff || visible_statuses.include?(project["status"])
+      return render_json({ error: "Not found" }, status: :not_found)
+    end
+
+    conn.execute("UPDATE projects SET views = views + 1 WHERE id = #{params[:id].to_i}") unless is_owner || is_staff
 
     # Only fetch reviewer identity from the DB at all when the viewer is staff -
     # non-staff viewers never see it, so it's never even selected for them.
@@ -224,8 +215,27 @@ class ProjectsController < ApplicationController
       },
       owner: project["user_id"] ? { id: project["user_id"].to_i, username: project["owner_username"], avatar: project["owner_avatar"] } : nil,
       is_owner: is_owner,
+      is_admin: %w[admin creator].include?(current_user.role),
+      is_deleted: project["deleted"].to_i == 1,
+      can_delete: %w[admin creator].include?(current_user.role) || (is_owner && project["status"] == "in_progress" && project["deleted"].to_i != 1),
       activity: activity
     })
+  end
+
+  def restore
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+    return render_json({ error: "Forbidden" }, status: :forbidden) unless %w[admin creator].include?(current_user.role)
+
+    conn = ActiveRecord::Base.connection
+    updated = conn.select_one(
+      "UPDATE projects SET deleted = 0, updated_at = NOW() WHERE id = #{params[:id].to_i} RETURNING id"
+    )
+    return render_json({ error: "Not found" }, status: :not_found) unless updated
+
+    conn.execute(
+      "INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{current_user.id}, #{params[:id].to_i}, 'project_restored', NOW())"
+    )
+    render_json({ success: true })
   end
 
   def create
@@ -336,11 +346,21 @@ class ProjectsController < ApplicationController
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
     conn = ActiveRecord::Base.connection
-    updated = conn.select_one(
-      "UPDATE projects SET deleted = 1, updated_at = NOW() WHERE id = #{params[:id].to_i} AND user_id = #{current_user.id} RETURNING id"
+    project = conn.select_one(
+      "SELECT user_id, status FROM projects WHERE id = #{params[:id].to_i} AND (deleted = 0 OR deleted IS NULL)"
     )
-    return render_json({ error: "Not found" }, status: :not_found) unless updated
+    return render_json({ error: "Not found" }, status: :not_found) unless project
 
+    is_owner = project["user_id"].to_i == current_user.id
+    is_admin = %w[admin creator].include?(current_user.role)
+
+    # Owners can delete their own project only while it is still in progress —
+    # once it's in review or shipped it's out of their hands. Admins: any status.
+    unless is_admin || (is_owner && project["status"] == "in_progress")
+      return render_json({ error: "This project can no longer be deleted." }, status: :forbidden)
+    end
+
+    conn.execute("UPDATE projects SET deleted = 1, updated_at = NOW() WHERE id = #{params[:id].to_i}")
     conn.execute(
       "INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{current_user.id}, #{params[:id].to_i}, 'project_deleted', NOW())"
     )
@@ -376,16 +396,6 @@ class ProjectsController < ApplicationController
     conn.execute(
       "INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{current_user.id}, #{params[:id].to_i}, 'project_submitted', NOW())"
     )
-
-    if ENV["SLACK_BOT_TOKEN"].present? && current_user.slack_id.present?
-      SlackService.notify_project_submitted(
-        token: ENV["SLACK_BOT_TOKEN"],
-        reviewer_channel_id: ENV["SLACK_REVIEWER_CHANNEL_ID"],
-        submitter_slack_id: current_user.slack_id,
-        project: updated,
-        frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" }
-      ) rescue nil
-    end
 
     render_json(project_row_to_h(updated, strip_ids: true))
   end

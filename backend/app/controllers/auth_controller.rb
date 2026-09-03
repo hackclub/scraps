@@ -72,6 +72,7 @@ class AuthController < ApplicationController
     end
 
     AirtableUserSyncJob.perform_later(user.id, first_name: @airtable_first_name, last_name: @airtable_last_name)
+    SlackChannelJoinJob.perform_later(user.id) if @new_user && user.slack_id.present?
 
     if user.role == "banned"
       return redirect_to "https://fraud.land", allow_other_host: true

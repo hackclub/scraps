@@ -21,6 +21,7 @@ Rails.application.routes.draw do
     get    ":id",                  to: "projects#show"
     put    ":id",                  to: "projects#update"
     delete ":id",                  to: "projects#destroy"
+    post   ":id/restore",          to: "projects#restore"
     post   ":id/submit",           to: "projects#submit"
     post   ":id/unsubmit",         to: "projects#unsubmit"
     get    ":id/reviews",          to: "projects#reviews"
@@ -135,7 +136,6 @@ Rails.application.routes.draw do
     # Shop management
     post   "shop/compute-pricing",            to: "admin#compute_pricing"
     post   "shop/compute-roll-costs",         to: "admin#compute_roll_costs"
-    post   "shop/reset-non-buyer-refinery",   to: "admin#reset_non_buyer_refinery"
     get    "shop/items",                      to: "admin#shop_items"
     post   "shop/items",                      to: "admin#create_shop_item"
     put    "shop/items/:id",                  to: "admin#update_shop_item"

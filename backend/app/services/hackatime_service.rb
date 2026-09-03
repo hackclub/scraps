@@ -2,7 +2,10 @@ module HackatimeService
   HACKATIME_API = "https://hackatime.hackclub.com/api/admin/v1"
   SCRAPS_START_DATE = "2026-08-01"
 
-  # Thread-safe in-memory caches (reset per Sidekiq job run)
+  # In-memory caches shared across every request/job in the process. Entries
+  # expire after CACHE_TTL so a batch pass stays warm (jobs run within seconds of
+  # each other) but the next pass 2 minutes later always re-fetches from Hackatime.
+  CACHE_TTL = 90 # seconds
   @user_cache = {}
   @projects_cache = {}
 
@@ -14,9 +17,23 @@ module HackatimeService
       @projects_cache = {}
     end
 
+    def cache_get(store, key)
+      entry = store[key]
+      return nil unless entry
+      return nil if Time.now.to_f - entry[:at] > CACHE_TTL
+      entry
+    end
+
+    def cache_put(store, key, value)
+      store[key] = { value: value, at: Time.now.to_f }
+      value
+    end
+
     def get_user(email, slack_id = nil)
       cache_key = email.presence || slack_id || ""
-      return @user_cache[cache_key] if @user_cache.key?(cache_key)
+      if (hit = cache_get(@user_cache, cache_key))
+        return hit[:value]
+      end
 
       user_id = nil
 
@@ -49,13 +66,13 @@ module HackatimeService
 
       return nil if user_id.nil?
 
-      user = fetch_user_info(user_id)
-      @user_cache[cache_key] = user
-      user
+      cache_put(@user_cache, cache_key, fetch_user_info(user_id))
     end
 
     def fetch_user_projects(user_id)
-      return @projects_cache[user_id] if @projects_cache.key?(user_id)
+      if (hit = cache_get(@projects_cache, user_id))
+        return hit[:value]
+      end
 
       begin
         resp = HTTParty.get(
@@ -63,9 +80,7 @@ module HackatimeService
           headers: auth_headers
         )
         return nil unless resp.success?
-        projects = resp.parsed_response["projects"] || []
-        @projects_cache[user_id] = projects
-        projects
+        cache_put(@projects_cache, user_id, resp.parsed_response["projects"] || [])
       rescue StandardError
         nil
       end

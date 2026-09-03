@@ -144,7 +144,7 @@ export default {
 		buying: 'buying...',
 		confirmBuyNow: 'confirm purchase',
 		confirmBuyNowMessage: 'buy this item outright for the full price of',
-		buyNowTooltip: 'buy at full price, no gambling'
+		buyNowTooltip: 'buy at full price instead of rolling'
 	},
 	common: {
 		cancel: 'cancel',

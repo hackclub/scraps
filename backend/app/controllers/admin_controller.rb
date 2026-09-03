@@ -1,6 +1,6 @@
 class AdminController < ApplicationController
   before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances reset_non_buyer_refinery unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def stats
@@ -621,17 +621,18 @@ class AdminController < ApplicationController
     base_prob = params[:baseProbability]&.to_i
     roll_cost_override = params[:rollCostOverride]&.to_i
     per_roll_mult = (params[:perRollMultiplier] || 0.05).to_f
-    upgrade_budget_mult = (params[:upgradeBudgetMultiplier] || 3.0).to_f
 
     return render_json({ error: "All fields are required" }, status: :bad_request) if [name, image, description, category].any?(&:blank?)
     return render_json({ error: "Invalid price" }, status: :bad_request) if price < 0
 
-    pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, base_prob, count)
+    fulfillment_cost = params[:fulfillmentCost].to_s.strip.presence
+
+    pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, base_prob)
 
     conn = ActiveRecord::Base.connection
     conn.execute(<<~SQL)
-      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, cost_multiplier, boost_amount, roll_cost_override, per_roll_multiplier, upgrade_budget_multiplier, created_at, updated_at)
-      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:cost_multiplier]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{upgrade_budget_mult}, NOW(), NOW())
+      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, created_at, updated_at)
+      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, NOW(), NOW())
     SQL
     render_json({ success: true }, status: :created)
   end
@@ -647,9 +648,9 @@ class AdminController < ApplicationController
     set_parts << "count = #{params[:count].to_i}" if params.key?(:count)
     set_parts << "base_probability = #{params[:baseProbability].to_i}" if params.key?(:baseProbability)
     set_parts << "base_upgrade_cost = #{params[:baseUpgradeCost].to_i}" if params.key?(:baseUpgradeCost)
-    set_parts << "cost_multiplier = #{params[:costMultiplier].to_f}" if params.key?(:costMultiplier)
     set_parts << "boost_amount = #{params[:boostAmount].to_f}" if params.key?(:boostAmount)
     set_parts << "roll_cost_override = #{conn.quote(params[:rollCostOverride])}" if params.key?(:rollCostOverride)
+    set_parts << "fulfillment_cost = #{conn.quote(params[:fulfillmentCost].to_s.strip.presence)}" if params.key?(:fulfillmentCost)
 
     updated = conn.select_one("UPDATE shop_items SET #{set_parts.join(', ')} WHERE id = #{params[:id].to_i} RETURNING id")
     return render_json({ error: "Not found" }, status: :not_found) unless updated
@@ -757,21 +758,6 @@ class AdminController < ApplicationController
     render_json({ success: true, fixed_count: fixed.length, fixed: fixed })
   end
 
-  def reset_non_buyer_refinery
-    conn = ActiveRecord::Base.connection
-    refinery_users = conn.select_all("SELECT user_id, shop_item_id FROM refinery_orders GROUP BY user_id, shop_item_id").to_a
-    buyers = conn.select_all("SELECT user_id, shop_item_id FROM shop_orders WHERE order_type IN ('purchase','luck_win') GROUP BY user_id, shop_item_id").to_a
-    buyer_set = buyers.map { |b| "#{b['user_id']}-#{b['shop_item_id']}" }.to_set
-
-    to_reset = refinery_users.reject { |r| buyer_set.include?("#{r['user_id']}-#{r['shop_item_id']}") }
-    deleted_orders = 0; deleted_history = 0
-    to_reset.each do |r|
-      uid = r["user_id"].to_i; iid = r["shop_item_id"].to_i
-      deleted_orders += conn.execute("DELETE FROM refinery_orders WHERE user_id = #{uid} AND shop_item_id = #{iid}").cmd_tuples rescue 0
-      deleted_history += conn.execute("DELETE FROM refinery_spending_history WHERE user_id = #{uid} AND shop_item_id = #{iid}").cmd_tuples rescue 0
-    end
-    render_json({ success: true, reset_count: to_reset.length, deleted_orders: deleted_orders, deleted_history: deleted_history })
-  end
 
   def unship_project
     project_id = params[:id].to_i

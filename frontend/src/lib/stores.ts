@@ -31,7 +31,6 @@ export interface ShopItem {
 	baseProbability: number;
 	adjustedBaseProbability: number;
 	baseUpgradeCost: number;
-	costMultiplier: number;
 	boostAmount: number;
 	rollCostOverride: number | null;
 	perRollMultiplier: number;

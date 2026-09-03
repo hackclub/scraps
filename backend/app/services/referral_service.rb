@@ -19,12 +19,11 @@ module ReferralService
   end
 
   # Record that `referred_user` (a brand-new account) signed up via `code`.
-  # No-op if the code is unknown, self-referral, banned referrer, or the user was
+  # No-op if the code is unknown, self-referral, banned referrer, or the user wassw
   # already referred once.
   def self.attach(referred_user, code)
     code = code.to_s.strip.downcase
     return if code.blank?
-
     conn = ActiveRecord::Base.connection
     referrer = conn.select_one(
       "SELECT id, role FROM users WHERE referral_code = #{conn.quote(code)} LIMIT 1"
