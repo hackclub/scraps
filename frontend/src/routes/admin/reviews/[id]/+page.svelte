@@ -22,8 +22,8 @@
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import { getUser } from '$lib/auth-client';
-	import { API_URL } from '$lib/config';
-	import { formatHours } from '$lib/utils';
+	import { API_URL, serverConfig } from '$lib/config';
+	import { formatHours, reviewerScoreMultiplier } from '$lib/utils';
 	import { t } from '$lib/i18n';
 
 	interface Review {
@@ -113,7 +113,7 @@
 	let projectInternalNotes = $state('');
 	let savingProjectNotes = $state(false);
 	let hoursOverride = $state<number | undefined>(undefined);
-	let tierOverride = $state<number | undefined>(undefined);
+	let reviewerScore = $state(2);
 	let isReship = $state(false);
 
 	let deductedHours = $derived(
@@ -131,14 +131,20 @@
 		}
 	});
 
-	const PHI = (1 + Math.sqrt(5)) / 2;
-	const MULTIPLIER = 10;
-	const TIER_MULTIPLIERS: Record<number, number> = { 1: 0.8, 2: 1.0, 3: 1.25, 4: 1.5 };
+	const SCRAPS_PER_HOUR = 64;
+	const FALLBACK_SCORE_MULTS = { floor: 0.5, neutral: 1.0, ceil: 2.0 };
 
 	let isUpdate = $derived(project ? project.scrapsAwarded > 0 : false);
-	let previewTier = $derived(project ? (tierOverride ?? project.tier ?? 1) : 1);
+	let previewScoreMultiplier = $derived(
+		reviewerScoreMultiplier(
+			reviewerScore,
+			serverConfig.reviewerScoreFloorMult ?? FALLBACK_SCORE_MULTS.floor,
+			serverConfig.reviewerScoreNeutralMult ?? FALLBACK_SCORE_MULTS.neutral,
+			serverConfig.reviewerScoreCeilMult ?? FALLBACK_SCORE_MULTS.ceil
+		)
+	);
 	let previewScraps = $derived(
-		Math.floor(effectiveHours * PHI * MULTIPLIER * (TIER_MULTIPLIERS[previewTier] ?? 1.0))
+		Math.floor(effectiveHours * SCRAPS_PER_HOUR * previewScoreMultiplier)
 	);
 	let additionalScraps = $derived(
 		project ? Math.max(0, previewScraps - project.scrapsAwarded) : previewScraps
@@ -234,19 +240,16 @@
 	}
 
 	function requestConfirmation(action: 'approved' | 'denied' | 'permanently_rejected') {
-		if (!feedbackForAuthor.trim()) {
-			error =
-				action === 'permanently_rejected'
-					? 'Internal reason is required'
-					: 'Feedback for author is required';
+		if (!feedbackForAuthor.trim() && action !== 'permanently_rejected') {
+			error = 'Feedback for author is required';
 			return;
 		}
 		if (!internalJustification.trim()) {
 			error = 'Internal justification is required';
 			return;
 		}
-		if (action === 'permanently_rejected' && !rejectionReason.trim()) {
-			error = 'Reason shown to user is required for permanent rejection';
+		if (action === 'approved' && (reviewerScore < 1 || reviewerScore > 3)) {
+			error = 'Reviewer score must be between 1 and 3';
 			return;
 		}
 		confirmAction = action;
@@ -258,11 +261,8 @@
 
 	async function submitReview() {
 		if (!confirmAction) return;
-		if (!feedbackForAuthor.trim()) {
-			error =
-				confirmAction === 'permanently_rejected'
-					? 'Internal reason is required'
-					: 'Feedback for author is required';
+		if (!feedbackForAuthor.trim() && confirmAction !== 'permanently_rejected') {
+			error = 'Feedback for author is required';
 			return;
 		}
 		if (!internalJustification.trim()) {
@@ -287,7 +287,7 @@
 					feedbackForAuthor,
 					internalJustification: internalJustification || undefined,
 					hoursOverride: hoursOverride !== undefined ? hoursOverride : undefined,
-					tierOverride: tierOverride !== undefined ? tierOverride : undefined,
+					reviewerScore: confirmAction === 'approved' ? reviewerScore : undefined,
 					isReship,
 					userInternalNotes: userInternalNotes || undefined,
 					projectInternalNotes: projectInternalNotes,
@@ -664,7 +664,9 @@
 							previously awarded: {project.scrapsAwarded} scraps
 						</span>
 						<span class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1 text-blue-800">
-							new total: {previewScraps} scraps ({formatHours(effectiveHours)}h × tier {previewTier})
+							new total: {previewScraps} scraps ({formatHours(effectiveHours)}h × score {reviewerScore.toFixed(
+								1
+							)})
 						</span>
 						<span class="rounded-full border-2 border-black bg-blue-200 px-3 py-1 text-black">
 							additional: +{additionalScraps} scraps
@@ -882,72 +884,6 @@
 		<div
 			class="relative {!isReviewable ? 'pointer-events-none opacity-50 grayscale select-none' : ''}"
 		>
-			<!-- Tier Reference -->
-			<div class="mb-6 rounded-2xl border-4 border-black p-6">
-				<h2 class="mb-4 text-xl font-bold">tier reference</h2>
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					<div
-						class="rounded-lg border-2 {project.tier === 1
-							? 'border-black bg-black text-white'
-							: 'border-gray-300'} px-4 py-3"
-					>
-						<div class="flex items-center justify-between">
-							<span class="font-bold">tier 1</span>
-							<span class="text-sm {project.tier === 1 ? 'text-gray-300' : 'text-gray-500'}"
-								>0.8×</span
-							>
-						</div>
-						<p class="mt-1 text-xs {project.tier === 1 ? 'text-gray-300' : 'text-gray-500'}">
-							{$t.project.tierDescriptions.tier1}
-						</p>
-					</div>
-					<div
-						class="rounded-lg border-2 {project.tier === 2
-							? 'border-black bg-black text-white'
-							: 'border-gray-300'} px-4 py-3"
-					>
-						<div class="flex items-center justify-between">
-							<span class="font-bold">tier 2</span>
-							<span class="text-sm {project.tier === 2 ? 'text-gray-300' : 'text-gray-500'}"
-								>1.0×</span
-							>
-						</div>
-						<p class="mt-1 text-xs {project.tier === 2 ? 'text-gray-300' : 'text-gray-500'}">
-							{$t.project.tierDescriptions.tier2}
-						</p>
-					</div>
-					<div
-						class="rounded-lg border-2 {project.tier === 3
-							? 'border-black bg-black text-white'
-							: 'border-gray-300'} px-4 py-3"
-					>
-						<div class="flex items-center justify-between">
-							<span class="font-bold">tier 3</span>
-							<span class="text-sm {project.tier === 3 ? 'text-gray-300' : 'text-gray-500'}"
-								>1.25×</span
-							>
-						</div>
-						<p class="mt-1 text-xs {project.tier === 3 ? 'text-gray-300' : 'text-gray-500'}">
-							{$t.project.tierDescriptions.tier3}
-						</p>
-					</div>
-					<div
-						class="rounded-lg border-2 {project.tier === 4
-							? 'border-black bg-black text-white'
-							: 'border-gray-300'} px-4 py-3"
-					>
-						<div class="flex items-center justify-between">
-							<span class="font-bold">tier 4</span>
-							<span class="text-sm {project.tier === 4 ? 'text-gray-300' : 'text-gray-500'}"
-								>1.5×</span
-							>
-						</div>
-						<p class="mt-1 text-xs {project.tier === 4 ? 'text-gray-300' : 'text-gray-500'}">
-							{$t.project.tierDescriptions.tier4}
-						</p>
-					</div>
-				</div>
-			</div>
 
 			<!-- Review Form -->
 			<div class="rounded-2xl border-4 border-black p-6">
@@ -990,16 +926,15 @@
 					</div>
 
 					<div>
-						<label class="mb-1 block text-sm font-bold">tier override</label>
-						<select
-							bind:value={tierOverride}
-							class="w-full cursor-pointer rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						>
-							<option value={undefined}>use user's tier (tier {project.tier})</option>
-							{#each [1, 2, 3, 4] as tier}
-								<option value={tier}>tier {tier}</option>
-							{/each}
-						</select>
+						<label class="mb-1 block text-sm font-bold">
+							reviewer score: {reviewerScore.toFixed(1)} <span class="text-red-500">*</span>
+							<span class="text-gray-400">(2 is neutral — ×{previewScoreMultiplier.toFixed(2)})</span>
+						</label>
+						<input type="range" min="1" max="3" step="0.1" bind:value={reviewerScore} class="w-full" />
+						<p class="mt-1 text-xs text-gray-500">
+							1 is a severe penalty, 2 is neutral (×1), 3 is a strong reward — this sets the payout
+							rate directly, required for approval
+						</p>
 					</div>
 
 					<div>
@@ -1012,37 +947,22 @@
 							placeholder="Internal notes about this review decision"
 							class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 						></textarea>
+						<p class="mt-1 text-xs text-gray-500">
+							never shown to the user — synced to Airtable as the override justification
+						</p>
 					</div>
 
 					<div>
 						<label class="mb-1 block text-sm font-bold">
-							feedback for author / internal reason <span class="text-red-500">*</span>
+							feedback for author <span class="text-red-500">*</span>
+							<span class="text-gray-400">(not required for permanent rejection)</span>
 						</label>
 						<textarea
 							bind:value={feedbackForAuthor}
 							rows="4"
-							placeholder="Shown to the project author (for approve/reject). For permanent rejection this is an internal reason only."
+							placeholder="Shown to the project author on approval (in the payout flow) or via Slack DM on denial."
 							class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 						></textarea>
-						<p class="mt-1 text-xs text-gray-500">
-							⚠️ for permanent rejection: the above field is kept internal only
-						</p>
-					</div>
-
-					<div>
-						<label class="mb-1 block text-sm font-bold">
-							reason shown to user <span class="text-red-500">*</span>
-							<span class="text-gray-400">(for permanent rejection)</span>
-						</label>
-						<textarea
-							bind:value={rejectionReason}
-							rows="3"
-							placeholder="This reason will be included in the Slack DM to the user when permanently rejecting."
-							class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						></textarea>
-						<p class="mt-1 text-xs text-gray-500">
-							required for permanent rejection — sent to the user via Slack DM
-						</p>
 					</div>
 
 					<div class="flex gap-3 pt-4">
@@ -1094,6 +1014,20 @@
 					<span class="mt-2 block text-red-600">this action cannot be undone.</span>
 				{/if}
 			</p>
+			{#if confirmAction === 'permanently_rejected'}
+				<div class="mb-4">
+					<label class="mb-1 block text-sm font-bold" for="rejection-reason-box">
+						message to send to user <span class="text-red-500">*</span>
+					</label>
+					<textarea
+						id="rejection-reason-box"
+						bind:value={rejectionReason}
+						rows="3"
+						placeholder="This will be sent to the user via Slack DM."
+						class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					></textarea>
+				</div>
+			{/if}
 			<div class="flex gap-3">
 				<button
 					onclick={cancelConfirmation}
@@ -1104,8 +1038,9 @@
 				</button>
 				<button
 					onclick={submitReview}
-					disabled={submitting}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:opacity-50 {confirmAction ===
+					disabled={submitting ||
+						(confirmAction === 'permanently_rejected' && !rejectionReason.trim())}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50 {confirmAction ===
 					'approved'
 						? 'bg-green-600 text-white'
 						: confirmAction === 'denied'

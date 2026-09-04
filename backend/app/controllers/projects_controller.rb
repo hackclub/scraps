@@ -140,14 +140,14 @@ class ProjectsController < ApplicationController
     # non-staff viewers never see it, so it's never even selected for them.
     reviews_rows = if is_staff
       conn.select_all(
-        "SELECT r.id, r.reviewer_id, r.action, r.feedback_for_author, r.created_at, u.username AS reviewer_username, u.avatar AS reviewer_avatar
+        "SELECT r.id, r.reviewer_id, r.action, r.feedback_for_author, r.reviewer_score, r.created_at, u.username AS reviewer_username, u.avatar AS reviewer_avatar
          FROM reviews r
          LEFT JOIN users u ON u.id = r.reviewer_id
          WHERE r.project_id = #{params[:id].to_i}"
       ).to_a
     else
       conn.select_all(
-        "SELECT id, reviewer_id, action, feedback_for_author, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
+        "SELECT id, reviewer_id, action, feedback_for_author, reviewer_score, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
       ).to_a
     end
 
@@ -160,6 +160,7 @@ class ProjectsController < ApplicationController
         type: "review",
         action: r["action"],
         feedback_for_author: r["feedback_for_author"],
+        reviewer_score: r["reviewer_score"]&.to_f,
         created_at: r["created_at"],
         reviewer: is_staff ? { id: r["reviewer_id"].to_i, username: r["reviewer_username"], avatar: r["reviewer_avatar"] } : nil
       }
@@ -443,14 +444,14 @@ class ProjectsController < ApplicationController
     # Only fetch reviewer identity from the DB at all when the viewer is staff.
     reviews_rows = if is_staff
       conn.select_all(
-        "SELECT r.id, r.reviewer_id, r.action, r.feedback_for_author, r.created_at, u.username AS reviewer_username, u.avatar AS reviewer_avatar
+        "SELECT r.id, r.reviewer_id, r.action, r.feedback_for_author, r.reviewer_score, r.created_at, u.username AS reviewer_username, u.avatar AS reviewer_avatar
          FROM reviews r
          LEFT JOIN users u ON u.id = r.reviewer_id
          WHERE r.project_id = #{params[:id].to_i}"
       ).to_a
     else
       conn.select_all(
-        "SELECT id, action, feedback_for_author, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
+        "SELECT id, action, feedback_for_author, reviewer_score, created_at FROM reviews WHERE project_id = #{params[:id].to_i}"
       ).to_a
     end
 
@@ -462,6 +463,7 @@ class ProjectsController < ApplicationController
         id: r["id"].to_i,
         action: r["action"],
         feedback_for_author: r["feedback_for_author"],
+        reviewer_score: r["reviewer_score"]&.to_f,
         created_at: r["created_at"],
         reviewer: is_staff ? { id: r["reviewer_id"].to_i, username: r["reviewer_username"], avatar: r["reviewer_avatar"] } : nil
       }

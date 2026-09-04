@@ -17,8 +17,7 @@
 	} from '$lib/stores';
 	import { API_URL } from '$lib/config';
 
-	const PHI = (1 + Math.sqrt(5)) / 2;
-	const MULTIPLIER = 10;
+	const SCRAPS_PER_HOUR = 64;
 
 	type Mode = 'featured' | 'sections' | 'rotating';
 	let mode = $state<Mode>('featured');
@@ -60,7 +59,7 @@
 	}
 
 	function estimateHours(scraps: number): number {
-		return Math.round((scraps / (PHI * MULTIPLIER)) * 10) / 10;
+		return Math.round((scraps / SCRAPS_PER_HOUR) * 10) / 10;
 	}
 
 	function getItemRollCost(item: ShopItem): number {

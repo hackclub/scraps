@@ -115,8 +115,7 @@
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in template
 	let errorModal = $state<string | null>(null);
 
-	const PHI = (1 + Math.sqrt(5)) / 2;
-	const SCRAPS_PER_HOUR = PHI * 10;
+	const SCRAPS_PER_HOUR = 64;
 	const DOLLARS_PER_HOUR = 4;
 	const SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 

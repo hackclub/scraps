@@ -25,6 +25,7 @@
 	} from '@lucide/svelte';
 	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
+	import ScrapsHistoryModal from '$lib/components/ScrapsHistoryModal.svelte';
 
 	interface User {
 		id: number;
@@ -39,6 +40,7 @@
 	let user = $state<User | null>(null);
 	let loading = $state(true);
 	let showProfileMenu = $state(false);
+	let showScrapsHistory = $state(false);
 	let showMobileMenu = $state(false);
 	let showMoreMenu = $state(false);
 	let activeSection = $state('home');
@@ -50,9 +52,7 @@
 	let isReviewer = $derived(user?.role === 'admin' || user?.role === 'reviewer' || user?.role === 'creator');
 	let isAdminOnly = $derived(user?.role === 'admin' || user?.role === 'creator');
 	let isInAdminSection = $derived(currentPath.startsWith('/admin'));
-	let dashboardMoreActive = $derived(
-		currentPath === '/leaderboard' || currentPath === '/shop' || currentPath === '/refinery'
-	);
+	let dashboardMoreActive = $derived(currentPath === '/shop' || currentPath === '/refinery');
 	let adminMoreActive = $derived(
 		currentPath.startsWith('/admin/shop') ||
 			currentPath.startsWith('/admin/news') ||
@@ -368,28 +368,6 @@
 
 			<!-- Visible on xl+ only -->
 			<a
-				href="/leaderboard"
-				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
-				'/leaderboard'
-					? 'border-black bg-black text-white'
-					: 'border-black hover:border-dashed'}"
-			>
-				<Trophy size={18} />
-				<span class="text-lg font-bold">{$t.nav.leaderboard}</span>
-			</a>
-
-			<a
-				href="/referrals"
-				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
-				'/referrals'
-					? 'border-black bg-black text-white'
-					: 'border-black hover:border-dashed'}"
-			>
-				<Users size={18} />
-				<span class="text-lg font-bold">{$t.nav.referrals}</span>
-			</a>
-
-			<a
 				href="/shop"
 				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
 				'/shop'
@@ -429,17 +407,6 @@
 					<div
 						class="absolute top-full left-0 z-50 mt-2 min-w-48 overflow-hidden rounded-2xl border-4 border-black bg-white"
 					>
-						<a
-							href="/leaderboard"
-							onclick={closeMoreMenu}
-							class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 transition-colors hover:bg-gray-100 {currentPath ===
-							'/leaderboard'
-								? 'bg-gray-100 font-bold'
-								: ''}"
-						>
-							<Trophy size={18} />
-							<span class="font-bold">{$t.nav.leaderboard}</span>
-						</a>
 						<a
 							href="/shop"
 							onclick={closeMoreMenu}
@@ -481,10 +448,13 @@
 				<div class="h-10 w-10 animate-pulse rounded-full border-4 border-black bg-gray-200"></div>
 			{:else if user}
 				<div data-tutorial="scraps-counter" class="relative">
-					<div class="flex items-center gap-2 rounded-full border-4 border-black px-6 py-2">
+					<button
+						onclick={() => (showScrapsHistory = true)}
+						class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-6 py-2 transition-all duration-200 hover:border-dashed"
+					>
 						<Spool size={20} />
 						<span class="text-lg font-bold">{$userScrapsStore}</span>
-					</div>
+					</button>
 				</div>
 
 				<div class="profile-menu-container relative">
@@ -515,6 +485,22 @@
 								<p class="truncate font-bold">{user.username || 'user'}</p>
 								<p class="truncate text-sm text-gray-500">{user.email}</p>
 							</div>
+							<a
+								href="/leaderboard"
+								onclick={closeProfileMenu}
+								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 transition-colors hover:bg-gray-100"
+							>
+								<Trophy size={18} />
+								<span class="font-bold">{$t.nav.leaderboard}</span>
+							</a>
+							<a
+								href="/referrals"
+								onclick={closeProfileMenu}
+								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 transition-colors hover:bg-gray-100"
+							>
+								<Users size={18} />
+								<span class="font-bold">{$t.nav.referrals}</span>
+							</a>
 							<button
 								onclick={handleLogout}
 								class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-gray-100"
@@ -733,30 +719,6 @@
 				</a>
 
 				<a
-					href="/leaderboard"
-					onclick={handleMobileNavClick}
-					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
-					'/leaderboard'
-						? 'border-black bg-black text-white'
-						: 'border-black hover:border-dashed'}"
-				>
-					<Trophy size={20} />
-					<span class="text-lg font-bold">{$t.nav.leaderboard}</span>
-				</a>
-
-				<a
-					href="/referrals"
-					onclick={handleMobileNavClick}
-					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
-					'/referrals'
-						? 'border-black bg-black text-white'
-						: 'border-black hover:border-dashed'}"
-				>
-					<Users size={20} />
-					<span class="text-lg font-bold">{$t.nav.referrals}</span>
-				</a>
-
-				<a
 					href="/shop"
 					onclick={handleMobileNavClick}
 					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
@@ -822,12 +784,42 @@
 						<p class="truncate text-sm text-gray-500">{user.email}</p>
 					</div>
 				</div>
+				<div class="mb-3 flex flex-col gap-2">
+					<a
+						href="/leaderboard"
+						onclick={handleMobileNavClick}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
+						'/leaderboard'
+							? 'border-black bg-black text-white'
+							: 'border-black hover:border-dashed'}"
+					>
+						<Trophy size={20} />
+						<span class="text-lg font-bold">{$t.nav.leaderboard}</span>
+					</a>
+					<a
+						href="/referrals"
+						onclick={handleMobileNavClick}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
+						'/referrals'
+							? 'border-black bg-black text-white'
+							: 'border-black hover:border-dashed'}"
+					>
+						<Users size={20} />
+						<span class="text-lg font-bold">{$t.nav.referrals}</span>
+					</a>
+				</div>
 				<div class="flex items-center justify-between gap-2">
 					<div class="flex flex-col items-start gap-1">
-						<div class="flex items-center gap-2 rounded-full border-4 border-black px-4 py-2">
+						<button
+							onclick={() => {
+								showScrapsHistory = true;
+								closeMobileMenu();
+							}}
+							class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 transition-all duration-200 hover:border-dashed"
+						>
 							<Spool size={18} />
 							<span class="font-bold">{$userScrapsStore}</span>
-						</div>
+						</button>
 					</div>
 					<button
 						onclick={handleLogout}
@@ -851,3 +843,5 @@
 		<span class="hidden sm:inline">{isInAdminSection ? $t.nav.escape : $t.nav.admin}</span>
 	</a>
 {/if}
+
+<ScrapsHistoryModal bind:open={showScrapsHistory} />

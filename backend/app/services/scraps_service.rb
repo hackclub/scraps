@@ -1,7 +1,5 @@
 module ScrapsService
-  PHI = (1 + Math.sqrt(5)) / 2
-  MULTIPLIER = 10
-  SCRAPS_PER_HOUR = PHI * MULTIPLIER
+  SCRAPS_PER_HOUR = 64.0
   DOLLARS_PER_HOUR = 4
   SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR
 
@@ -12,16 +10,36 @@ module ScrapsService
     4 => 1.5
   }.freeze
 
+# find a good baalnce or smtjh iasjdioasjdoasd
+  SCORE_FLOOR_MULT = 0.5
+  SCORE_NEUTRAL_MULT = 1.0
+  SCORE_CEIL_MULT = 2.0
+
   UPGRADE_START_PERCENT = 0.25
   UPGRADE_DECAY = 1.05
 
   def self.calculate_scraps_from_hours(hours, tier = 1)
     tier_multiplier = TIER_MULTIPLIERS[tier] || 1.0
-    (hours * PHI * MULTIPLIER * tier_multiplier).floor
+    (hours * SCRAPS_PER_HOUR * tier_multiplier).floor
+  end
+
+  def self.reviewer_score_multiplier(score)
+    score = score.to_f.clamp(1.0, 3.0)
+    x1, y1 = 1.0, SCORE_FLOOR_MULT
+    x2, y2 = 2.0, SCORE_NEUTRAL_MULT
+    x3, y3 = 3.0, SCORE_CEIL_MULT
+    l1 = ((score - x2) * (score - x3)) / ((x1 - x2) * (x1 - x3))
+    l2 = ((score - x1) * (score - x3)) / ((x2 - x1) * (x2 - x3))
+    l3 = ((score - x1) * (score - x2)) / ((x3 - x1) * (x3 - x2))
+    y1 * l1 + y2 * l2 + y3 * l3
+  end
+
+  def self.calculate_scraps_from_score(hours, reviewer_score)
+    (hours * SCRAPS_PER_HOUR * reviewer_score_multiplier(reviewer_score)).floor
   end
 
   def self.get_user_scraps_balance(user_id, conn = ActiveRecord::Base.connection)
-    # One round-trip instead of five — the remote DB has ~100ms latency per query.
+    # FIXED THE NUMBER OF QUERIES
     row = conn.select_one(<<~SQL, "ScrapsBalance", [user_id])
       SELECT
         (SELECT COALESCE(SUM(CASE WHEN scraps_paid_amount > 0 THEN scraps_paid_amount ELSE scraps_awarded END), 0)
@@ -54,7 +72,16 @@ module ScrapsService
     spent = shop_spent + upgrade_spent
     balance = earned - spent
 
-    { earned: earned, pending: pending, spent: spent, balance: balance }
+    {
+      earned: earned,
+      pending: pending,
+      spent: spent,
+      balance: balance,
+      project_earned: project_earned,
+      bonus_earned: bonus_earned,
+      shop_spent: shop_spent,
+      upgrade_spent: upgrade_spent
+    }
   end
 
   def self.can_afford?(user_id, cost, conn = ActiveRecord::Base.connection)
@@ -75,9 +102,6 @@ module ScrapsService
     [(probability * 17 / 20.0).floor, 1].max
   end
 
-  # Cost of the next refinery upgrade. There is no scraps budget cap — a user can
-  # keep upgrading until their effective probability reaches 100% (that ceiling is
-  # enforced in ShopController#upgrade_probability). Cost decays each level.
   def self.get_upgrade_cost(price, upgrade_count, _actual_spent = nil, base_upgrade_cost = nil)
     base = base_upgrade_cost || [1, (price * UPGRADE_START_PERCENT).floor].max
     [1, (base / (UPGRADE_DECAY**upgrade_count)).floor].max

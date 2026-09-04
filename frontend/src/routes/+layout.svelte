@@ -8,6 +8,7 @@
 	import Tutorial from '$lib/components/Tutorial.svelte';
 	import ErrorModal from '$lib/components/ErrorModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import PayoutCelebration from '$lib/components/PayoutCelebration.svelte';
 	import { handleNavigation, prefetchUserData } from '$lib/stores';
 	import { getUser, type User } from '$lib/auth-client';
 
@@ -103,3 +104,4 @@
 
 <ErrorModal />
 <Toast />
+<PayoutCelebration />

@@ -301,14 +301,15 @@ class AdminController < ApplicationController
     rejection_reason = params[:rejectionReason].to_s.strip
     # The reviewer-confirmed hours to grant on (the "hours to approve" field).
     approved_hours = params[:hoursOverride]&.to_f
-    tier_override = params[:tierOverride]&.to_i
+    reviewer_score = params[:reviewerScore]&.to_f
     user_notes = params[:userInternalNotes]
     project_notes = params[:projectInternalNotes]
     reship_flag = params.key?(:isReship) ? ActiveModel::Type::Boolean.new.cast(params[:isReship]) : nil
 
     return render_json({ error: "Invalid action" }) unless %w[approved denied permanently_rejected].include?(action)
-    return render_json({ error: "Feedback for author is required" }) if feedback.blank?
+    return render_json({ error: "Feedback for author is required" }) if feedback.blank? && action != "permanently_rejected"
     return render_json({ error: "Reason shown to user is required for permanent rejection" }) if action == "permanently_rejected" && rejection_reason.blank?
+    return render_json({ error: "Reviewer score is required (1-3)" }) if action == "approved" && (reviewer_score.nil? || reviewer_score < 1 || reviewer_score > 3)
 
     project_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
@@ -324,11 +325,10 @@ class AdminController < ApplicationController
     end
 
     conn.execute(<<~SQL)
-      INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, internal_justification, created_at)
-      VALUES (#{project_id}, #{current_user.id}, #{conn.quote(action)}, #{conn.quote(feedback)}, #{conn.quote(params[:internalJustification].to_s.presence)}, NOW())
+      INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, internal_justification, reviewer_score, created_at)
+      VALUES (#{project_id}, #{current_user.id}, #{conn.quote(action)}, #{conn.quote(feedback)}, #{conn.quote(params[:internalJustification].to_s.presence)}, #{action == "approved" ? reviewer_score : "NULL"}, NOW())
     SQL
 
-    # No second pass: any reviewer's approval ships the project immediately.
     can_ship = true
     new_status = case action
     when "approved" then "shipped"
@@ -337,7 +337,6 @@ class AdminController < ApplicationController
     end
 
     set_parts = ["status = '#{new_status}'", "updated_at = NOW()"]
-    set_parts << "tier_override = #{tier_override}" if tier_override
     set_parts << "is_reship = #{reship_flag ? 'true' : 'false'}" unless reship_flag.nil?
 
     # On approval the reviewer's "hours to approve" value is final — store it as
@@ -353,12 +352,10 @@ class AdminController < ApplicationController
 
     scraps_awarded = 0
     if action == "approved" && can_ship
-      tier = (tier_override || project["tier_override"] || project["tier"] || 1).to_i
-      new_scraps = ScrapsService.calculate_scraps_from_hours(grant_hours, tier)
+      new_scraps = ScrapsService.calculate_scraps_from_score(grant_hours, reviewer_score)
       previously_shipped = conn.select_one("SELECT 1 FROM project_activity WHERE project_id = #{project_id} AND action = 'project_shipped' LIMIT 1")
       scraps_awarded = (previously_shipped && project["scraps_awarded"].to_i > 0) ? [0, new_scraps - project["scraps_awarded"].to_i].max : new_scraps
       set_parts << "scraps_awarded = #{new_scraps}"
-      # No payout step — scraps are earned/spendable the moment a project ships.
       set_parts << "scraps_paid_at = NOW()"
       set_parts << "scraps_paid_amount = #{new_scraps}"
     end
@@ -383,8 +380,7 @@ class AdminController < ApplicationController
       conn.execute("UPDATE projects SET internal_notes = #{conn.quote(pn)}, updated_at = NOW() WHERE id = #{project_id}") if pn.length <= 2500
     end
 
-    should_notify = can_ship || action != "approved"
-    if ENV["SLACK_BOT_TOKEN"].present? && should_notify
+    if ENV["SLACK_BOT_TOKEN"].present?
       author = conn.select_one("SELECT slack_id FROM users WHERE id = #{project['user_id'].to_i}")
       if author&.dig("slack_id")
         admin_slack_ids = []
@@ -396,7 +392,7 @@ class AdminController < ApplicationController
           project_name: project["name"],
           project_id: project_id,
           action: action,
-          feedback_for_author: feedback,
+          feedback_for_author: action == "denied" ? feedback : nil,
           rejection_reason: rejection_reason.presence,
           reviewer_slack_id: current_user.slack_id,
           admin_slack_ids: admin_slack_ids,
@@ -1011,6 +1007,9 @@ class AdminController < ApplicationController
     render_json({
       scraps_per_dollar: ScrapsService::SCRAPS_PER_DOLLAR,
       tier_multipliers: ScrapsService::TIER_MULTIPLIERS,
+      reviewer_score_floor_mult: ScrapsService::SCORE_FLOOR_MULT,
+      reviewer_score_neutral_mult: ScrapsService::SCORE_NEUTRAL_MULT,
+      reviewer_score_ceil_mult: ScrapsService::SCORE_CEIL_MULT,
       version: AppVersion::SHORT,
       version_sha: AppVersion::SHA,
       version_url: AppVersion.commit_url

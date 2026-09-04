@@ -14,7 +14,10 @@ export interface Project {
 	hours: number;
 	hoursOverride: number | null;
 	tier: number;
+	tierOverride?: number | null;
 	status: string;
+	scrapsAwarded?: number;
+	updatedAt?: string;
 }
 
 export interface ShopItem {

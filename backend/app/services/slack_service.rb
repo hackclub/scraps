@@ -9,9 +9,7 @@ module SlackService
     )
   end
 
-  # Adds a user to a Slack channel. The bot must be a member of the channel and
-  # have channels:manage (public) / groups:write (private). Returns true if the
-  # user is in the channel afterwards (including "was already in it").
+  # slack addition flow
   def self.invite_to_channel(token:, channel_id:, user_slack_id:)
     return false unless token.present? && channel_id.present? && user_slack_id.present?
 
@@ -27,23 +25,32 @@ module SlackService
     false
   end
 
-  def self.notify_project_review(user_slack_id:, project_name:, project_id:, action:, feedback_for_author:, reviewer_slack_id: nil, admin_slack_ids: [], scraps_awarded: 0, frontend_url: SCRAPS_URL, token:, rejection_reason: nil)
+  def self.notify_project_review(user_slack_id:, project_name:, project_id:, action:, feedback_for_author: nil, reviewer_slack_id: nil, admin_slack_ids: [], scraps_awarded: 0, frontend_url: SCRAPS_URL, token:, rejection_reason: nil)
     return unless token.present? && user_slack_id.present?
 
+    project_url = "#{frontend_url}/projects/#{project_id}"
+
+    if action == "approved"
+      blocks = [
+        { type: "section", text: { type: "mrkdwn", text: ":tada: Your project *#{project_name}* was approved! Go check it out." } },
+        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Check it out" }, url: project_url, action_id: "view_project" }] }
+      ]
+      post(token, "chat.postMessage", { channel: user_slack_id, text: "Your project was approved!", blocks: blocks }) rescue nil
+      return
+    end
+
     emoji, status_text = case action
-    when "approved" then [":tada:", "approved and shipped"]
     when "denied" then [":x:", "needs more work"]
     when "permanently_rejected" then [":no_entry:", "permanently rejected"]
     else [":question:", action]
     end
 
     author_blocks = [
-      { type: "section", text: { type: "mrkdwn", text: "#{emoji} Your project *#{project_name}* has been #{status_text}!" } },
-      { type: "section", text: { type: "mrkdwn", text: "*Feedback from reviewer:*\n#{feedback_for_author}" } }
+      { type: "section", text: { type: "mrkdwn", text: "#{emoji} Your project *#{project_name}* has been #{status_text}!" } }
     ]
-    author_blocks << { type: "section", text: { type: "mrkdwn", text: ":scraps: You earned *#{scraps_awarded} scraps*!" } } if action == "approved" && scraps_awarded > 0
+    author_blocks << { type: "section", text: { type: "mrkdwn", text: "*Feedback from reviewer:*\n#{feedback_for_author}" } } if feedback_for_author.present?
     author_blocks << { type: "section", text: { type: "mrkdwn", text: "*Reason:* #{rejection_reason}" } } if action == "permanently_rejected" && rejection_reason.present?
-    author_blocks << { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View Project" }, url: "#{frontend_url}/projects/#{project_id}", action_id: "view_project" }] }
+    author_blocks << { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View Project" }, url: project_url, action_id: "view_project" }] }
 
     post(token, "chat.postMessage", { channel: user_slack_id, text: "Your project has been #{status_text}", blocks: author_blocks }) rescue nil
 

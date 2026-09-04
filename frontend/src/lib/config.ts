@@ -10,6 +10,9 @@ export const API_URL =
 export interface ServerConfig {
 	scrapsPerDollar: number;
 	tierMultipliers: Record<number, number>;
+	reviewerScoreFloorMult: number;
+	reviewerScoreNeutralMult: number;
+	reviewerScoreCeilMult: number;
 	version: string;
 	versionSha: string;
 	versionUrl: string | null;

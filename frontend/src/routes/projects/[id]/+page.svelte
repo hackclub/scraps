@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/stores';
 	import {
 		ArrowLeft,
 		Pencil,
@@ -94,11 +93,6 @@
 			return;
 		}
 		actuallyAdmin = user.role === 'admin' || user.role === 'creator';
-		const forcePublic = $page.url.searchParams.get('view') === 'public';
-		if (actuallyAdmin && !forcePublic) {
-			goto(`/admin/projects/${data.id}`, { replaceState: true });
-			return;
-		}
 		isAdmin = false;
 
 		try {

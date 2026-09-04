@@ -30,4 +30,5 @@ yarn.lock
 pnpm-lock.yaml
 
 /.claude
+/agents
 dev.ps1

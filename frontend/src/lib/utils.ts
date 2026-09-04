@@ -2,6 +2,25 @@ export function formatHours(hours: number): string {
 	return hours.toFixed(1);
 }
 
+export function reviewerScoreMultiplier(
+	score: number,
+	floorMult: number,
+	neutralMult: number,
+	ceilMult: number
+): number {
+	const s = Math.min(3, Math.max(1, score));
+	const x1 = 1,
+		y1 = floorMult;
+	const x2 = 2,
+		y2 = neutralMult;
+	const x3 = 3,
+		y3 = ceilMult;
+	const l1 = ((s - x2) * (s - x3)) / ((x1 - x2) * (x1 - x3));
+	const l2 = ((s - x1) * (s - x3)) / ((x2 - x1) * (x2 - x3));
+	const l3 = ((s - x1) * (s - x2)) / ((x3 - x1) * (x3 - x2));
+	return y1 * l1 + y2 * l2 + y3 * l3;
+}
+
 /**
  * Parse a stored hackatime project entry and extract just the project name.
  * Handles all formats:

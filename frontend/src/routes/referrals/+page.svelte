@@ -65,7 +65,8 @@
 <div class="mx-auto max-w-3xl px-6 pt-24 pb-24 md:px-12">
 	<h1 class="mb-2 text-4xl font-bold md:text-5xl">invite friends</h1>
 	<p class="mb-8 text-lg text-gray-600">
-		share your link. when someone you invite verifies with hack club auth, it counts.
+		Check the link below and get other people to join with it! If they sign up and log in,
+		you get an invite :)
 	</p>
 
 	{#if loggedIn && mine}
@@ -135,7 +136,7 @@
 		<p class="text-gray-500">loading…</p>
 	{:else if leaderboard.length === 0}
 		<p class="rounded-xl border-2 border-dashed border-gray-300 p-6 text-center text-gray-500">
-			no verified referrals yet — be the first.
+			no referrals yet! Go become the first!
 		</p>
 	{:else}
 		<ul class="flex flex-col gap-2">

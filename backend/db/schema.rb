@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_03_140000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_04_160000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -191,6 +191,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_140000) do
     t.text "internal_justification"
     t.integer "project_id", null: false
     t.integer "reviewer_id", null: false
+    t.float "reviewer_score"
     t.index ["project_id"], name: "index_reviews_on_project_id"
     t.index ["reviewer_id"], name: "index_reviews_on_reviewer_id"
   end
@@ -253,6 +254,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_03_140000) do
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "user_id", null: false
     t.index ["user_id"], name: "index_shop_penalties_on_user_id"
+  end
+
+  create_table "shop_retained_items", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "shop_item_id", null: false
+    t.integer "user_id", null: false
+    t.index ["user_id", "shop_item_id"], name: "index_shop_retained_items_on_user_id_and_shop_item_id", unique: true
+    t.index ["user_id"], name: "index_shop_retained_items_on_user_id"
   end
 
   create_table "shop_rolls", id: :serial, force: :cascade do |t|

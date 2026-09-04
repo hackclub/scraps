@@ -1,4 +1,6 @@
 class ShopController < ApplicationController
+  RETAINED_ITEMS_CAP = 2
+
   def items
     conn = ActiveRecord::Base.connection
     # The item list + heart counts are the same for everyone; only the per-user
@@ -11,30 +13,62 @@ class ShopController < ApplicationController
       SQL
     end
 
-    if current_user
-      uid = current_user.id
-      hearts = conn.select_all("SELECT shop_item_id FROM shop_hearts WHERE user_id = #{uid}").map { |r| r["shop_item_id"].to_i }.to_set
-      boosts = {}
-      conn.select_all("SELECT shop_item_id, COALESCE(SUM(boost_amount),0) AS boost_pct, COUNT(*) AS upg_count FROM refinery_orders WHERE user_id = #{uid} GROUP BY shop_item_id").each do |r|
-        boosts[r["shop_item_id"].to_i] = { boost: r["boost_pct"].to_f, count: r["upg_count"].to_i }
-      end
-      penalties = {}
-      conn.select_all("SELECT shop_item_id, probability_multiplier FROM shop_penalties WHERE user_id = #{uid}").each do |r|
-        penalties[r["shop_item_id"].to_i] = r["probability_multiplier"].to_f
-      end
-      roll_counts = {}
-      conn.select_all("SELECT shop_item_id, COUNT(*) AS cnt FROM shop_rolls WHERE user_id = #{uid} GROUP BY shop_item_id").each do |r|
-        roll_counts[r["shop_item_id"].to_i] = r["cnt"].to_i
-      end
-      refinery_spent = {}
-      conn.select_all("SELECT shop_item_id, COALESCE(SUM(cost),0) AS total FROM refinery_spending_history WHERE user_id = #{uid} GROUP BY shop_item_id").each do |r|
-        refinery_spent[r["shop_item_id"].to_i] = r["total"].to_f
-      end
+    render_json(hydrate_items(rows))
+  end
 
-      render_json(rows.map { |item| item_with_user_data(item, hearts, boosts, penalties, roll_counts, refinery_spent) })
-    else
-      render_json(rows.map { |item| item_without_user(item) })
+  def daily_picks
+    conn = ActiveRecord::Base.connection
+    ids = Rails.cache.fetch("shop:daily:#{Date.current}", expires_in: 1.hour) do
+      pool = conn.select_all("SELECT id FROM shop_items WHERE count > 0").map { |r| r["id"].to_i }
+      seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
+      pool.shuffle(random: Random.new(seed)).first(5)
     end
+
+    rows = ids.any? ? conn.select_all(<<~SQL).to_a : []
+      SELECT si.*, (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
+      FROM shop_items si WHERE si.id IN (#{ids.join(',')})
+    SQL
+
+    render_json({ date: Date.current.to_s, items: hydrate_items(rows) })
+  end
+
+  def retained_items
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    conn = ActiveRecord::Base.connection
+    ids = conn.select_all("SELECT shop_item_id FROM shop_retained_items WHERE user_id = #{current_user.id} ORDER BY created_at ASC").map { |r| r["shop_item_id"].to_i }
+    rows = ids.any? ? conn.select_all(<<~SQL).to_a : []
+      SELECT si.*, (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
+      FROM shop_items si WHERE si.id IN (#{ids.join(',')})
+    SQL
+
+    render_json({ cap: RETAINED_ITEMS_CAP, used: ids.length, items: hydrate_items(rows) })
+  end
+
+  def retain_item
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    item_id = params[:id].to_i
+    conn = ActiveRecord::Base.connection
+    return render_json({ error: "Item not found" }, status: :not_found) unless conn.select_one("SELECT 1 FROM shop_items WHERE id = #{item_id}")
+
+    count = conn.select_one("SELECT COUNT(*) AS cnt FROM shop_retained_items WHERE user_id = #{current_user.id}")["cnt"].to_i
+    return render_json({ error: "Your permanent shop is full" }, status: :unprocessable_entity) if count >= RETAINED_ITEMS_CAP
+
+    already = conn.select_one("SELECT 1 FROM shop_retained_items WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
+    return render_json({ error: "Already in your permanent shop" }, status: :unprocessable_entity) if already
+
+    conn.execute("INSERT INTO shop_retained_items (user_id, shop_item_id, created_at) VALUES (#{current_user.id}, #{item_id}, NOW())")
+    render_json({ success: true })
+  end
+
+  def unretain_item
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    item_id = params[:id].to_i
+    conn = ActiveRecord::Base.connection
+    conn.execute("DELETE FROM shop_retained_items WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
+    render_json({ success: true })
   end
 
   def show_item
@@ -643,6 +677,35 @@ class ShopController < ApplicationController
   end
 
   private
+
+  def hydrate_items(rows)
+    return rows.map { |item| item_without_user(item) } unless current_user
+
+    conn = ActiveRecord::Base.connection
+    uid = current_user.id
+    ids = rows.map { |r| r["id"].to_i }
+    return [] if ids.empty?
+
+    hearts = conn.select_all("SELECT shop_item_id FROM shop_hearts WHERE user_id = #{uid} AND shop_item_id IN (#{ids.join(',')})").map { |r| r["shop_item_id"].to_i }.to_set
+    boosts = {}
+    conn.select_all("SELECT shop_item_id, COALESCE(SUM(boost_amount),0) AS boost_pct, COUNT(*) AS upg_count FROM refinery_orders WHERE user_id = #{uid} AND shop_item_id IN (#{ids.join(',')}) GROUP BY shop_item_id").each do |r|
+      boosts[r["shop_item_id"].to_i] = { boost: r["boost_pct"].to_f, count: r["upg_count"].to_i }
+    end
+    penalties = {}
+    conn.select_all("SELECT shop_item_id, probability_multiplier FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id IN (#{ids.join(',')})").each do |r|
+      penalties[r["shop_item_id"].to_i] = r["probability_multiplier"].to_f
+    end
+    roll_counts = {}
+    conn.select_all("SELECT shop_item_id, COUNT(*) AS cnt FROM shop_rolls WHERE user_id = #{uid} AND shop_item_id IN (#{ids.join(',')}) GROUP BY shop_item_id").each do |r|
+      roll_counts[r["shop_item_id"].to_i] = r["cnt"].to_i
+    end
+    refinery_spent = {}
+    conn.select_all("SELECT shop_item_id, COALESCE(SUM(cost),0) AS total FROM refinery_spending_history WHERE user_id = #{uid} AND shop_item_id IN (#{ids.join(',')}) GROUP BY shop_item_id").each do |r|
+      refinery_spent[r["shop_item_id"].to_i] = r["total"].to_f
+    end
+
+    rows.map { |item| item_with_user_data(item, hearts, boosts, penalties, roll_counts, refinery_spent) }
+  end
 
   def item_base_h(item)
     {
