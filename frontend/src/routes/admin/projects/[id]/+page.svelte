@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Github, Globe, Trash2, ClipboardList, RotateCcw } from '@lucide/svelte';
+	import { ArrowLeft, Github, Globe, Trash2, ClipboardList, RotateCcw, Eye } from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { formatHours } from '$lib/utils';
@@ -159,6 +159,12 @@
 			</div>
 
 			<div class="flex flex-wrap gap-3">
+				<a
+					href="/projects/{project.id}?view=public"
+					class="flex items-center gap-2 rounded-full border-2 border-black px-4 py-2 text-sm font-bold hover:border-dashed"
+				>
+					<Eye size={16} /> public view
+				</a>
 				{#if project.githubUrl}
 					<a
 						href={project.githubUrl}

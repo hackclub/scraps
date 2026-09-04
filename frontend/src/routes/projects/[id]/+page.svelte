@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import {
 		ArrowLeft,
 		Pencil,
@@ -75,6 +76,7 @@
 	let owner = $state<Owner | null>(null);
 	let isOwner = $state(false);
 	let isAdmin = $state(false);
+	let actuallyAdmin = $state(false);
 	let canDelete = $state(false);
 	let activity = $state<ActivityEntry[]>([]);
 	let loading = $state(true);
@@ -91,12 +93,13 @@
 			goto('/');
 			return;
 		}
-		isAdmin = user.role === 'admin' || user.role === 'creator';
-		// Admins get the admin project view instead of the public one.
-		if (isAdmin) {
+		actuallyAdmin = user.role === 'admin' || user.role === 'creator';
+		const forcePublic = $page.url.searchParams.get('view') === 'public';
+		if (actuallyAdmin && !forcePublic) {
 			goto(`/admin/projects/${data.id}`, { replaceState: true });
 			return;
 		}
+		isAdmin = false;
 
 		try {
 			const projectRes = await fetch(`${API_URL}/projects/${data.id}`, { credentials: 'include' });
@@ -270,6 +273,23 @@
 			<ArrowLeft size={20} />
 			{$t.project.back}
 		</a>
+	{/if}
+
+	{#if actuallyAdmin}
+		<div
+			class="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border-4 border-dashed border-black bg-yellow-50 px-4 py-3 text-sm font-bold"
+		>
+			<span class="flex items-center gap-2">
+				<Eye size={18} />
+				public view — this is what everyone else sees
+			</span>
+			<a
+				href="/admin/projects/{data.id}"
+				class="rounded-full border-4 border-black bg-black px-4 py-1.5 text-white transition-all hover:bg-gray-800"
+			>
+				switch to admin view
+			</a>
+		</div>
 	{/if}
 
 	{#if loading}

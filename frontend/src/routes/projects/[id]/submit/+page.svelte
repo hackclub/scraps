@@ -65,6 +65,7 @@
 	let usedAi = $state(false);
 	let aiDescription = $state('');
 	let reviewerNotes = $state('');
+	let isAdminUser = $state(false);
 
 	const NAME_MAX = 50;
 	const DESC_MIN = 20;
@@ -102,6 +103,7 @@
 			goto('/');
 			return;
 		}
+		isAdminUser = user.role === 'admin' || user.role === 'creator';
 
 		try {
 			const response = await fetch(`${API_URL}/projects/${data.id}`, {
@@ -295,7 +297,7 @@
 				throw new Error(submitData.message || 'Failed to submit project');
 			}
 
-			goto(`/projects/${project.id}`);
+			goto(`/projects/${project.id}${isAdminUser ? '?view=public' : ''}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to submit project';
 		} finally {
