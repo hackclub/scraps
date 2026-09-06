@@ -35,6 +35,7 @@
 		perRollMultiplier?: number | null;
 		fulfillmentCost?: number | null;
 		sizeVariants?: { name: string; count: number }[];
+		gachaponOnly?: boolean;
 		createdAt: string;
 		updatedAt: string;
 	}
@@ -52,6 +53,17 @@
 		price: number;
 		itemIds: number[];
 	}
+
+	type GachaRow =
+		| { kind: 'existing'; itemId: number }
+		| {
+				kind: 'new';
+				name: string;
+				price: number;
+				image: string;
+				count: number;
+				uploading: boolean;
+		  };
 
 	interface EVResult {
 		upgradeLevel: number;
@@ -132,12 +144,13 @@
 	let formCount = $state(0);
 	let formInfiniteStock = $derived(formCount < 0);
 	let formSizeVariants = $state<{ name: string; count: number }[]>([]);
-	let formIsShirt = $derived(
+	let formGachaponOnly = $state(false);
+	let formIsApparel = $derived(
 		formCategory
 			.toLowerCase()
 			.split(',')
 			.map((c) => c.trim())
-			.includes('shirt')
+			.some((c) => c === 'shirt' || c === 'hoodie')
 	);
 
 	function toggleInfiniteStock(infinite: boolean) {
@@ -478,7 +491,7 @@
 	let gachaImage = $state('');
 	let gachaUploadingImage = $state(false);
 	let gachaPrice = $state(0);
-	let gachaSelectedItemIds = $state<Set<number>>(new Set());
+	let gachaRows = $state<GachaRow[]>([]);
 	let gachaSaving = $state(false);
 	let gachaError = $state<string | null>(null);
 	let gachaDeleteConfirmId = $state<number | null>(null);
@@ -501,7 +514,7 @@
 		gachaDescription = '';
 		gachaImage = '';
 		gachaPrice = 0;
-		gachaSelectedItemIds = new Set();
+		gachaRows = [];
 		gachaError = null;
 		showGachaponModal = true;
 	}
@@ -512,7 +525,7 @@
 		gachaDescription = g.description ?? '';
 		gachaImage = g.image ?? '';
 		gachaPrice = g.price;
-		gachaSelectedItemIds = new Set(g.itemIds);
+		gachaRows = g.itemIds.map((id) => ({ kind: 'existing', itemId: id }) as GachaRow);
 		gachaError = null;
 		showGachaponModal = true;
 	}
@@ -522,11 +535,68 @@
 		editingGachapon = null;
 	}
 
-	function toggleGachaItem(id: number) {
-		const next = new Set(gachaSelectedItemIds);
-		if (next.has(id)) next.delete(id);
-		else next.add(id);
-		gachaSelectedItemIds = next;
+	let gachaLinkableItems = $derived(
+		items.filter(
+			(i) => !i.gachaponOnly && !gachaRows.some((r) => r.kind === 'existing' && r.itemId === i.id)
+		)
+	);
+
+	function addExistingGachaItem(id: number) {
+		if (!id) return;
+		gachaRows = [...gachaRows, { kind: 'existing', itemId: id }];
+	}
+
+	function addNewGachaItem() {
+		gachaRows = [
+			...gachaRows,
+			{ kind: 'new', name: '', price: 0, image: '', count: 0, uploading: false }
+		];
+	}
+
+	function removeGachaRow(index: number) {
+		gachaRows = gachaRows.filter((_, i) => i !== index);
+	}
+
+	function gachaRowPrice(row: GachaRow): number {
+		if (row.kind === 'new') return row.price;
+		return items.find((i) => i.id === row.itemId)?.price ?? 0;
+	}
+
+	let gachaChances = $derived.by(() => {
+		const weights = gachaRows.map((r) => {
+			const p = Math.max(gachaRowPrice(r), 1);
+			return 1 / Math.sqrt(p);
+		});
+		const total = weights.reduce((a, b) => a + b, 0);
+		return weights.map((w) => (total > 0 ? (w / total) * 100 : 0));
+	});
+
+	async function handleGachaRowImageUpload(row: GachaRow, event: Event) {
+		if (row.kind !== 'new') return;
+		const file = (event.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (file.size > 5 * 1024 * 1024) {
+			gachaError = 'Image must be under 5MB';
+			return;
+		}
+		row.uploading = true;
+		gachaError = null;
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			const res = await fetch(`${API_URL}/upload/image`, {
+				method: 'POST',
+				credentials: 'include',
+				body: fd
+			});
+			const data = await res.json();
+			if (data.error) throw new Error(data.error);
+			row.image = data.url;
+		} catch (e) {
+			gachaError = e instanceof Error ? e.message : 'Upload failed';
+		} finally {
+			row.uploading = false;
+		}
 	}
 
 	async function handleGachaImageUpload(event: Event) {
@@ -565,9 +635,15 @@
 			gachaError = 'Price must be positive';
 			return;
 		}
-		if (gachaSelectedItemIds.size === 0) {
-			gachaError = 'Select at least one item';
+		if (gachaRows.length === 0) {
+			gachaError = 'Add at least one item';
 			return;
+		}
+		for (const row of gachaRows) {
+			if (row.kind === 'new' && (!row.name.trim() || row.price <= 0)) {
+				gachaError = 'New items need a name and a cost above 0';
+				return;
+			}
 		}
 
 		gachaSaving = true;
@@ -587,7 +663,18 @@
 					description: gachaDescription,
 					image: gachaImage,
 					price: gachaPrice,
-					itemIds: Array.from(gachaSelectedItemIds)
+					items: gachaRows.map((r) =>
+						r.kind === 'existing'
+							? { id: r.itemId }
+							: {
+									new: {
+										name: r.name.trim(),
+										price: r.price,
+										image: r.image.trim(),
+										count: r.count
+									}
+								}
+					)
 				})
 			});
 
@@ -662,6 +749,7 @@
 		formRollCostOverride = null;
 		formFulfillmentCost = null;
 		formSizeVariants = [];
+		formGachaponOnly = false;
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
@@ -687,6 +775,7 @@
 		formRollCostOverride = item.rollCostOverride ?? null;
 		formFulfillmentCost = item.fulfillmentCost ?? null;
 		formSizeVariants = item.sizeVariants ? item.sizeVariants.map((v) => ({ ...v })) : [];
+		formGachaponOnly = item.gachaponOnly ?? false;
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
@@ -729,9 +818,8 @@
 					boostAmount: formBoostAmount,
 					rollCostOverride: formRollCostOverride,
 					fulfillmentCost: formFulfillmentCost,
-					sizeVariants: formIsShirt
-						? formSizeVariants.filter((v) => v.name.trim())
-						: []
+					gachaponOnly: formGachaponOnly,
+					sizeVariants: formIsApparel ? formSizeVariants.filter((v) => v.name.trim()) : []
 				})
 			});
 
@@ -775,7 +863,6 @@
 			deleteConfirmId = null;
 		}
 	}
-
 </script>
 
 <svelte:head>
@@ -828,9 +915,9 @@
 			</div>
 		</div>
 		<p class="mt-2 text-xs text-gray-500">
-			roll cost scales with effective probability (including upgrades). upgrades raise the win chance
-			and the roll cost together, with no scraps cap — a user can keep upgrading until they reach 100%
-			effective probability.
+			roll cost scales with effective probability (including upgrades). upgrades raise the win
+			chance and the roll cost together, with no scraps cap — a user can keep upgrading until they
+			reach 100% effective probability.
 		</p>
 	</div>
 
@@ -854,7 +941,15 @@
 							class="h-20 w-20 shrink-0 rounded-lg border-2 border-black object-cover"
 						/>
 						<div class="min-w-0 flex-1">
-							<h3 class="text-xl font-bold">{item.name}</h3>
+							<h3 class="flex flex-wrap items-center gap-2 text-xl font-bold">
+								{item.name}
+								{#if item.gachaponOnly}
+									<span
+										class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-bold text-purple-700"
+										>gachapon only</span
+									>
+								{/if}
+							</h3>
 							<p class="text-sm wrap-break-word text-gray-600">{item.description}</p>
 							<div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
 								<span class="font-bold">${(item.price / SCRAPS_PER_DOLLAR).toFixed(2)}</span>
@@ -959,7 +1054,9 @@
 
 	<div class="mt-12 mb-8 flex items-center justify-between">
 		<div>
-			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold"><PackageOpen size={22} /> gachapons</h2>
+			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
+				<PackageOpen size={22} /> gachapons
+			</h2>
 			<p class="text-gray-600">
 				guaranteed-win bundles — pay a premium, get one random item from the pool
 			</p>
@@ -1024,524 +1121,520 @@
 </div>
 
 {#if showModal}
-					<div
-						class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-						onclick={(e) => e.target === e.currentTarget && closeModal()}
-						onkeydown={(e) => e.key === 'Escape' && closeModal()}
-						role="dialog"
-						tabindex="-1"
-					>
-						<div
-							class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6"
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={(e) => e.target === e.currentTarget && closeModal()}
+		onkeydown={(e) => e.key === 'Escape' && closeModal()}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div
+			class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6"
+		>
+			<div class="mb-6 flex items-center justify-between">
+				<h2 class="text-2xl font-bold">
+					{editingItem ? $t.admin.editItem : $t.admin.addItem}
+				</h2>
+				<button
+					onclick={closeModal}
+					class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
+				>
+					<X size={20} />
+				</button>
+			</div>
+
+			{#if formError}
+				<div class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm text-red-600">
+					{formError}
+				</div>
+			{/if}
+
+			<div class="space-y-4">
+				<div>
+					<label for="name" class="mb-1 block text-sm font-bold">name</label>
+					<input
+						id="name"
+						type="text"
+						bind:value={formName}
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<span class="mb-1 block text-sm font-bold">image</span>
+					<div class="flex items-center gap-3">
+						{#if formImage}
+							<img
+								src={formImage}
+								alt=""
+								class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
+							/>
+						{/if}
+						<label
+							class="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-black px-4 py-2 font-bold transition-all hover:border-dashed {uploadingImage
+								? 'opacity-50'
+								: ''}"
 						>
-							<div class="mb-6 flex items-center justify-between">
-								<h2 class="text-2xl font-bold">
-									{editingItem ? $t.admin.editItem : $t.admin.addItem}
-								</h2>
-								<button
-									onclick={closeModal}
-									class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
-								>
-									<X size={20} />
-								</button>
-							</div>
+							<Upload size={16} />
+							{uploadingImage ? 'uploading…' : formImage ? 'replace' : 'upload'}
+							<input
+								type="file"
+								accept="image/*"
+								onchange={handleImageUpload}
+								disabled={uploadingImage}
+								class="hidden"
+							/>
+						</label>
+					</div>
+					<input
+						type="text"
+						bind:value={formImage}
+						placeholder="…or paste an image URL"
+						class="mt-2 w-full rounded-lg border-2 border-black px-4 py-2 text-sm focus:border-dashed focus:outline-none"
+					/>
+				</div>
 
-							{#if formError}
-								<div
-									class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm text-red-600"
-								>
-									{formError}
-								</div>
+				<div>
+					<label for="description" class="mb-1 block text-sm font-bold">description</label>
+					<textarea
+						id="description"
+						bind:value={formDescription}
+						rows="3"
+						class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					></textarea>
+				</div>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="monetaryValue" class="mb-1 block text-sm font-bold">value ($)</label>
+						<input
+							id="monetaryValue"
+							type="number"
+							value={formMonetaryValue}
+							oninput={(e) => updateFromMonetary(parseFloat(e.currentTarget.value) || 0)}
+							min="0"
+							step="0.01"
+							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+						<p class="mt-1 text-xs text-gray-500">
+							auto = {Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)} scraps
+						</p>
+					</div>
+
+					<div>
+						<label for="scrapsPrice" class="mb-1 block text-sm font-bold"
+							>price (scraps)
+							{#if formPriceOverride}
+								<span class="ml-1 text-xs font-normal text-yellow-600">overridden</span>
 							{/if}
+						</label>
+						<input
+							id="scrapsPrice"
+							type="number"
+							value={formPrice}
+							oninput={(e) => updatePriceOverride(parseInt(e.currentTarget.value) || 0)}
+							min="1"
+							class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {formPriceOverride
+								? 'border-yellow-500'
+								: 'border-black'}"
+						/>
+						{#if formPriceOverride}
+							<button
+								onclick={clearPriceOverride}
+								class="mt-1 cursor-pointer text-xs font-bold text-yellow-600 underline"
+								>reset to auto ({Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)})</button
+							>
+						{:else}
+							<p class="mt-1 text-xs text-gray-500">
+								~{(formPrice / SCRAPS_PER_HOUR).toFixed(1)} hrs to earn
+							</p>
+						{/if}
+					</div>
+				</div>
 
-							<div class="space-y-4">
-								<div>
-									<label for="name" class="mb-1 block text-sm font-bold">name</label>
-									<input
-										id="name"
-										type="text"
-										bind:value={formName}
-										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-									/>
-								</div>
+				<div>
+					<label for="fulfillmentCost" class="mb-1 block text-sm font-bold"
+						>fulfillment cost ($)</label
+					>
+					<input
+						id="fulfillmentCost"
+						type="number"
+						min="0"
+						step="0.01"
+						value={formFulfillmentCost ?? ''}
+						oninput={(e) => {
+							const v = e.currentTarget.value;
+							formFulfillmentCost = v === '' ? null : parseFloat(v);
+						}}
+						placeholder="what it actually costs to ship one"
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+					<p class="mt-1 text-xs text-gray-500">manual — not derived from value</p>
+				</div>
 
-								<div>
-									<span class="mb-1 block text-sm font-bold">image</span>
-									<div class="flex items-center gap-3">
-										{#if formImage}
-											<img
-												src={formImage}
-												alt=""
-												class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
-											/>
-										{/if}
-										<label
-											class="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-black px-4 py-2 font-bold transition-all hover:border-dashed {uploadingImage
-												? 'opacity-50'
-												: ''}"
-										>
-											<Upload size={16} />
-											{uploadingImage ? 'uploading…' : formImage ? 'replace' : 'upload'}
-											<input
-												type="file"
-												accept="image/*"
-												onchange={handleImageUpload}
-												disabled={uploadingImage}
-												class="hidden"
-											/>
-										</label>
-									</div>
-									<input
-										type="text"
-										bind:value={formImage}
-										placeholder="…or paste an image URL"
-										class="mt-2 w-full rounded-lg border-2 border-black px-4 py-2 text-sm focus:border-dashed focus:outline-none"
-									/>
-								</div>
-
-								<div>
-									<label for="description" class="mb-1 block text-sm font-bold">description</label>
-									<textarea
-										id="description"
-										bind:value={formDescription}
-										rows="3"
-										class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-									></textarea>
-								</div>
-
-								<div class="grid grid-cols-2 gap-4">
-									<div>
-										<label for="monetaryValue" class="mb-1 block text-sm font-bold">value ($)</label
-										>
-										<input
-											id="monetaryValue"
-											type="number"
-											value={formMonetaryValue}
-											oninput={(e) => updateFromMonetary(parseFloat(e.currentTarget.value) || 0)}
-											min="0"
-											step="0.01"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-										<p class="mt-1 text-xs text-gray-500">
-											auto = {Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)} scraps
-										</p>
-									</div>
-
-									<div>
-										<label for="scrapsPrice" class="mb-1 block text-sm font-bold"
-											>price (scraps)
-											{#if formPriceOverride}
-												<span class="ml-1 text-xs font-normal text-yellow-600">overridden</span>
-											{/if}
-										</label>
-										<input
-											id="scrapsPrice"
-											type="number"
-											value={formPrice}
-											oninput={(e) => updatePriceOverride(parseInt(e.currentTarget.value) || 0)}
-											min="1"
-											class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {formPriceOverride
-												? 'border-yellow-500'
-												: 'border-black'}"
-										/>
-										{#if formPriceOverride}
-											<button
-												onclick={clearPriceOverride}
-												class="mt-1 cursor-pointer text-xs font-bold text-yellow-600 underline"
-												>reset to auto ({Math.round(formMonetaryValue * SCRAPS_PER_DOLLAR)})</button
-											>
-										{:else}
-											<p class="mt-1 text-xs text-gray-500">
-												~{(formPrice / SCRAPS_PER_HOUR).toFixed(1)} hrs to earn
-											</p>
-										{/if}
-									</div>
-								</div>
-
-								<div>
-									<label for="fulfillmentCost" class="mb-1 block text-sm font-bold"
-										>fulfillment cost ($)</label
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
+						{#if formInfiniteStock}
+							<div
+								class="flex w-full items-center justify-between rounded-lg border-2 border-black bg-gray-50 px-4 py-2"
+							>
+								<span class="font-bold text-gray-500">∞ unlimited</span>
+							</div>
+						{:else}
+							<input
+								id="count"
+								type="number"
+								value={formCount}
+								oninput={(e) => updateFromStock(parseInt(e.currentTarget.value) || 0)}
+								min="0"
+								class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+							/>
+						{/if}
+						<label class="mt-1 flex cursor-pointer items-center gap-2 text-xs text-gray-500">
+							<input
+								type="checkbox"
+								checked={formInfiniteStock}
+								onchange={(e) => toggleInfiniteStock(e.currentTarget.checked)}
+								class="cursor-pointer"
+							/>
+							unlimited stock (never sells out)
+						</label>
+					</div>
+					<div>
+						<label for="category" class="mb-1 block text-sm font-bold">categories</label>
+						<input
+							id="category"
+							type="text"
+							bind:value={formCategory}
+							placeholder="e.g. merch, blueprint, hardware"
+							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+						{#if existingCategories.length > 0}
+							<div class="mt-2 flex flex-wrap gap-1">
+								{#each existingCategories as cat (cat)}
+									<button
+										type="button"
+										onclick={() => addCategoryTag(cat)}
+										class="cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs transition-all hover:bg-gray-100"
 									>
+										+ {cat}
+									</button>
+								{/each}
+							</div>
+						{/if}
+						<p class="mt-1 text-xs text-gray-500">
+							comma-separate to add more than one — not limited to a fixed list, type anything new
+							and it becomes its own category
+						</p>
+					</div>
+				</div>
+
+				{#if formIsApparel}
+					<div class="rounded-xl border-2 border-dashed border-black p-3">
+						<p class="mb-2 text-sm font-bold">sizes</p>
+						<p class="mb-3 text-xs text-gray-500">
+							set stock per size — a size with 0 in stock is hidden from users entirely
+						</p>
+						<div class="flex flex-col gap-2">
+							{#each formSizeVariants as variant, i (i)}
+								<div class="flex items-center gap-2">
 									<input
-										id="fulfillmentCost"
+										type="text"
+										bind:value={variant.name}
+										placeholder="Small"
+										class="flex-1 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
+									/>
+									<input
 										type="number"
+										bind:value={variant.count}
 										min="0"
-										step="0.01"
-										value={formFulfillmentCost ?? ''}
-										oninput={(e) => {
-											const v = e.currentTarget.value;
-											formFulfillmentCost = v === '' ? null : parseFloat(v);
-										}}
-										placeholder="what it actually costs to ship one"
-										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+										placeholder="0"
+										class="w-24 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
 									/>
-									<p class="mt-1 text-xs text-gray-500">manual — not derived from value</p>
-								</div>
-
-								<div class="grid grid-cols-2 gap-4">
-									<div>
-										<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
-										{#if formInfiniteStock}
-											<div
-												class="flex w-full items-center justify-between rounded-lg border-2 border-black bg-gray-50 px-4 py-2"
-											>
-												<span class="font-bold text-gray-500">∞ unlimited</span>
-											</div>
-										{:else}
-											<input
-												id="count"
-												type="number"
-												value={formCount}
-												oninput={(e) => updateFromStock(parseInt(e.currentTarget.value) || 0)}
-												min="0"
-												class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-											/>
-										{/if}
-										<label class="mt-1 flex cursor-pointer items-center gap-2 text-xs text-gray-500">
-											<input
-												type="checkbox"
-												checked={formInfiniteStock}
-												onchange={(e) => toggleInfiniteStock(e.currentTarget.checked)}
-												class="cursor-pointer"
-											/>
-											unlimited stock (never sells out)
-										</label>
-									</div>
-									<div>
-										<label for="category" class="mb-1 block text-sm font-bold">categories</label>
-										<input
-											id="category"
-											type="text"
-											bind:value={formCategory}
-											placeholder="e.g. merch, blueprint, hardware"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-										{#if existingCategories.length > 0}
-											<div class="mt-2 flex flex-wrap gap-1">
-												{#each existingCategories as cat (cat)}
-													<button
-														type="button"
-														onclick={() => addCategoryTag(cat)}
-														class="cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs transition-all hover:bg-gray-100"
-													>
-														+ {cat}
-													</button>
-												{/each}
-											</div>
-										{/if}
-										<p class="mt-1 text-xs text-gray-500">
-											comma-separate to add more than one — not limited to a fixed list, type
-											anything new and it becomes its own category
-										</p>
-									</div>
-								</div>
-
-								{#if formIsShirt}
-									<div class="rounded-xl border-2 border-dashed border-black p-3">
-										<p class="mb-2 text-sm font-bold">sizes</p>
-										<p class="mb-3 text-xs text-gray-500">
-											set stock per size — a size with 0 in stock is hidden from users entirely
-										</p>
-										<div class="flex flex-col gap-2">
-											{#each formSizeVariants as variant, i (i)}
-												<div class="flex items-center gap-2">
-													<input
-														type="text"
-														bind:value={variant.name}
-														placeholder="Small"
-														class="flex-1 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
-													/>
-													<input
-														type="number"
-														bind:value={variant.count}
-														min="0"
-														placeholder="0"
-														class="w-24 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
-													/>
-													<button
-														type="button"
-														onclick={() => removeSizeVariant(i)}
-														class="cursor-pointer rounded-lg border-2 border-black p-1.5 hover:bg-gray-100"
-														aria-label="remove size"
-													>
-														<X size={14} />
-													</button>
-												</div>
-											{/each}
-										</div>
-										<button
-											type="button"
-											onclick={addSizeVariant}
-											class="mt-2 cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold hover:bg-gray-100"
-										>
-											+ add size
-										</button>
-									</div>
-								{/if}
-
-								{#if formMonetaryValue > 0}
-									<div
-										class="rounded-xl border-2 p-3 {hasCustomPricing
-											? 'border-yellow-400 bg-yellow-50'
-											: 'border-green-400 bg-green-50'}"
+									<button
+										type="button"
+										onclick={() => removeSizeVariant(i)}
+										class="cursor-pointer rounded-lg border-2 border-black p-1.5 hover:bg-gray-100"
+										aria-label="remove size"
 									>
-										<div class="flex items-center justify-between">
-											<div class="text-xs">
-												<span
-													class="font-bold {hasCustomPricing
-														? 'text-yellow-700'
-														: 'text-green-700'}"
-												>
-													{hasCustomPricing
-														? 'custom pricing (differs from optimal)'
-														: 'using optimal pricing'}
-												</span>
-												<span class="ml-2 text-gray-500">
-													optimal: {optimalPricing?.baseProbability}% base · +{optimalPricing?.boostAmount}%/upgrade
-													· {optimalPricing?.baseUpgradeCost} base upgrade cost
-												</span>
-											</div>
-											{#if hasCustomPricing}
-												<button
-													onclick={async () => {
-														// Apply optimal values into the form
-														if (!optimalPricing) return;
-														formPrice = optimalPricing.price;
-														formBaseProbability = optimalPricing.baseProbability;
-														formBaseUpgradeCost = optimalPricing.baseUpgradeCost;
-														formBoostAmount = optimalPricing.boostAmount;
-														formPriceOverride = false;
-														// ensure EV and server parity
-														await recalculatePricing();
-													}}
-													class="flex cursor-pointer items-center gap-1 rounded-full border-2 border-yellow-600 px-3 py-1 text-xs font-bold text-yellow-700 transition-all duration-200 hover:border-dashed"
-												>
-													<RotateCcw size={12} />
-													use optimal
-												</button>
-											{/if}
-										</div>
-									</div>
-								{/if}
+										<X size={14} />
+									</button>
+								</div>
+							{/each}
+						</div>
+						<button
+							type="button"
+							onclick={addSizeVariant}
+							class="mt-2 cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold hover:bg-gray-100"
+						>
+							+ add size
+						</button>
+					</div>
+				{/if}
 
+				<label class="flex cursor-pointer items-start gap-2 rounded-xl border-2 border-black p-3">
+					<input type="checkbox" bind:checked={formGachaponOnly} class="mt-0.5 cursor-pointer" />
+					<span class="text-sm">
+						<span class="font-bold">gachapon only</span>
+						<span class="block text-xs text-gray-500">
+							hide from the normal shop (daily picks, rolls, keep-forever) — only winnable from a
+							gachapon it's added to
+						</span>
+					</span>
+				</label>
+
+				{#if formMonetaryValue > 0}
+					<div
+						class="rounded-xl border-2 p-3 {hasCustomPricing
+							? 'border-yellow-400 bg-yellow-50'
+							: 'border-green-400 bg-green-50'}"
+					>
+						<div class="flex items-center justify-between">
+							<div class="text-xs">
+								<span class="font-bold {hasCustomPricing ? 'text-yellow-700' : 'text-green-700'}">
+									{hasCustomPricing
+										? 'custom pricing (differs from optimal)'
+										: 'using optimal pricing'}
+								</span>
+								<span class="ml-2 text-gray-500">
+									optimal: {optimalPricing?.baseProbability}% base · +{optimalPricing?.boostAmount}%/upgrade
+									· {optimalPricing?.baseUpgradeCost} base upgrade cost
+								</span>
+							</div>
+							{#if hasCustomPricing}
 								<button
-									type="button"
-									onclick={randomizeOdds}
-									class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-purple-50 px-4 py-2 text-sm font-bold transition-all hover:border-dashed hover:bg-purple-100"
+									onclick={async () => {
+										// Apply optimal values into the form
+										if (!optimalPricing) return;
+										formPrice = optimalPricing.price;
+										formBaseProbability = optimalPricing.baseProbability;
+										formBaseUpgradeCost = optimalPricing.baseUpgradeCost;
+										formBoostAmount = optimalPricing.boostAmount;
+										formPriceOverride = false;
+										// ensure EV and server parity
+										await recalculatePricing();
+									}}
+									class="flex cursor-pointer items-center gap-1 rounded-full border-2 border-yellow-600 px-3 py-1 text-xs font-bold text-yellow-700 transition-all duration-200 hover:border-dashed"
 								>
-									<Dices size={16} /> randomize odds (stays within optimal pricing)
+									<RotateCcw size={12} />
+									use optimal
 								</button>
-
-								<div class="grid grid-cols-2 gap-4">
-									<div>
-										<label for="baseProbability" class="mb-1 block text-sm font-bold"
-											>base probability (%)</label
-										>
-										<input
-											id="baseProbability"
-											type="number"
-											bind:value={formBaseProbability}
-											min="1"
-											max="100"
-											step="1"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-									</div>
-									<div>
-										<label for="boostAmount" class="mb-1 block text-sm font-bold"
-											>boost per upgrade (%)</label
-										>
-										<input
-											id="boostAmount"
-											type="number"
-											bind:value={formBoostAmount}
-											min="0"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-									</div>
-								</div>
-
-								<div>
-									<label for="baseUpgradeCost" class="mb-1 block text-sm font-bold"
-										>base upgrade cost</label
-									>
-									<input
-										id="baseUpgradeCost"
-										type="number"
-										bind:value={formBaseUpgradeCost}
-										min="1"
-										class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-									/>
-									<p class="mt-1 text-xs text-gray-500">
-										first refinery upgrade; each next one decays ×1.05, no cap until 100%
-									</p>
-								</div>
-
-								<div>
-									<label for="rollCostOverride" class="mb-1 block text-sm font-bold"
-										>roll cost override</label
-									>
-									<div class="flex gap-2">
-										<input
-											id="rollCostOverride"
-											type="number"
-											value={formRollCostOverride ?? ''}
-											oninput={(e) => {
-												const val = e.currentTarget.value;
-												formRollCostOverride = val === '' ? null : parseInt(val) || null;
-											}}
-											min="1"
-											placeholder="auto"
-											class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-										{#if formRollCostOverride != null}
-											<button
-												onclick={() => (formRollCostOverride = null)}
-												class="shrink-0 cursor-pointer rounded-lg border-2 border-yellow-500 px-3 py-2 text-xs font-bold text-yellow-600 transition-all duration-200 hover:border-dashed"
-											>
-												auto
-											</button>
-										{/if}
-									</div>
-								</div>
-
-								{#if formEV}
-									<div
-										class="mt-4 rounded-xl border-4 p-4 {formEV.isUnderpriced
-											? 'border-red-600 bg-red-50'
-											: 'border-green-600 bg-green-50'}"
-									>
-										<div class="mb-3 flex items-center justify-between">
-											<h3
-												class="flex items-center gap-2 text-sm font-bold {formEV.isUnderpriced
-													? 'text-red-700'
-													: 'text-green-700'}"
-											>
-												{#if formEV.isUnderpriced}
-													<AlertTriangle size={16} />
-													EV ANALYSIS — UNDERPRICED
-												{:else}
-													<ShieldCheck size={16} />
-													EV ANALYSIS — OK
-												{/if}
-											</h3>
-											<button
-												onclick={() => (showDetailedEV = !showDetailedEV)}
-												class="cursor-pointer text-xs font-bold underline {formEV.isUnderpriced
-													? 'text-red-600'
-													: 'text-green-700'}"
-											>
-												{showDetailedEV ? 'hide details' : 'show details'}
-											</button>
-										</div>
-
-										<div class="grid grid-cols-2 gap-3 text-xs">
-											<div>
-												<span class="text-gray-500">margin:</span>
-												<span class="ml-1 font-bold">+{formEV.marginPercent}%</span>
-											</div>
-											<div>
-												<span class="text-gray-500">base roll cost:</span>
-												<span class="ml-1 font-bold"
-													>{calculateRollCost(
-														formPrice,
-														formBaseProbability,
-														formRollCostOverride,
-														formBaseProbability
-													)} scraps</span
-												>
-												{#if formRollCostOverride != null}
-													<span class="ml-1 text-xs text-yellow-600">(overridden)</span>
-												{/if}
-											</div>
-											<div>
-												<span class="text-gray-500">player best (lv{formEV.bestPlayerLevel}):</span>
-												<span
-													class="ml-1 font-bold {formEV.bestPlayerRatio < 1 ? 'text-red-600' : ''}"
-													>{formEV.bestPlayerCost} scraps ({formEV.bestPlayerRatio}× price)</span
-												>
-											</div>
-											<div>
-												<span class="text-gray-500">upgrades to 100%:</span>
-												<span class="ml-1 font-bold"
-													>{formBoostAmount > 0
-														? Math.ceil((100 - formBaseProbability) / formBoostAmount)
-														: 0} upgrades</span
-												>
-											</div>
-										</div>
-
-										{#if formEV.isUnderpriced}
-											<div class="mt-3 rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
-												⚠ Users can profit at upgrade level {formEV.bestPlayerLevel} — expected cost ({formEV.bestPlayerCost})
-												is below item price ({formPrice}). Consider increasing upgrade costs or
-												lowering boost amount.
-											</div>
-										{/if}
-
-										{#if showDetailedEV}
-											<div class="mt-3 max-h-64 overflow-y-auto">
-												<table class="w-full text-left text-xs">
-													<thead class="sticky top-0 bg-white">
-														<tr class="border-b border-gray-300">
-															<th class="px-1 py-1">lv</th>
-															<th class="px-1 py-1">displayed</th>
-															<th class="px-1 py-1">actual</th>
-															<th class="px-1 py-1">roll cost</th>
-															<th class="px-1 py-1">upgr cost</th>
-															<th class="px-1 py-1">E[rolls]</th>
-															<th class="px-1 py-1">E[total]</th>
-															<th class="px-1 py-1">ratio</th>
-														</tr>
-													</thead>
-													<tbody>
-														{#each formEV.results as r}
-															<tr class="border-b">
-																<td class="px-1 py-1">{r.upgradeLevel}</td>
-																<td class="px-1 py-1">{r.effectiveProbability}%</td>
-																<td class="px-1 py-1">{r.actualWinChance}%</td>
-																<td class="px-1 py-1">{r.rollCost}</td>
-																<td class="px-1 py-1">{r.upgradeCostCumulative}</td>
-																<td class="px-1 py-1">{r.expectedRolls}</td>
-																<td
-																	class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
-																	>{r.expectedTotalCost}</td
-																>
-																<td
-																	class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
-																	>{r.evRatio}×</td
-																>
-															</tr>
-														{/each}
-													</tbody>
-												</table>
-											</div>
-										{/if}
-									</div>
-								{/if}
-							</div>
-
-							<div class="mt-6 flex gap-3">
-								<button
-									onclick={closeModal}
-									disabled={saving}
-									class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-									>{$t.common.cancel}</button
-								>
-								<button
-									onclick={handleSubmit}
-									disabled={saving}
-									class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-									>{saving
-										? $t.common.saving
-										: editingItem
-											? $t.common.save
-											: $t.common.create}</button
-								>
-							</div>
+							{/if}
 						</div>
 					</div>
 				{/if}
+
+				<button
+					type="button"
+					onclick={randomizeOdds}
+					class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-purple-50 px-4 py-2 text-sm font-bold transition-all hover:border-dashed hover:bg-purple-100"
+				>
+					<Dices size={16} /> randomize odds (stays within optimal pricing)
+				</button>
+
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<label for="baseProbability" class="mb-1 block text-sm font-bold"
+							>base probability (%)</label
+						>
+						<input
+							id="baseProbability"
+							type="number"
+							bind:value={formBaseProbability}
+							min="1"
+							max="100"
+							step="1"
+							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="boostAmount" class="mb-1 block text-sm font-bold"
+							>boost per upgrade (%)</label
+						>
+						<input
+							id="boostAmount"
+							type="number"
+							bind:value={formBoostAmount}
+							min="0"
+							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+					</div>
+				</div>
+
+				<div>
+					<label for="baseUpgradeCost" class="mb-1 block text-sm font-bold">base upgrade cost</label
+					>
+					<input
+						id="baseUpgradeCost"
+						type="number"
+						bind:value={formBaseUpgradeCost}
+						min="1"
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+					<p class="mt-1 text-xs text-gray-500">
+						first refinery upgrade; each next one decays ×1.05, no cap until 100%
+					</p>
+				</div>
+
+				<div>
+					<label for="rollCostOverride" class="mb-1 block text-sm font-bold"
+						>roll cost override</label
+					>
+					<div class="flex gap-2">
+						<input
+							id="rollCostOverride"
+							type="number"
+							value={formRollCostOverride ?? ''}
+							oninput={(e) => {
+								const val = e.currentTarget.value;
+								formRollCostOverride = val === '' ? null : parseInt(val) || null;
+							}}
+							min="1"
+							placeholder="auto"
+							class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none"
+						/>
+						{#if formRollCostOverride != null}
+							<button
+								onclick={() => (formRollCostOverride = null)}
+								class="shrink-0 cursor-pointer rounded-lg border-2 border-yellow-500 px-3 py-2 text-xs font-bold text-yellow-600 transition-all duration-200 hover:border-dashed"
+							>
+								auto
+							</button>
+						{/if}
+					</div>
+				</div>
+
+				{#if formEV}
+					<div
+						class="mt-4 rounded-xl border-4 p-4 {formEV.isUnderpriced
+							? 'border-red-600 bg-red-50'
+							: 'border-green-600 bg-green-50'}"
+					>
+						<div class="mb-3 flex items-center justify-between">
+							<h3
+								class="flex items-center gap-2 text-sm font-bold {formEV.isUnderpriced
+									? 'text-red-700'
+									: 'text-green-700'}"
+							>
+								{#if formEV.isUnderpriced}
+									<AlertTriangle size={16} />
+									EV ANALYSIS — UNDERPRICED
+								{:else}
+									<ShieldCheck size={16} />
+									EV ANALYSIS — OK
+								{/if}
+							</h3>
+							<button
+								onclick={() => (showDetailedEV = !showDetailedEV)}
+								class="cursor-pointer text-xs font-bold underline {formEV.isUnderpriced
+									? 'text-red-600'
+									: 'text-green-700'}"
+							>
+								{showDetailedEV ? 'hide details' : 'show details'}
+							</button>
+						</div>
+
+						<div class="grid grid-cols-2 gap-3 text-xs">
+							<div>
+								<span class="text-gray-500">margin:</span>
+								<span class="ml-1 font-bold">+{formEV.marginPercent}%</span>
+							</div>
+							<div>
+								<span class="text-gray-500">base roll cost:</span>
+								<span class="ml-1 font-bold"
+									>{calculateRollCost(
+										formPrice,
+										formBaseProbability,
+										formRollCostOverride,
+										formBaseProbability
+									)} scraps</span
+								>
+								{#if formRollCostOverride != null}
+									<span class="ml-1 text-xs text-yellow-600">(overridden)</span>
+								{/if}
+							</div>
+							<div>
+								<span class="text-gray-500">player best (lv{formEV.bestPlayerLevel}):</span>
+								<span class="ml-1 font-bold {formEV.bestPlayerRatio < 1 ? 'text-red-600' : ''}"
+									>{formEV.bestPlayerCost} scraps ({formEV.bestPlayerRatio}× price)</span
+								>
+							</div>
+							<div>
+								<span class="text-gray-500">upgrades to 100%:</span>
+								<span class="ml-1 font-bold"
+									>{formBoostAmount > 0
+										? Math.ceil((100 - formBaseProbability) / formBoostAmount)
+										: 0} upgrades</span
+								>
+							</div>
+						</div>
+
+						{#if formEV.isUnderpriced}
+							<div class="mt-3 rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
+								⚠ Users can profit at upgrade level {formEV.bestPlayerLevel} — expected cost ({formEV.bestPlayerCost})
+								is below item price ({formPrice}). Consider increasing upgrade costs or lowering
+								boost amount.
+							</div>
+						{/if}
+
+						{#if showDetailedEV}
+							<div class="mt-3 max-h-64 overflow-y-auto">
+								<table class="w-full text-left text-xs">
+									<thead class="sticky top-0 bg-white">
+										<tr class="border-b border-gray-300">
+											<th class="px-1 py-1">lv</th>
+											<th class="px-1 py-1">displayed</th>
+											<th class="px-1 py-1">actual</th>
+											<th class="px-1 py-1">roll cost</th>
+											<th class="px-1 py-1">upgr cost</th>
+											<th class="px-1 py-1">E[rolls]</th>
+											<th class="px-1 py-1">E[total]</th>
+											<th class="px-1 py-1">ratio</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each formEV.results as r}
+											<tr class="border-b">
+												<td class="px-1 py-1">{r.upgradeLevel}</td>
+												<td class="px-1 py-1">{r.effectiveProbability}%</td>
+												<td class="px-1 py-1">{r.actualWinChance}%</td>
+												<td class="px-1 py-1">{r.rollCost}</td>
+												<td class="px-1 py-1">{r.upgradeCostCumulative}</td>
+												<td class="px-1 py-1">{r.expectedRolls}</td>
+												<td class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
+													>{r.expectedTotalCost}</td
+												>
+												<td class="px-1 py-1 {r.evRatio < 1 ? 'font-bold text-red-600' : ''}"
+													>{r.evRatio}×</td
+												>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<div class="mt-6 flex gap-3">
+				<button
+					onclick={closeModal}
+					disabled={saving}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+					>{$t.common.cancel}</button
+				>
+				<button
+					onclick={handleSubmit}
+					disabled={saving}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+					>{saving ? $t.common.saving : editingItem ? $t.common.save : $t.common.create}</button
+				>
+			</div>
+		</div>
+	</div>
+{/if}
 
 {#if deleteConfirmId}
 	{@const deleteItem = items.find((i) => i.id === deleteConfirmId)}
@@ -1606,7 +1699,9 @@
 		role="dialog"
 		tabindex="-1"
 	>
-		<div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6">
+		<div
+			class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6"
+		>
 			<div class="mb-6 flex items-center justify-between">
 				<h2 class="text-2xl font-bold">{editingGachapon ? 'edit gachapon' : 'new gachapon'}</h2>
 				<button
@@ -1696,32 +1791,123 @@
 
 				<div>
 					<span class="mb-1 block text-sm font-bold"
-						>items in this gachapon ({gachaSelectedItemIds.size} selected)</span
+						>items in this gachapon ({gachaRows.length})</span
 					>
-					<div class="max-h-64 space-y-1 overflow-y-auto rounded-lg border-2 border-black p-2">
-						{#each items as item (item.id)}
-							<label
-								class="flex cursor-pointer items-center gap-2 rounded-lg p-1.5 hover:bg-gray-100 {gachaSelectedItemIds.has(
-									item.id
-								)
-									? 'bg-indigo-50'
-									: ''}"
-							>
-								<input
-									type="checkbox"
-									checked={gachaSelectedItemIds.has(item.id)}
-									onchange={() => toggleGachaItem(item.id)}
-									class="cursor-pointer"
-								/>
-								{#if item.image}
-									<img src={item.image} alt="" class="h-8 w-8 rounded object-cover" />
+					<p class="mb-2 text-xs text-gray-500">
+						pull odds are set automatically from each item's scraps value — pricier prizes come out
+						rarer.
+					</p>
+
+					<div class="space-y-2">
+						{#each gachaRows as row, i (i)}
+							{@const linked =
+								row.kind === 'existing' ? items.find((it) => it.id === row.itemId) : null}
+							<div class="rounded-lg border-2 border-black p-2">
+								<div class="flex items-center gap-2">
+									{#if row.kind === 'existing'}
+										{#if linked?.image}
+											<img src={linked.image} alt="" class="h-8 w-8 rounded object-cover" />
+										{/if}
+										<span class="flex-1 truncate text-sm font-bold">
+											{linked?.name ?? `item #${row.itemId}`}
+										</span>
+										<span class="text-xs text-gray-500">
+											<Spool size={12} class="mb-0.5 inline" />{linked?.price ?? 0}
+										</span>
+									{:else}
+										{#if row.image}
+											<img src={row.image} alt="" class="h-8 w-8 rounded object-cover" />
+										{/if}
+										<span
+											class="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700"
+										>
+											new · gachapon only
+										</span>
+										<span class="flex-1"></span>
+									{/if}
+									<span
+										class="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-bold text-indigo-700"
+										title="chance to be dispensed"
+									>
+										{gachaChances[i]?.toFixed(1) ?? '0.0'}%
+									</span>
+									<button
+										type="button"
+										onclick={() => removeGachaRow(i)}
+										class="cursor-pointer rounded-lg border-2 border-black p-1 hover:bg-gray-100"
+										aria-label="remove item"
+									>
+										<X size={12} />
+									</button>
+								</div>
+
+								{#if row.kind === 'new'}
+									<div class="mt-2 grid grid-cols-2 gap-2">
+										<input
+											type="text"
+											bind:value={row.name}
+											placeholder="item name"
+											class="col-span-2 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
+										/>
+										<label class="text-xs font-bold text-gray-500">
+											cost (scraps)
+											<input
+												type="number"
+												bind:value={row.price}
+												min="1"
+												class="mt-0.5 w-full rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
+											/>
+										</label>
+										<label class="text-xs font-bold text-gray-500">
+											stock (-1 = ∞)
+											<input
+												type="number"
+												bind:value={row.count}
+												class="mt-0.5 w-full rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
+											/>
+										</label>
+										<label
+											class="col-span-2 flex cursor-pointer items-center gap-2 rounded-lg border-2 border-black px-3 py-1.5 text-sm font-bold hover:border-dashed {row.uploading
+												? 'opacity-50'
+												: ''}"
+										>
+											<Upload size={14} />
+											{row.uploading ? 'uploading…' : row.image ? 'replace image' : 'upload image'}
+											<input
+												type="file"
+												accept="image/*"
+												onchange={(e) => handleGachaRowImageUpload(row, e)}
+												disabled={row.uploading}
+												class="hidden"
+											/>
+										</label>
+									</div>
 								{/if}
-								<span class="flex-1 truncate text-sm">{item.name}</span>
-								<span class="text-xs text-gray-500"
-									>{isInfiniteStock(item.count) ? '∞' : stockLabel(item.count)}</span
-								>
-							</label>
+							</div>
 						{/each}
+					</div>
+
+					<div class="mt-2 flex flex-wrap items-center gap-2">
+						<select
+							value=""
+							onchange={(e) => {
+								addExistingGachaItem(Number(e.currentTarget.value));
+								e.currentTarget.value = '';
+							}}
+							class="cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold focus:border-dashed focus:outline-none"
+						>
+							<option value="" disabled>+ link an existing item</option>
+							{#each gachaLinkableItems as item (item.id)}
+								<option value={item.id}>{item.name} ({item.price})</option>
+							{/each}
+						</select>
+						<button
+							type="button"
+							onclick={addNewGachaItem}
+							class="cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold hover:bg-gray-100"
+						>
+							+ new gachapon-only item
+						</button>
 					</div>
 				</div>
 

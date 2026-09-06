@@ -5,11 +5,12 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     # The item list + heart counts are the same for everyone; only the per-user
     # overlay below varies. Cache the shared part off the remote-DB hot path.
-    rows = Rails.cache.fetch("shop:items:v1", expires_in: 60.seconds) do
+    rows = Rails.cache.fetch("shop:items:v2", expires_in: 60.seconds) do
       conn.select_all(<<~SQL).to_a
         SELECT si.*,
           (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
         FROM shop_items si
+        WHERE si.gachapon_only = false
       SQL
     end
 
@@ -18,8 +19,8 @@ class ShopController < ApplicationController
 
   def daily_picks
     conn = ActiveRecord::Base.connection
-    ids = Rails.cache.fetch("shop:daily:#{Date.current}", expires_in: 1.hour) do
-      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0").map { |r| r["id"].to_i }
+    ids = Rails.cache.fetch("shop:daily:v2:#{Date.current}", expires_in: 1.hour) do
+      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false").map { |r| r["id"].to_i }
       seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
       pool.shuffle(random: Random.new(seed)).first(5)
     end
@@ -39,10 +40,10 @@ class ShopController < ApplicationController
     ids = conn.select_all("SELECT shop_item_id FROM shop_retained_items WHERE user_id = #{current_user.id} ORDER BY created_at ASC").map { |r| r["shop_item_id"].to_i }
     rows = ids.any? ? conn.select_all(<<~SQL).to_a : []
       SELECT si.*, (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
-      FROM shop_items si WHERE si.id IN (#{ids.join(',')})
+      FROM shop_items si WHERE si.id IN (#{ids.join(',')}) AND si.gachapon_only = false
     SQL
 
-    render_json({ cap: RETAINED_ITEMS_CAP, used: ids.length, items: hydrate_items(rows) })
+    render_json({ cap: RETAINED_ITEMS_CAP, used: rows.length, items: hydrate_items(rows) })
   end
 
   def retain_item
@@ -50,7 +51,9 @@ class ShopController < ApplicationController
 
     item_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
-    return render_json({ error: "Item not found" }, status: :not_found) unless conn.select_one("SELECT 1 FROM shop_items WHERE id = #{item_id}")
+    target = conn.select_one("SELECT gachapon_only FROM shop_items WHERE id = #{item_id}")
+    return render_json({ error: "Item not found" }, status: :not_found) unless target
+    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(target["gachapon_only"])
 
     count = conn.select_one("SELECT COUNT(*) AS cnt FROM shop_retained_items WHERE user_id = #{current_user.id}")["cnt"].to_i
     return render_json({ error: "Your permanent shop is full" }, status: :unprocessable_entity) if count >= RETAINED_ITEMS_CAP
@@ -80,23 +83,32 @@ class ShopController < ApplicationController
     links = conn.select_all("SELECT gachapon_id, shop_item_id FROM shop_gachapon_items WHERE gachapon_id IN (#{gachapon_ids.join(',')})").to_a
     item_ids = links.map { |l| l["shop_item_id"].to_i }.uniq
     items_by_id = if item_ids.any?
-      rows = conn.select_all("SELECT id, name, image, count FROM shop_items WHERE id IN (#{item_ids.join(',')})").to_a
-      rows.each_with_object({}) { |r, h| h[r["id"].to_i] = { id: r["id"].to_i, name: r["name"], image: r["image"], count: r["count"].to_i } }
+      rows = conn.select_all("SELECT id, name, image, count, price FROM shop_items WHERE id IN (#{item_ids.join(',')})").to_a
+      rows.each_with_object({}) { |r, h| h[r["id"].to_i] = { id: r["id"].to_i, name: r["name"], image: r["image"], count: r["count"].to_i, price: r["price"].to_i } }
     else
       {}
     end
 
     items_by_gachapon = Hash.new { |h, k| h[k] = [] }
-    links.each { |l| items_by_gachapon[l["gachapon_id"].to_i] << items_by_id[l["shop_item_id"].to_i] }
+    links.each do |l|
+      base = items_by_id[l["shop_item_id"].to_i]
+      items_by_gachapon[l["gachapon_id"].to_i] << base if base
+    end
 
     render_json(gachapons.map { |g|
+      pool = items_by_gachapon[g["id"].to_i]
+      in_stock = pool.select { |i| i[:count] != 0 }
+      weight_total = in_stock.sum { |i| gachapon_pull_weight(i[:price]) }
       {
         id: g["id"].to_i,
         name: g["name"],
         description: g["description"],
         image: g["image"],
         price: g["price"].to_i,
-        items: items_by_gachapon[g["id"].to_i].compact
+        items: pool.map { |i|
+          chance = (weight_total > 0 && i[:count] != 0) ? (gachapon_pull_weight(i[:price]) / weight_total * 100).round(1) : 0.0
+          i.merge(pull_chance: chance)
+        }
       }
     })
   end
@@ -128,7 +140,8 @@ class ShopController < ApplicationController
         available = conn.select_all("SELECT * FROM shop_items WHERE id IN (#{item_ids.join(',')}) AND count != 0 FOR UPDATE").to_a
         raise({ type: "out_of_stock" }.to_s) if available.empty?
 
-        won_item = available.sample
+        # Rarer = more valuable: an item's pull odds fall as its scraps value rises.
+        won_item = weighted_sample(available) { |row| gachapon_pull_weight(row["price"]) }
         won_item_id = won_item["id"].to_i
         conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{won_item_id}") unless infinite_stock?(won_item["count"])
 
@@ -238,6 +251,7 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
+    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(item["gachapon_only"])
     infinite = infinite_stock?(item["count"])
 
     if !infinite && item["count"].to_i < quantity
@@ -302,6 +316,7 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
+    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(item["gachapon_only"])
     infinite = infinite_stock?(item["count"])
     return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
@@ -420,6 +435,7 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
+    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(item["gachapon_only"])
     infinite = infinite_stock?(item["count"])
     return render_json({ error: "Item is out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
@@ -773,6 +789,31 @@ class ShopController < ApplicationController
     count.to_i < 0
   end
 
+  def truthy?(val)
+    val == true || val == "t" || val == 1 || val == "1"
+  end
+
+  def weighted_sample(rows)
+    weights = rows.map { |row| yield(row).to_f }
+    total = weights.sum
+    return rows.sample if total <= 0
+
+    target = rand * total
+    rows.each_with_index do |row, i|
+      target -= weights[i]
+      return row if target < 0
+    end
+    rows.last
+  end
+
+  # Pull weight for a gachapon item, derived from its scraps value. Inversely
+  # proportional so a pricier prize is rarer; softened by sqrt so a 10x price
+  # gap is ~3x rarity rather than 10x. Tune the curve here.
+  def gachapon_pull_weight(price)
+    p = [price.to_i, 1].max
+    1.0 / Math.sqrt(p)
+  end
+
   def parse_size_variants(raw)
     return raw if raw.is_a?(Array)
     JSON.parse(raw.to_s.presence || "[]")
@@ -824,6 +865,7 @@ class ShopController < ApplicationController
       roll_cost_override: item["roll_cost_override"]&.to_i,
       per_roll_multiplier: (item["per_roll_multiplier"] || 0.05).to_f,
       heart_count: item["heart_count"].to_i,
+      gachapon_only: truthy?(item["gachapon_only"]),
       size_variants: parse_size_variants(item["size_variants"]).select { |v| v["count"].to_i > 0 },
       created_at: item["created_at"],
       updated_at: item["updated_at"]

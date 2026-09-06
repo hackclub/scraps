@@ -43,6 +43,7 @@ export interface ShopItem {
 	nextUpgradeCost: number | null;
 	displayRollCost?: number;
 	sizeVariants?: { name: string; count: number }[];
+	gachaponOnly?: boolean;
 }
 
 export interface LeaderboardEntry {

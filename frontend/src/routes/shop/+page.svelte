@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import HeartButton from '$lib/components/HeartButton.svelte';
 	import ShopItemModal from '$lib/components/ShopItemModal.svelte';
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
 	import { API_URL } from '$lib/config';
@@ -9,29 +8,15 @@
 	import {
 		Spool,
 		PackageCheck,
-		Clock,
 		Sparkles,
 		Bookmark,
 		GripVertical,
 		X,
 		PackageOpen
 	} from '@lucide/svelte';
-	import {
-		shopItemsStore,
-		shopLoading,
-		fetchShopItems,
-		updateShopItemHeart,
-		showToast,
-		type ShopItem
-	} from '$lib/stores';
+	import { shopLoading, fetchShopItems, showToast, type ShopItem } from '$lib/stores';
 	import { t } from '$lib/i18n';
-	import { isInfiniteStock, stockLabel } from '$lib/utils';
-
-	const SCRAPS_PER_HOUR = 64;
-
-	function estimateHours(scraps: number): number {
-		return Math.round((scraps / SCRAPS_PER_HOUR) * 10) / 10;
-	}
+	import { isInfiniteStock } from '$lib/utils';
 
 	function getItemRollCost(item: ShopItem): number {
 		// Prefer the server-provided displayRollCost (authoritative) when available.
@@ -64,7 +49,7 @@
 		description: string | null;
 		image: string | null;
 		price: number;
-		items: { id: number; name: string; image: string; count: number }[];
+		items: { id: number; name: string; image: string; count: number; pullChance: number }[];
 	}
 
 	let gachapons = $state<Gachapon[]>([]);
@@ -118,15 +103,6 @@
 
 	let visibleDailyItems = $derived(
 		dailyItems.filter((d) => !retainedItems.some((r) => r.id === d.id))
-	);
-
-	let notInRotation = $derived(
-		$shopItemsStore.filter(
-			(i) =>
-				i.count !== 0 &&
-				!dailyItems.some((d) => d.id === i.id) &&
-				!retainedItems.some((r) => r.id === i.id)
-		)
 	);
 
 	function seenKey(date: string) {
@@ -344,21 +320,6 @@
 		fetchGachapons();
 		checkPendingOrders();
 	});
-
-	async function toggleHeart(itemId: number) {
-		try {
-			const response = await fetch(`${API_URL}/shop/items/${itemId}/heart`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			if (response.ok) {
-				const data = await response.json();
-				updateShopItemHeart(itemId, data.hearted, data.heartCount);
-			}
-		} catch (error) {
-			console.error('Failed to toggle heart:', error);
-		}
-	}
 </script>
 
 <svelte:head>
@@ -386,10 +347,12 @@
 		</button>
 	{:else}
 		<div in:fade={{ duration: 400 }}>
-			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold"><Sparkles size={22} /> today's picks</h2>
+			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
+				<Sparkles size={22} /> today's picks
+			</h2>
 			<p class="mb-4 text-sm text-gray-600">
-				Drag one down into <strong>your shop</strong> to keep it forever, even after today — or drag
-				one back up here to let it go.
+				Drag one down into <strong>your shop</strong> to keep it forever, even after today — or drag one
+				back up here to let it go.
 			</p>
 			{#if visibleDailyItems.length === 0}
 				<p
@@ -409,90 +372,72 @@
 				ondragleave={onDailyZoneDragLeave}
 				ondrop={onDailyZoneDrop}
 				role="list"
-				class="mb-12 grid grid-cols-1 gap-6 rounded-2xl border-4 p-2 transition-all sm:grid-cols-2 lg:grid-cols-3 {dailyDropHover
+				class="mb-12 grid grid-cols-5 gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
 					? 'border-dashed border-black bg-indigo-50'
 					: 'border-transparent'}"
 			>
 				{#each visibleDailyItems as item (item.id)}
-					{@const rollCost = getItemRollCost(item)}
 					<div
 						role="listitem"
 						draggable={true}
 						ondragstart={(e) => onDragStart(e, item)}
 						ondragend={onDragEnd}
-						class="relative overflow-hidden rounded-2xl border-4 border-black bg-yellow-50 transition-all cursor-grab active:cursor-grabbing {draggingId ===
+						class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-yellow-50 transition-all active:cursor-grabbing {draggingId ===
 						item.id
 							? 'opacity-30'
 							: ''}"
 					>
 						<button
 							onclick={() => (selectedItem = item)}
-							class="w-full cursor-pointer p-5 text-left hover:opacity-90"
+							class="w-full cursor-pointer p-2 text-left hover:opacity-90"
 						>
 							<div class="relative">
-								<img src={item.image} alt={item.name} class="mb-4 h-40 w-full object-contain" />
+								<img
+									src={item.image}
+									alt={item.name}
+									class="mb-1 h-14 w-full object-contain sm:h-20"
+								/>
 								<span
-									class="absolute top-0 right-0 rounded-full px-2 py-1 text-xs font-bold {getProbabilityBgColor(
+									class="absolute top-0 right-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold {getProbabilityBgColor(
 										item.effectiveProbability
 									)} {getProbabilityColor(item.effectiveProbability)}"
 								>
-									{item.effectiveProbability.toFixed(0)}% {$t.shop.chance}
+									{item.effectiveProbability.toFixed(0)}%
 								</span>
 							</div>
-							<h3 class="mb-1 truncate text-2xl font-bold">{item.name}</h3>
-							<p class="mb-3 line-clamp-2 text-sm text-gray-600">{item.description}</p>
-							{#if item.sizeVariants && item.sizeVariants.length > 0}
-								<div class="mb-2 flex flex-wrap gap-1">
-									{#each item.sizeVariants as variant (variant.name)}
-										<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-bold"
-											>{variant.name} · {variant.count}</span
-										>
-									{/each}
-								</div>
-							{/if}
-							<div class="flex items-end justify-between">
-								<div>
-									<span class="flex items-center gap-1 text-xl font-bold"
-										><Spool size={20} />{rollCost}</span
-									>
-									<span class="mt-1 flex items-center gap-1 text-xs text-gray-500"
-										><Clock size={14} />~{estimateHours(rollCost)}h · {stockLabel(item.count)}
-										{isInfiniteStock(item.count) ? '' : $t.shop.left}</span
-									>
-								</div>
-								<HeartButton
-									count={item.heartCount}
-									hearted={item.userHearted}
-									onclick={(e) => {
-										e.stopPropagation();
-										toggleHeart(item.id);
-									}}
-								/>
-							</div>
+							<h3 class="truncate text-xs font-bold sm:text-sm">{item.name}</h3>
+							<span class="flex items-center gap-1 text-xs font-bold sm:text-sm"
+								><Spool size={12} />{getItemRollCost(item)}</span
+							>
 						</button>
 						<div
-							class="flex items-center justify-center gap-1 border-t-2 border-black py-2 text-xs font-bold text-gray-500"
+							class="flex items-center justify-center gap-1 border-t-2 border-black py-1 text-[10px] font-bold text-gray-500"
+							title="drag to keep forever"
 						>
-							<GripVertical size={14} /> drag to keep forever
+							<GripVertical size={12} />
 						</div>
 					</div>
 				{/each}
 			</div>
 
 			<!-- Your permanent shop — drop target -->
-			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold"><Bookmark size={22} /> your shop</h2>
+			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
+				<Bookmark size={22} /> your shop
+			</h2>
 			<p class="mb-4 text-sm text-gray-600">
-				{retainedItems.length}/{retainedCap} slots used — items here stay yours forever, even after
-				they rotate out.
+				{retainedItems.length}/{retainedCap} slots used — items here stay yours forever, even after they
+				rotate out.
 			</p>
 			<div
 				ondragover={onDropZoneDragOver}
 				ondragleave={onDropZoneDragLeave}
 				ondrop={onDropZoneDrop}
 				role="list"
-				class="mb-12 min-h-40 rounded-2xl border-4 border-dashed p-4 transition-all {dropHover
-					? 'border-black bg-indigo-50'
-					: 'border-gray-300'}"
+				class="mb-12 min-h-40 rounded-2xl border-4 p-4 transition-all {dropHover
+					? 'border-dashed border-black bg-indigo-50'
+					: retainedItems.length > 0
+						? 'border-solid border-green-500'
+						: 'border-dashed border-gray-300'}"
 			>
 				{#if retainedLoading}
 					<p class="py-8 text-center text-gray-500">loading…</p>
@@ -509,7 +454,7 @@
 								draggable={true}
 								ondragstart={(e) => onDragStart(e, item)}
 								ondragend={onDragEnd}
-								class="relative overflow-hidden rounded-2xl border-4 border-green-500 transition-all cursor-grab active:cursor-grabbing {item.count ===
+								class="relative cursor-grab overflow-hidden rounded-2xl border-4 border-green-500 transition-all active:cursor-grabbing {item.count ===
 								0
 									? 'opacity-50 grayscale'
 									: ''} {draggingId === item.id ? 'opacity-30' : ''}"
@@ -551,25 +496,6 @@
 					</div>
 				{/if}
 			</div>
-
-			{#if notInRotation.length > 0}
-				<h2 class="mb-4 text-2xl font-bold text-gray-400">not in today's rotation</h2>
-				<div class="grid grid-cols-1 gap-6 opacity-50 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-					{#each notInRotation as item (item.id)}
-						{@const rollCost = getItemRollCost(item)}
-						<button
-							onclick={() => (selectedItem = item)}
-							class="relative cursor-pointer overflow-hidden rounded-2xl border-4 border-black p-4 text-left transition-all hover:border-dashed"
-						>
-							<img src={item.image} alt={item.name} class="mb-4 h-32 w-full object-contain" />
-							<h3 class="mb-1 truncate text-xl font-bold">{item.name}</h3>
-							<span class="flex items-center gap-1 text-lg font-bold"
-								><Spool size={18} />{rollCost}</span
-							>
-						</button>
-					{/each}
-				</div>
-			{/if}
 		</div>
 	{/if}
 
@@ -603,16 +529,25 @@
 						{#if gachapon.description}
 							<p class="mb-3 text-sm text-gray-600">{gachapon.description}</p>
 						{/if}
-						<div class="mb-3 flex flex-wrap gap-1">
+						<div class="mb-3 flex flex-wrap gap-2">
 							{#each gachapon.items as item (item.id)}
-								<img
-									src={item.image}
-									alt={item.name}
-									title={item.name}
-									class="h-10 w-10 rounded-lg border-2 border-black object-cover {item.count === 0
+								<div
+									class="flex w-10 flex-col items-center gap-0.5 {item.count === 0
 										? 'opacity-30 grayscale'
 										: ''}"
-								/>
+									title="{item.name}{item.count === 0
+										? ' (sold out)'
+										: ` — ${item.pullChance}% chance`}"
+								>
+									<img
+										src={item.image}
+										alt={item.name}
+										class="h-10 w-10 rounded-lg border-2 border-black object-cover"
+									/>
+									<span class="text-[10px] font-bold text-gray-500">
+										{item.count === 0 ? '—' : `${item.pullChance}%`}
+									</span>
+								</div>
 							{/each}
 						</div>
 						<p class="mb-3 text-xs text-gray-500">

@@ -1,4 +1,6 @@
 class AdminController < ApplicationController
+  class GachaponError < StandardError; end
+
   before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
   before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
@@ -697,13 +699,14 @@ class AdminController < ApplicationController
 
     fulfillment_cost = params[:fulfillmentCost].to_s.strip.presence
     size_variants = (params[:sizeVariants] || []).map { |v| { name: v[:name].to_s.strip, count: v[:count].to_i } }.select { |v| v[:name].present? }
+    gachapon_only = ActiveModel::Type::Boolean.new.cast(params[:gachaponOnly]) ? true : false
 
     pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, base_prob)
 
     conn = ActiveRecord::Base.connection
     conn.execute(<<~SQL)
-      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, size_variants, created_at, updated_at)
-      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, #{conn.quote(size_variants.to_json)}, NOW(), NOW())
+      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, size_variants, gachapon_only, created_at, updated_at)
+      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, #{conn.quote(size_variants.to_json)}, #{gachapon_only}, NOW(), NOW())
     SQL
     render_json({ success: true }, status: :created)
   end
@@ -726,6 +729,7 @@ class AdminController < ApplicationController
       size_variants = (params[:sizeVariants] || []).map { |v| { name: v[:name].to_s.strip, count: v[:count].to_i } }.select { |v| v[:name].present? }
       set_parts << "size_variants = #{conn.quote(size_variants.to_json)}"
     end
+    set_parts << "gachapon_only = #{ActiveModel::Type::Boolean.new.cast(params[:gachaponOnly]) ? true : false}" if params.key?(:gachaponOnly)
 
     updated = conn.select_one("UPDATE shop_items SET #{set_parts.join(', ')} WHERE id = #{params[:id].to_i} RETURNING id")
     return render_json({ error: "Not found" }, status: :not_found) unless updated
@@ -766,29 +770,67 @@ class AdminController < ApplicationController
     })
   end
 
+  # Resolves a gachapon's item list to shop_item ids. Each entry is either
+  # { id: <existing shop item> } or { new: { name, price, image, count } },
+  # where a `new` entry is created as a gachapon-only shop item first.
+  # Falls back to a bare `itemIds: [id]` array. Returns de-duped ids.
+  def resolve_gachapon_item_ids(conn)
+    raw = params[:items]
+    unless raw.is_a?(Array) && raw.any?
+      return (params[:itemIds] || []).map(&:to_i).select(&:positive?).uniq
+    end
+
+    raw.filter_map { |entry|
+      existing_id = (entry[:id] || entry[:shop_item_id]).to_i
+      next existing_id if existing_id.positive?
+
+      spec = entry[:new] || entry["new"]
+      next unless spec
+
+      name = spec[:name].to_s.strip
+      price = spec[:price].to_i
+      raise GachaponError, "New gachapon items need a name and a cost above 0" if name.blank? || price <= 0
+      image = spec[:image].to_s.strip
+      count = spec.key?(:count) ? spec[:count].to_i : 0
+
+      pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, nil)
+      created = conn.select_one(<<~SQL)
+        INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, size_variants, gachapon_only, created_at, updated_at)
+        VALUES (#{conn.quote(name)}, #{conn.quote(image)}, '', #{price}, 'gachapon', #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, NULL, 0.05, '[]', true, NOW(), NOW())
+        RETURNING id
+      SQL
+      created["id"].to_i
+    }.uniq
+  end
+
   def create_gachapon
     name = params[:name].to_s.strip
     description = params[:description].to_s.strip
     image = params[:image].to_s.strip
     price = params[:price].to_i
-    item_ids = (params[:itemIds] || []).map(&:to_i).uniq
 
     return render_json({ error: "Name is required" }, status: :bad_request) if name.blank?
     return render_json({ error: "Invalid price" }, status: :bad_request) if price <= 0
-    return render_json({ error: "Select at least one item" }, status: :bad_request) if item_ids.empty?
 
     conn = ActiveRecord::Base.connection
-    gachapon = conn.select_one(<<~SQL)
-      INSERT INTO shop_gachapons (name, description, image, price, created_at, updated_at)
-      VALUES (#{conn.quote(name)}, #{conn.quote(description.presence)}, #{conn.quote(image.presence)}, #{price}, NOW(), NOW())
-      RETURNING id
-    SQL
+    ActiveRecord::Base.transaction do
+      item_ids = resolve_gachapon_item_ids(conn)
+      raise GachaponError, "Add at least one item" if item_ids.empty?
 
-    item_ids.each do |item_id|
-      conn.execute("INSERT INTO shop_gachapon_items (gachapon_id, shop_item_id, created_at) VALUES (#{gachapon['id'].to_i}, #{item_id}, NOW())")
+      gachapon = conn.select_one(<<~SQL)
+        INSERT INTO shop_gachapons (name, description, image, price, created_at, updated_at)
+        VALUES (#{conn.quote(name)}, #{conn.quote(description.presence)}, #{conn.quote(image.presence)}, #{price}, NOW(), NOW())
+        RETURNING id
+      SQL
+
+      item_ids.each do |item_id|
+        conn.execute("INSERT INTO shop_gachapon_items (gachapon_id, shop_item_id, created_at) VALUES (#{gachapon['id'].to_i}, #{item_id}, NOW())")
+      end
     end
 
     render_json({ success: true }, status: :created)
+  rescue GachaponError => e
+    render_json({ error: e.message }, status: :bad_request)
   end
 
   def update_gachapon
@@ -803,15 +845,21 @@ class AdminController < ApplicationController
     set_parts << "price = #{params[:price].to_i}" if params.key?(:price)
     conn.execute("UPDATE shop_gachapons SET #{set_parts.join(', ')} WHERE id = #{gachapon_id}")
 
-    if params.key?(:itemIds)
-      item_ids = (params[:itemIds] || []).map(&:to_i).uniq
-      conn.execute("DELETE FROM shop_gachapon_items WHERE gachapon_id = #{gachapon_id}")
-      item_ids.each do |item_id|
-        conn.execute("INSERT INTO shop_gachapon_items (gachapon_id, shop_item_id, created_at) VALUES (#{gachapon_id}, #{item_id}, NOW())")
+    if params.key?(:items) || params.key?(:itemIds)
+      ActiveRecord::Base.transaction do
+        item_ids = resolve_gachapon_item_ids(conn)
+        raise GachaponError, "Add at least one item" if item_ids.empty?
+
+        conn.execute("DELETE FROM shop_gachapon_items WHERE gachapon_id = #{gachapon_id}")
+        item_ids.each do |item_id|
+          conn.execute("INSERT INTO shop_gachapon_items (gachapon_id, shop_item_id, created_at) VALUES (#{gachapon_id}, #{item_id}, NOW())")
+        end
       end
     end
 
     render_json({ success: true })
+  rescue GachaponError => e
+    render_json({ error: e.message }, status: :bad_request)
   end
 
   def delete_gachapon
