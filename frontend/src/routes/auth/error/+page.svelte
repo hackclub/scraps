@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { AlertTriangle } from '@lucide/svelte';
+	import { AlertTriangle, Clock } from '@lucide/svelte';
 	import { t } from '$lib/i18n';
 
 	let reason = $derived(page.url.searchParams.get('reason') || 'unknown');
 
 	const errorConfigs: Record<
 		string,
-		{ key: 'needsVerification' | 'notEligible' | 'authFailed' | 'unknown'; redirectUrl?: string }
+		{
+			key: 'needsVerification' | 'notEligible' | 'notAllowed' | 'authFailed' | 'unknown';
+			redirectUrl?: string;
+		}
 	> = {
 		'needs-verification': {
 			key: 'needsVerification',
@@ -17,7 +20,7 @@
 			key: 'notEligible'
 		},
 		'not-allowed': {
-			key: 'notEligible'
+			key: 'notAllowed'
 		},
 		'auth-failed': {
 			key: 'authFailed'
@@ -34,9 +37,11 @@
 			? $t.auth.needsVerification.title
 			: config.key === 'notEligible'
 				? $t.auth.notEligible.title
-				: config.key === 'authFailed'
-					? $t.auth.authFailed.title
-					: $t.auth.unknown.title
+				: config.key === 'notAllowed'
+					? $t.auth.notAllowed.title
+					: config.key === 'authFailed'
+						? $t.auth.authFailed.title
+						: $t.auth.unknown.title
 	);
 
 	let errorDescription = $derived(
@@ -44,9 +49,11 @@
 			? $t.auth.needsVerification.description
 			: config.key === 'notEligible'
 				? $t.auth.notEligible.description
-				: config.key === 'authFailed'
-					? $t.auth.authFailed.description
-					: $t.auth.unknown.description
+				: config.key === 'notAllowed'
+					? $t.auth.notAllowed.description
+					: config.key === 'authFailed'
+						? $t.auth.authFailed.description
+						: $t.auth.unknown.description
 	);
 
 	let redirectText = $derived(
@@ -61,9 +68,15 @@
 <div class="flex min-h-dvh items-center justify-center px-6">
 	<div class="max-w-md text-center">
 		<div class="mb-6 flex justify-center">
-			<div class="flex h-24 w-24 items-center justify-center rounded-full bg-red-100">
-				<AlertTriangle size={48} class="text-red-600" />
-			</div>
+			{#if config.key === 'notAllowed'}
+				<div class="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-100">
+					<Clock size={48} class="text-indigo-600" />
+				</div>
+			{:else}
+				<div class="flex h-24 w-24 items-center justify-center rounded-full bg-red-100">
+					<AlertTriangle size={48} class="text-red-600" />
+				</div>
+			{/if}
 		</div>
 
 		<h1 class="mb-4 text-4xl font-bold md:text-5xl">{errorTitle}</h1>

@@ -300,7 +300,8 @@ export default {
 		postalCode: 'postal code',
 		country: 'country',
 		phone: 'phone',
-		missingInfoNotice: "missing your name or phone number? your login session may predate us asking for that info. ",
+		missingInfoNotice:
+			'missing your name or phone number? your login session may predate us asking for that info. ',
 		reconnectHackClubAuth: 'log out & reconnect to fix it',
 		orderConfirmedToast: "thanks! we'll let you know once your order is fulfilled.",
 		manageAddresses: 'manage addresses on hack club auth',
@@ -595,6 +596,11 @@ export default {
 			title: 'not eligible for ysws',
 			description:
 				'your hack club account is not currently eligible for you ship we ship programs. please ask for help in the hack club slack.'
+		},
+		notAllowed: {
+			title: 'check back later!',
+			description:
+				'scraps is currently in beta. you’re eligible — we just haven’t opened the doors to everyone yet. hang tight.'
 		},
 		authFailed: {
 			title: 'authentication failed',

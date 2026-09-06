@@ -173,7 +173,9 @@
 	</div>
 
 	<div class="w-full px-6 py-4 md:absolute md:right-1/4 md:bottom-1/5 md:w-auto md:max-w-lg md:p-0">
-		<h1 class="mb-4 text-6xl font-bold md:text-8xl">{$t.nav.scraps}</h1>
+		<h1 class="mb-4 text-6xl font-bold md:text-8xl">
+			{$t.nav.scraps}<sup class="text-[0.55em]">2</sup>
+		</h1>
 		<p class="mb-1 text-lg md:text-xl">
 			<strong>{$t.landing.youShip}</strong>
 			{$t.landing.anyProject}<Superscript number={1} tooltip={$t.landing.sillyTooltip} />
