@@ -1,6 +1,6 @@
 class AdminController < ApplicationController
   before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders update_order delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def stats
@@ -104,7 +104,7 @@ class AdminController < ApplicationController
   def show_user
     target_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
-    target = conn.select_one("SELECT id, username, avatar, slack_id, email, role, internal_notes, created_at FROM users WHERE id = #{target_id}")
+    target = conn.select_one("SELECT id, username, avatar, slack_id, email, role, internal_notes, created_at, legal_first_name, legal_last_name, phone, address_line1, address_line2, address_city, address_state, address_postal_code, address_country FROM users WHERE id = #{target_id}")
     return render_json({ error: "User not found" }, status: :not_found) unless target
 
     projects = conn.select_all("SELECT * FROM projects WHERE user_id = #{target_id} ORDER BY updated_at DESC").to_a
@@ -130,7 +130,20 @@ class AdminController < ApplicationController
 
     is_admin_user = %w[admin creator].include?(current_user.role)
     render_json({
-      user: { id: target["id"].to_i, username: target["username"], avatar: target["avatar"], slack_id: target["slack_id"], email: is_admin_user ? target["email"] : nil, scraps: balance[:balance], role: target["role"], internal_notes: target["internal_notes"], created_at: target["created_at"] },
+      user: {
+        id: target["id"].to_i, username: target["username"], avatar: target["avatar"], slack_id: target["slack_id"],
+        email: is_admin_user ? target["email"] : nil, scraps: balance[:balance], role: target["role"],
+        internal_notes: target["internal_notes"], created_at: target["created_at"],
+        legal_first_name: is_admin_user ? target["legal_first_name"] : nil,
+        legal_last_name: is_admin_user ? target["legal_last_name"] : nil,
+        phone: is_admin_user ? target["phone"] : nil,
+        address_line1: is_admin_user ? target["address_line1"] : nil,
+        address_line2: is_admin_user ? target["address_line2"] : nil,
+        address_city: is_admin_user ? target["address_city"] : nil,
+        address_state: is_admin_user ? target["address_state"] : nil,
+        address_postal_code: is_admin_user ? target["address_postal_code"] : nil,
+        address_country: is_admin_user ? target["address_country"] : nil
+      },
       hackatime_suspected: ht_suspected,
       hackatime_banned: ht_banned,
       projects: projects,
@@ -406,6 +419,22 @@ class AdminController < ApplicationController
     render_json({ success: true })
   end
 
+  def orders_needs_info_count
+    conn = ActiveRecord::Base.connection
+    rows = conn.select_all(<<~SQL).to_a
+      SELECT shipping_address FROM shop_orders
+      WHERE order_type IN ('purchase', 'luck_win') AND is_fulfilled = false
+    SQL
+
+    count = rows.count do |r|
+      addr = r["shipping_address"] ? (JSON.parse(r["shipping_address"]) rescue nil) : nil
+      addr.nil? || addr["firstName"].blank? || addr["lastName"].blank? ||
+        addr["address1"].blank? || addr["phone"].blank?
+    end
+
+    render_json({ count: count })
+  end
+
   def orders
     conn = ActiveRecord::Base.connection
     status_filter = params[:status].to_s.presence
@@ -413,9 +442,9 @@ class AdminController < ApplicationController
 
     rows = conn.select_all(<<~SQL).to_a
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
-             so.notes, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at,
+             so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at,
              si.id AS item_id, si.name AS item_name, si.image AS item_image,
-             u.id AS user_id, u.username, u.slack_id, u.email AS user_email
+             u.id AS user_id, u.username, u.avatar AS user_avatar, u.slack_id, u.email AS user_email
       FROM shop_orders so
       INNER JOIN shop_items si ON si.id = so.shop_item_id
       INNER JOIN users u ON u.id = so.user_id
@@ -436,8 +465,49 @@ class AdminController < ApplicationController
     end
 
     render_json(rows.map { |r|
-      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], notes: r["notes"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
+      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
     })
+  end
+
+  def show_order
+    conn = ActiveRecord::Base.connection
+    r = conn.select_one(<<~SQL)
+      SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
+             so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at,
+             si.id AS item_id, si.name AS item_name, si.image AS item_image,
+             u.id AS user_id, u.username, u.avatar AS user_avatar, u.slack_id, u.email AS user_email
+      FROM shop_orders so
+      INNER JOIN shop_items si ON si.id = so.shop_item_id
+      INNER JOIN users u ON u.id = so.user_id
+      WHERE so.id = #{params[:id].to_i}
+    SQL
+    return render_json({ error: "Not found" }, status: :not_found) unless r
+
+    hackatime_banned = false
+    begin
+      ht = HackatimeService.get_user(r["user_email"], r["slack_id"])
+      hackatime_banned = ht&.dig(:banned) || false
+    rescue StandardError
+      hackatime_banned = false
+    end
+
+    render_json({
+      id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i,
+      status: r["status"], order_type: r["order_type"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"],
+      tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"],
+      created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"],
+      user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: hackatime_banned
+    })
+  end
+
+  def update_order_notes
+    notes = params[:internalNotes].to_s
+    return render_json({ error: "Note is too long or it's malformed!" }, status: :bad_request) if notes.length > 2500
+
+    conn = ActiveRecord::Base.connection
+    updated = conn.select_one("UPDATE shop_orders SET internal_notes = #{conn.quote(notes)}, updated_at = NOW() WHERE id = #{params[:id].to_i} RETURNING id")
+    return render_json({ error: "Not Found" }, status: :not_found) unless updated
+    render_json({ success: true })
   end
 
   def update_order
@@ -465,6 +535,7 @@ class AdminController < ApplicationController
     set_parts = ["updated_at = NOW()"]
     set_parts << "status = #{conn.quote(order_status)}" if order_status
     set_parts << "notes = #{conn.quote(params[:notes].to_s)}" if params.key?(:notes)
+    set_parts << "user_note = #{conn.quote(params[:userNote].to_s)}" if params.key?(:userNote)
     set_parts << "tracking_number = #{conn.quote(params[:trackingNumber].to_s)}" if params.key?(:trackingNumber)
     set_parts << "is_fulfilled = #{params[:isFulfilled] ? 'true' : 'false'}" if params.key?(:isFulfilled)
 
@@ -474,11 +545,11 @@ class AdminController < ApplicationController
     if params[:isFulfilled] && ENV["SLACK_BOT_TOKEN"].present?
       order_user = conn.select_one("SELECT u.slack_id, si.name AS item_name FROM shop_orders so INNER JOIN users u ON u.id = so.user_id INNER JOIN shop_items si ON si.id = so.shop_item_id WHERE so.id = #{order_id}")
       if order_user&.dig("slack_id")
-        SlackService.notify_order_fulfilled(user_slack_id: order_user["slack_id"], item_name: order_user["item_name"], tracking_number: updated["tracking_number"], token: ENV["SLACK_BOT_TOKEN"]) rescue nil
+        SlackService.notify_order_fulfilled(user_slack_id: order_user["slack_id"], item_name: order_user["item_name"], tracking_number: updated["tracking_number"], user_note: updated["user_note"], token: ENV["SLACK_BOT_TOKEN"]) rescue nil
       end
     end
 
-    render_json({ id: updated["id"].to_i, status: updated["status"], order_type: updated["order_type"], notes: updated["notes"], tracking_number: updated["tracking_number"], is_fulfilled: updated["is_fulfilled"], shipping_address: updated["shipping_address"], created_at: updated["created_at"] })
+    render_json({ id: updated["id"].to_i, status: updated["status"], order_type: updated["order_type"], notes: updated["notes"], user_note: updated["user_note"], tracking_number: updated["tracking_number"], is_fulfilled: updated["is_fulfilled"], shipping_address: updated["shipping_address"], created_at: updated["created_at"] })
   end
 
   def delete_order
@@ -608,6 +679,9 @@ class AdminController < ApplicationController
 
   def shop_items
     rows = ActiveRecord::Base.connection.select_all("SELECT * FROM shop_items ORDER BY created_at DESC").to_a
+    rows.each do |r|
+      r["size_variants"] = r["size_variants"].is_a?(String) ? (JSON.parse(r["size_variants"]) rescue []) : (r["size_variants"] || [])
+    end
     render_json(rows)
   end
 
@@ -622,13 +696,14 @@ class AdminController < ApplicationController
     return render_json({ error: "Invalid price" }, status: :bad_request) if price < 0
 
     fulfillment_cost = params[:fulfillmentCost].to_s.strip.presence
+    size_variants = (params[:sizeVariants] || []).map { |v| { name: v[:name].to_s.strip, count: v[:count].to_i } }.select { |v| v[:name].present? }
 
     pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, base_prob)
 
     conn = ActiveRecord::Base.connection
     conn.execute(<<~SQL)
-      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, created_at, updated_at)
-      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, NOW(), NOW())
+      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, size_variants, created_at, updated_at)
+      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, #{conn.quote(size_variants.to_json)}, NOW(), NOW())
     SQL
     render_json({ success: true }, status: :created)
   end
@@ -647,6 +722,10 @@ class AdminController < ApplicationController
     set_parts << "boost_amount = #{params[:boostAmount].to_f}" if params.key?(:boostAmount)
     set_parts << "roll_cost_override = #{conn.quote(params[:rollCostOverride])}" if params.key?(:rollCostOverride)
     set_parts << "fulfillment_cost = #{conn.quote(params[:fulfillmentCost].to_s.strip.presence)}" if params.key?(:fulfillmentCost)
+    if params.key?(:sizeVariants)
+      size_variants = (params[:sizeVariants] || []).map { |v| { name: v[:name].to_s.strip, count: v[:count].to_i } }.select { |v| v[:name].present? }
+      set_parts << "size_variants = #{conn.quote(size_variants.to_json)}"
+    end
 
     updated = conn.select_one("UPDATE shop_items SET #{set_parts.join(', ')} WHERE id = #{params[:id].to_i} RETURNING id")
     return render_json({ error: "Not found" }, status: :not_found) unless updated
@@ -661,7 +740,85 @@ class AdminController < ApplicationController
     conn.execute("DELETE FROM refinery_orders WHERE shop_item_id = #{item_id}")
     conn.execute("DELETE FROM shop_penalties WHERE shop_item_id = #{item_id}")
     conn.execute("DELETE FROM shop_orders WHERE shop_item_id = #{item_id}")
+    conn.execute("DELETE FROM shop_retained_items WHERE shop_item_id = #{item_id}")
+    conn.execute("DELETE FROM shop_gachapon_items WHERE shop_item_id = #{item_id}")
     conn.execute("DELETE FROM shop_items WHERE id = #{item_id}")
+    render_json({ success: true })
+  end
+
+  def gachapons
+    conn = ActiveRecord::Base.connection
+    gachapons = conn.select_all("SELECT * FROM shop_gachapons ORDER BY created_at DESC").to_a
+    ids = gachapons.map { |g| g["id"].to_i }
+    links = ids.any? ? conn.select_all("SELECT gachapon_id, shop_item_id FROM shop_gachapon_items WHERE gachapon_id IN (#{ids.join(',')})").to_a : []
+    item_ids_by_gachapon = Hash.new { |h, k| h[k] = [] }
+    links.each { |l| item_ids_by_gachapon[l["gachapon_id"].to_i] << l["shop_item_id"].to_i }
+
+    render_json(gachapons.map { |g|
+      {
+        id: g["id"].to_i,
+        name: g["name"],
+        description: g["description"],
+        image: g["image"],
+        price: g["price"].to_i,
+        item_ids: item_ids_by_gachapon[g["id"].to_i]
+      }
+    })
+  end
+
+  def create_gachapon
+    name = params[:name].to_s.strip
+    description = params[:description].to_s.strip
+    image = params[:image].to_s.strip
+    price = params[:price].to_i
+    item_ids = (params[:itemIds] || []).map(&:to_i).uniq
+
+    return render_json({ error: "Name is required" }, status: :bad_request) if name.blank?
+    return render_json({ error: "Invalid price" }, status: :bad_request) if price <= 0
+    return render_json({ error: "Select at least one item" }, status: :bad_request) if item_ids.empty?
+
+    conn = ActiveRecord::Base.connection
+    gachapon = conn.select_one(<<~SQL)
+      INSERT INTO shop_gachapons (name, description, image, price, created_at, updated_at)
+      VALUES (#{conn.quote(name)}, #{conn.quote(description.presence)}, #{conn.quote(image.presence)}, #{price}, NOW(), NOW())
+      RETURNING id
+    SQL
+
+    item_ids.each do |item_id|
+      conn.execute("INSERT INTO shop_gachapon_items (gachapon_id, shop_item_id, created_at) VALUES (#{gachapon['id'].to_i}, #{item_id}, NOW())")
+    end
+
+    render_json({ success: true }, status: :created)
+  end
+
+  def update_gachapon
+    gachapon_id = params[:id].to_i
+    conn = ActiveRecord::Base.connection
+    return render_json({ error: "Not found" }, status: :not_found) unless conn.select_one("SELECT 1 FROM shop_gachapons WHERE id = #{gachapon_id}")
+
+    set_parts = ["updated_at = NOW()"]
+    set_parts << "name = #{conn.quote(params[:name].to_s.strip)}" if params.key?(:name)
+    set_parts << "description = #{conn.quote(params[:description].to_s.strip.presence)}" if params.key?(:description)
+    set_parts << "image = #{conn.quote(params[:image].to_s.strip.presence)}" if params.key?(:image)
+    set_parts << "price = #{params[:price].to_i}" if params.key?(:price)
+    conn.execute("UPDATE shop_gachapons SET #{set_parts.join(', ')} WHERE id = #{gachapon_id}")
+
+    if params.key?(:itemIds)
+      item_ids = (params[:itemIds] || []).map(&:to_i).uniq
+      conn.execute("DELETE FROM shop_gachapon_items WHERE gachapon_id = #{gachapon_id}")
+      item_ids.each do |item_id|
+        conn.execute("INSERT INTO shop_gachapon_items (gachapon_id, shop_item_id, created_at) VALUES (#{gachapon_id}, #{item_id}, NOW())")
+      end
+    end
+
+    render_json({ success: true })
+  end
+
+  def delete_gachapon
+    gachapon_id = params[:id].to_i
+    conn = ActiveRecord::Base.connection
+    conn.execute("DELETE FROM shop_gachapon_items WHERE gachapon_id = #{gachapon_id}")
+    conn.execute("DELETE FROM shop_gachapons WHERE id = #{gachapon_id}")
     render_json({ success: true })
   end
 

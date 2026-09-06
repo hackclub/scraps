@@ -2,6 +2,14 @@ export function formatHours(hours: number): string {
 	return hours.toFixed(1);
 }
 
+export function isInfiniteStock(count: number): boolean {
+	return count < 0;
+}
+
+export function stockLabel(count: number): string {
+	return isInfiniteStock(count) ? '∞' : String(count);
+}
+
 export function reviewerScoreMultiplier(
 	score: number,
 	floorMult: number,

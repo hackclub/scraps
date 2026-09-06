@@ -5,6 +5,7 @@
 	import HeartButton from './HeartButton.svelte';
 	import { type ShopItem, updateShopItemHeart } from '$lib/stores';
 	import { t } from '$lib/i18n';
+	import { isInfiniteStock, stockLabel } from '$lib/utils';
 
 	interface LeaderboardUser {
 		userId: string;
@@ -295,7 +296,9 @@
 					<Spool size={20} />
 					{rollCost}
 				</span>
-				<span class="text-sm text-gray-500">{item.count} {$t.shop.left}</span>
+				<span class="text-sm text-gray-500"
+					>{stockLabel(item.count)} {isInfiniteStock(item.count) ? '' : $t.shop.left}</span
+				>
 			</div>
 			<HeartButton
 				count={localHeartCount}
@@ -312,6 +315,19 @@
 				<span class="rounded-full bg-gray-100 px-2 py-1 text-xs">{cat}</span>
 			{/each}
 		</div>
+
+		{#if item.sizeVariants && item.sizeVariants.length > 0}
+			<div class="mb-4">
+				<p class="mb-1 text-xs font-bold text-gray-500">sizes available</p>
+				<div class="flex flex-wrap gap-2">
+					{#each item.sizeVariants as variant (variant.name)}
+						<span class="rounded-full border-2 border-black px-3 py-1 text-xs font-bold">
+							{variant.name} · {variant.count}
+						</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<div
 			class="mb-4 rounded-lg border-2 border-black p-4 {getProbabilityBgColor(

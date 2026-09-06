@@ -50,6 +50,8 @@ Rails.application.routes.draw do
     get    "retained",                     to: "shop#retained_items"
     post   "retained/:id",                 to: "shop#retain_item"
     delete "retained/:id",                 to: "shop#unretain_item"
+    get    "gachapons",                    to: "shop#gachapons"
+    post   "gachapons/:id/purchase",       to: "shop#purchase_gachapon"
   end
 
   # Referrals
@@ -133,7 +135,10 @@ Rails.application.routes.draw do
 
     # Orders
     get    "orders",                          to: "admin#orders"
+    get    "orders/needs-info-count",         to: "admin#orders_needs_info_count"
+    get    "orders/:id",                      to: "admin#show_order"
     patch  "orders/:id",                      to: "admin#update_order"
+    patch  "orders/:id/notes",                to: "admin#update_order_notes"
     delete "orders/:id",                      to: "admin#delete_order"
     post   "orders/:id/restore",              to: "admin#restore_order"
 
@@ -144,6 +149,10 @@ Rails.application.routes.draw do
     post   "shop/items",                      to: "admin#create_shop_item"
     put    "shop/items/:id",                  to: "admin#update_shop_item"
     delete "shop/items/:id",                  to: "admin#delete_shop_item"
+    get    "shop/gachapons",                  to: "admin#gachapons"
+    post   "shop/gachapons",                  to: "admin#create_gachapon"
+    put    "shop/gachapons/:id",              to: "admin#update_gachapon"
+    delete "shop/gachapons/:id",              to: "admin#delete_gachapon"
 
     # News
     get    "news",                            to: "admin#news_index"

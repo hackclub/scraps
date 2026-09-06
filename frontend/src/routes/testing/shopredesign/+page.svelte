@@ -82,7 +82,7 @@
 		return 'bg-red-100 text-red-700';
 	}
 
-	const inStock = $derived($shopItemsStore.filter((i) => i.count > 0));
+	const inStock = $derived($shopItemsStore.filter((i) => i.count !== 0));
 
 	// ---- Featured ----
 	const featured = $derived(

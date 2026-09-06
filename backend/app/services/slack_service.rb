@@ -82,10 +82,11 @@ module SlackService
     end
   end
 
-  def self.notify_order_fulfilled(user_slack_id:, item_name:, tracking_number: nil, token:, frontend_url: SCRAPS_URL)
+  def self.notify_order_fulfilled(user_slack_id:, item_name:, tracking_number: nil, user_note: nil, token:, frontend_url: SCRAPS_URL)
     return unless token.present? && user_slack_id.present?
 
     text = tracking_number.present? ? ":package: *Your order for #{item_name} has been shipped!*\nTracking: `#{tracking_number}`" : ":package: *Your order for #{item_name} has been fulfilled!*"
+    text += "\nHere's a note from the team: #{user_note}" if user_note.present?
 
     post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] }) rescue nil
   end

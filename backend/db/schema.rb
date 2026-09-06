@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_04_160000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_06_140000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -202,6 +202,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_04_160000) do
     t.integer "user_id", null: false
   end
 
+  create_table "shop_gachapon_items", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "gachapon_id", null: false
+    t.integer "shop_item_id", null: false
+    t.index ["gachapon_id", "shop_item_id"], name: "index_gachapon_items_on_gachapon_and_item", unique: true
+    t.index ["gachapon_id"], name: "index_shop_gachapon_items_on_gachapon_id"
+  end
+
+  create_table "shop_gachapons", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.text "image"
+    t.text "name", null: false
+    t.integer "price", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "shop_hearts", id: :serial, force: :cascade do |t|
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "shop_item_id", null: false
@@ -225,12 +242,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_04_160000) do
     t.float "per_roll_multiplier", default: 0.05, null: false
     t.integer "price", default: 0, null: false
     t.integer "roll_cost_override"
+    t.jsonb "size_variants", default: [], null: false
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.float "upgrade_budget_multiplier", default: 3.0, null: false
   end
 
   create_table "shop_orders", id: :serial, force: :cascade do |t|
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
+    t.text "internal_notes"
     t.boolean "is_fulfilled", default: false, null: false
     t.text "notes"
     t.text "order_type", null: false
@@ -244,6 +263,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_04_160000) do
     t.text "tracking_number"
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
     t.integer "user_id", null: false
+    t.text "user_note"
     t.index ["user_id"], name: "index_shop_orders_on_user_id"
   end
 

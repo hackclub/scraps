@@ -25,6 +25,7 @@
 	} from '@lucide/svelte';
 	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
+	import { API_URL } from '$lib/config';
 	import ScrapsHistoryModal from '$lib/components/ScrapsHistoryModal.svelte';
 
 	interface User {
@@ -45,6 +46,7 @@
 	let showMoreMenu = $state(false);
 	let activeSection = $state('home');
 	let isScrolling = $state(false);
+	let ordersNeedsInfoCount = $state(0);
 
 	let currentPath = $derived(page.url.pathname);
 	let isHomePage = $derived(currentPath === '/');
@@ -65,6 +67,14 @@
 		getUser().then((u) => {
 			user = u;
 			loading = false;
+			if (u?.role === 'admin' || u?.role === 'creator') {
+				fetch(`${API_URL}/admin/orders/needs-info-count`, { credentials: 'include' })
+					.then((r) => (r.ok ? r.json() : null))
+					.then((data) => {
+						if (data) ordersNeedsInfoCount = data.count;
+					})
+					.catch(() => {});
+			}
 		});
 
 		if (page.url.pathname === '/') {
@@ -271,7 +281,7 @@
 					</a>
 					<a
 						href="/admin/orders"
-						class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath.startsWith(
+						class="relative hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath.startsWith(
 							'/admin/orders'
 						)
 							? 'border-black bg-black text-white'
@@ -279,13 +289,20 @@
 					>
 						<PackageCheck size={18} />
 						<span class="text-lg font-bold">{$t.nav.orders}</span>
+						{#if ordersNeedsInfoCount > 0}
+							<span
+								class="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-black bg-red-600 px-1 text-xs font-bold text-white"
+							>
+								{ordersNeedsInfoCount}
+							</span>
+						{/if}
 					</a>
 
 					<!-- More dropdown for smaller screens -->
 					<div class="more-menu-container relative xl:hidden">
 						<button
 							onclick={toggleMoreMenu}
-							class="flex cursor-pointer items-center gap-1 rounded-full border-4 px-4 py-2 transition-all duration-300 {adminMoreActive
+							class="relative flex cursor-pointer items-center gap-1 rounded-full border-4 px-4 py-2 transition-all duration-300 {adminMoreActive
 								? 'border-black bg-black text-white'
 								: 'border-black hover:border-dashed'}"
 						>
@@ -294,6 +311,13 @@
 								size={16}
 								class="transition-transform duration-200 {showMoreMenu ? 'rotate-180' : ''}"
 							/>
+							{#if ordersNeedsInfoCount > 0}
+								<span
+									class="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-black bg-red-600 px-1 text-xs font-bold text-white"
+								>
+									{ordersNeedsInfoCount}
+								</span>
+							{/if}
 						</button>
 						{#if showMoreMenu}
 							<div
@@ -326,14 +350,23 @@
 								<a
 									href="/admin/orders"
 									onclick={closeMoreMenu}
-									class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-gray-100 {currentPath.startsWith(
+									class="flex w-full cursor-pointer items-center justify-between gap-2 px-4 py-3 transition-colors hover:bg-gray-100 {currentPath.startsWith(
 										'/admin/orders'
 									)
 										? 'bg-gray-100'
 										: ''}"
 								>
-									<PackageCheck size={18} />
-									<span class="font-bold">{$t.nav.orders}</span>
+									<span class="flex items-center gap-2">
+										<PackageCheck size={18} />
+										<span class="font-bold">{$t.nav.orders}</span>
+									</span>
+									{#if ordersNeedsInfoCount > 0}
+										<span
+											class="flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-black bg-red-600 px-1 text-xs font-bold text-white"
+										>
+											{ordersNeedsInfoCount}
+										</span>
+									{/if}
 								</a>
 							</div>
 						{/if}
@@ -679,14 +712,23 @@
 						<a
 							href="/admin/orders"
 							onclick={handleMobileNavClick}
-							class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath.startsWith(
+							class="flex cursor-pointer items-center justify-between gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath.startsWith(
 								'/admin/orders'
 							)
 								? 'border-black bg-black text-white'
 								: 'border-black hover:border-dashed'}"
 						>
-							<PackageCheck size={20} />
-							<span class="text-lg font-bold">{$t.nav.orders}</span>
+							<span class="flex items-center gap-3">
+								<PackageCheck size={20} />
+								<span class="text-lg font-bold">{$t.nav.orders}</span>
+							</span>
+							{#if ordersNeedsInfoCount > 0}
+								<span
+									class="flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-black bg-red-600 px-1 text-xs font-bold text-white"
+								>
+									{ordersNeedsInfoCount}
+								</span>
+							{/if}
 						</a>
 					{/if}
 				{/if}

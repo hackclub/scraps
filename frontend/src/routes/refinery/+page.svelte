@@ -6,10 +6,38 @@
 	import { t } from '$lib/i18n';
 	import { API_URL } from '$lib/config';
 
-	let probabilityItems = $derived($shopItemsStore.filter((item) => item.baseProbability > 0));
+	let myShopIds = $state<Set<number>>(new Set());
+	let shopSelectionLoading = $state(true);
+	let probabilityItems = $derived(
+		$shopItemsStore.filter((item) => item.baseProbability > 0 && myShopIds.has(item.id))
+	);
 	let upgrading = $state<number | null>(null);
 	let undoing = $state<number | null>(null);
 	let alertMessage = $state<string | null>(null);
+
+	async function fetchMyShopIds() {
+		shopSelectionLoading = true;
+		try {
+			const [dailyRes, retainedRes] = await Promise.all([
+				fetch(`${API_URL}/shop/daily`, { credentials: 'include' }),
+				fetch(`${API_URL}/shop/retained`, { credentials: 'include' })
+			]);
+			const ids = new Set<number>();
+			if (dailyRes.ok) {
+				const d = await dailyRes.json();
+				(d.items ?? []).forEach((i: ShopItem) => ids.add(i.id));
+			}
+			if (retainedRes.ok) {
+				const r = await retainedRes.json();
+				(r.items ?? []).forEach((i: ShopItem) => ids.add(i.id));
+			}
+			myShopIds = ids;
+		} catch (e) {
+			console.error('Failed to load shop selection:', e);
+		} finally {
+			shopSelectionLoading = false;
+		}
+	}
 
 	function getProbabilityColor(probability: number): string {
 		if (probability >= 70) return 'text-green-600';
@@ -129,6 +157,7 @@
 	onMount(async () => {
 		await getUser();
 		fetchShopItems();
+		fetchMyShopIds();
 	});
 </script>
 
@@ -142,7 +171,7 @@
 		<p class="text-lg text-gray-600">{$t.refinery.upgradeYourLuck}</p>
 	</div>
 
-	{#if $shopLoading}
+	{#if $shopLoading || shopSelectionLoading}
 		<div class="py-12 text-center text-gray-500">{$t.common.loading}</div>
 	{:else if probabilityItems.length > 0}
 		<div class="space-y-6">

@@ -11,11 +11,14 @@
 		AlertTriangle,
 		ShieldCheck,
 		RotateCcw,
-		Upload
+		Upload,
+		Dices,
+		PackageOpen
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { t } from '$lib/i18n';
+	import { isInfiniteStock, stockLabel } from '$lib/utils';
 
 	interface ShopItem {
 		id: number;
@@ -31,6 +34,7 @@
 		rollCostOverride: number | null;
 		perRollMultiplier?: number | null;
 		fulfillmentCost?: number | null;
+		sizeVariants?: { name: string; count: number }[];
 		createdAt: string;
 		updatedAt: string;
 	}
@@ -38,6 +42,15 @@
 	interface User {
 		id: number;
 		role: string;
+	}
+
+	interface Gachapon {
+		id: number;
+		name: string;
+		description: string | null;
+		image: string | null;
+		price: number;
+		itemIds: number[];
 	}
 
 	interface EVResult {
@@ -66,6 +79,18 @@
 	let items = $state<ShopItem[]>([]);
 	let loading = $state(true);
 	let saving = $state(false);
+
+	let existingCategories = $derived.by(() => {
+		const set = new Set<string>();
+		items.forEach((i) =>
+			i.category
+				.split(',')
+				.map((c) => c.trim())
+				.filter(Boolean)
+				.forEach((c) => set.add(c))
+		);
+		return Array.from(set).sort();
+	});
 
 	let showModal = $state(false);
 	let editingItem = $state<ShopItem | null>(null);
@@ -105,6 +130,47 @@
 	let formPriceOverride = $state(false);
 	let formCategory = $state('');
 	let formCount = $state(0);
+	let formInfiniteStock = $derived(formCount < 0);
+	let formSizeVariants = $state<{ name: string; count: number }[]>([]);
+	let formIsShirt = $derived(
+		formCategory
+			.toLowerCase()
+			.split(',')
+			.map((c) => c.trim())
+			.includes('shirt')
+	);
+
+	function toggleInfiniteStock(infinite: boolean) {
+		updateFromStock(infinite ? -1 : 0);
+	}
+
+	function addSizeVariant() {
+		formSizeVariants = [...formSizeVariants, { name: '', count: 0 }];
+	}
+
+	function removeSizeVariant(index: number) {
+		formSizeVariants = formSizeVariants.filter((_, i) => i !== index);
+	}
+
+	function randomInt(min: number, max: number) {
+		return Math.round(min + Math.random() * (max - min));
+	}
+
+	async function randomizeOdds() {
+		formBaseProbability = randomInt(5, 80);
+		formRollCostOverride = null;
+		await recalculatePricing();
+	}
+
+	function addCategoryTag(cat: string) {
+		const current = formCategory
+			.split(',')
+			.map((c) => c.trim())
+			.filter(Boolean);
+		if (!current.includes(cat)) {
+			formCategory = [...current, cat].join(', ');
+		}
+	}
 	let formBaseProbability = $state(50);
 	let formBaseUpgradeCost = $state(10);
 	let formBoostAmount = $state(1);
@@ -142,7 +208,7 @@
 		const price = priceOverride ?? Math.round(monetaryValue * SCRAPS_PER_DOLLAR);
 
 		const priceRarityFactor = Math.max(0, 1 - monetaryValue / 100);
-		const stockRarityFactor = Math.min(1, stockCount / 20);
+		const stockRarityFactor = stockCount < 0 ? 1 : Math.min(1, stockCount / 20);
 		const baseProbability = Math.max(
 			1,
 			Math.min(80, Math.round((priceRarityFactor * 0.4 + stockRarityFactor * 0.6) * 80))
@@ -400,7 +466,169 @@
 		}
 
 		await fetchItems();
+		await fetchGachapons();
 	});
+
+	let gachapons = $state<Gachapon[]>([]);
+	let gachaponsLoading = $state(true);
+	let showGachaponModal = $state(false);
+	let editingGachapon = $state<Gachapon | null>(null);
+	let gachaName = $state('');
+	let gachaDescription = $state('');
+	let gachaImage = $state('');
+	let gachaUploadingImage = $state(false);
+	let gachaPrice = $state(0);
+	let gachaSelectedItemIds = $state<Set<number>>(new Set());
+	let gachaSaving = $state(false);
+	let gachaError = $state<string | null>(null);
+	let gachaDeleteConfirmId = $state<number | null>(null);
+
+	async function fetchGachapons() {
+		gachaponsLoading = true;
+		try {
+			const res = await fetch(`${API_URL}/admin/shop/gachapons`, { credentials: 'include' });
+			if (res.ok) gachapons = await res.json();
+		} catch (e) {
+			console.error('Failed to load gachapons:', e);
+		} finally {
+			gachaponsLoading = false;
+		}
+	}
+
+	function openCreateGachapon() {
+		editingGachapon = null;
+		gachaName = '';
+		gachaDescription = '';
+		gachaImage = '';
+		gachaPrice = 0;
+		gachaSelectedItemIds = new Set();
+		gachaError = null;
+		showGachaponModal = true;
+	}
+
+	function openEditGachapon(g: Gachapon) {
+		editingGachapon = g;
+		gachaName = g.name;
+		gachaDescription = g.description ?? '';
+		gachaImage = g.image ?? '';
+		gachaPrice = g.price;
+		gachaSelectedItemIds = new Set(g.itemIds);
+		gachaError = null;
+		showGachaponModal = true;
+	}
+
+	function closeGachaponModal() {
+		showGachaponModal = false;
+		editingGachapon = null;
+	}
+
+	function toggleGachaItem(id: number) {
+		const next = new Set(gachaSelectedItemIds);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		gachaSelectedItemIds = next;
+	}
+
+	async function handleGachaImageUpload(event: Event) {
+		const file = (event.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		if (file.size > 5 * 1024 * 1024) {
+			gachaError = 'Image must be under 5MB';
+			return;
+		}
+		gachaUploadingImage = true;
+		gachaError = null;
+		try {
+			const fd = new FormData();
+			fd.append('file', file);
+			const res = await fetch(`${API_URL}/upload/image`, {
+				method: 'POST',
+				credentials: 'include',
+				body: fd
+			});
+			const data = await res.json();
+			if (data.error) throw new Error(data.error);
+			gachaImage = data.url;
+		} catch (e) {
+			gachaError = e instanceof Error ? e.message : 'Upload failed';
+		} finally {
+			gachaUploadingImage = false;
+		}
+	}
+
+	async function handleGachaponSubmit() {
+		if (!gachaName.trim()) {
+			gachaError = 'Name is required';
+			return;
+		}
+		if (gachaPrice <= 0) {
+			gachaError = 'Price must be positive';
+			return;
+		}
+		if (gachaSelectedItemIds.size === 0) {
+			gachaError = 'Select at least one item';
+			return;
+		}
+
+		gachaSaving = true;
+		gachaError = null;
+
+		try {
+			const url = editingGachapon
+				? `${API_URL}/admin/shop/gachapons/${editingGachapon.id}`
+				: `${API_URL}/admin/shop/gachapons`;
+
+			const response = await fetch(url, {
+				method: editingGachapon ? 'PUT' : 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({
+					name: gachaName,
+					description: gachaDescription,
+					image: gachaImage,
+					price: gachaPrice,
+					itemIds: Array.from(gachaSelectedItemIds)
+				})
+			});
+
+			if (response.ok) {
+				closeGachaponModal();
+				await fetchGachapons();
+			} else {
+				const data = await response.json();
+				gachaError = data.error || 'Failed to save';
+			}
+		} catch (_e) {
+			gachaError = 'Failed to save gachapon';
+		} finally {
+			gachaSaving = false;
+		}
+	}
+
+	function requestDeleteGachapon(id: number) {
+		gachaDeleteConfirmId = id;
+	}
+
+	async function confirmDeleteGachapon() {
+		if (!gachaDeleteConfirmId) return;
+		try {
+			const response = await fetch(`${API_URL}/admin/shop/gachapons/${gachaDeleteConfirmId}`, {
+				method: 'DELETE',
+				credentials: 'include'
+			});
+			if (response.ok) {
+				await fetchGachapons();
+			} else {
+				const data = await response.json();
+				errorModal = data.error || 'Failed to delete gachapon';
+			}
+		} catch (e) {
+			console.error('Failed to delete gachapon:', e);
+			errorModal = 'Failed to delete gachapon';
+		} finally {
+			gachaDeleteConfirmId = null;
+		}
+	}
 
 	async function fetchItems() {
 		loading = true;
@@ -433,6 +661,7 @@
 		formBoostAmount = 1;
 		formRollCostOverride = null;
 		formFulfillmentCost = null;
+		formSizeVariants = [];
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
@@ -457,6 +686,7 @@
 		formBoostAmount = item.boostAmount ?? 1;
 		formRollCostOverride = item.rollCostOverride ?? null;
 		formFulfillmentCost = item.fulfillmentCost ?? null;
+		formSizeVariants = item.sizeVariants ? item.sizeVariants.map((v) => ({ ...v })) : [];
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
@@ -498,7 +728,10 @@
 					baseUpgradeCost: formBaseUpgradeCost,
 					boostAmount: formBoostAmount,
 					rollCostOverride: formRollCostOverride,
-					fulfillmentCost: formFulfillmentCost
+					fulfillmentCost: formFulfillmentCost,
+					sizeVariants: formIsShirt
+						? formSizeVariants.filter((v) => v.name.trim())
+						: []
 				})
 			});
 
@@ -635,7 +868,9 @@
 									.filter(Boolean) as cat}
 									<span class="rounded-full bg-gray-100 px-2 py-0.5">{cat}</span>
 								{/each}
-								<span class="text-gray-500">{item.count} in stock</span>
+								<span class="text-gray-500"
+									>{isInfiniteStock(item.count) ? '∞' : stockLabel(item.count)} in stock</span
+								>
 								<span class="text-gray-500">·</span>
 								<span class="text-gray-500">{item.baseProbability}% base</span>
 								<span class="text-gray-500">·</span>
@@ -717,6 +952,71 @@
 							</table>
 						</div>
 					{/if}
+				</div>
+			{/each}
+		</div>
+	{/if}
+
+	<div class="mt-12 mb-8 flex items-center justify-between">
+		<div>
+			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold"><PackageOpen size={22} /> gachapons</h2>
+			<p class="text-gray-600">
+				guaranteed-win bundles — pay a premium, get one random item from the pool
+			</p>
+		</div>
+		<button
+			onclick={openCreateGachapon}
+			class="flex cursor-pointer items-center gap-2 rounded-full bg-black px-6 py-3 font-bold text-white transition-all duration-200 hover:bg-gray-800"
+		>
+			<Plus size={20} />
+			new gachapon
+		</button>
+	</div>
+
+	{#if gachaponsLoading}
+		<div class="py-8 text-center text-gray-500">loading…</div>
+	{:else if gachapons.length === 0}
+		<p class="rounded-2xl border-4 border-dashed border-gray-300 p-8 text-center text-gray-400">
+			no gachapons yet
+		</p>
+	{:else}
+		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+			{#each gachapons as g (g.id)}
+				<div class="overflow-hidden rounded-2xl border-4 border-black">
+					{#if g.image}
+						<img src={g.image} alt={g.name} class="h-32 w-full object-cover" />
+					{:else}
+						<div class="flex h-32 w-full items-center justify-center bg-gray-100">
+							<PackageOpen size={32} class="text-gray-300" />
+						</div>
+					{/if}
+					<div class="p-4">
+						<h3 class="mb-1 text-lg font-bold">{g.name}</h3>
+						{#if g.description}
+							<p class="mb-2 line-clamp-2 text-sm text-gray-600">{g.description}</p>
+						{/if}
+						<div class="mb-3 flex items-center gap-2 text-sm">
+							<Spool size={16} />
+							<span class="font-bold">{g.price}</span>
+							<span class="text-gray-500"
+								>· {g.itemIds.length} item{g.itemIds.length === 1 ? '' : 's'} in pool</span
+							>
+						</div>
+						<div class="flex gap-2">
+							<button
+								onclick={() => openEditGachapon(g)}
+								class="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-full border-2 border-black px-3 py-1.5 text-sm font-bold hover:bg-gray-100"
+							>
+								<Pencil size={14} /> edit
+							</button>
+							<button
+								onclick={() => requestDeleteGachapon(g.id)}
+								class="flex cursor-pointer items-center justify-center gap-1 rounded-full border-2 border-red-600 px-3 py-1.5 text-sm font-bold text-red-600 hover:bg-red-50"
+							>
+								<Trash2 size={14} />
+							</button>
+						</div>
+					</div>
 				</div>
 			{/each}
 		</div>
@@ -881,15 +1181,31 @@
 								<div class="grid grid-cols-2 gap-4">
 									<div>
 										<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
-										<input
-											id="count"
-											type="number"
-											value={formCount}
-											oninput={(e) => updateFromStock(parseInt(e.currentTarget.value) || 0)}
-											min="0"
-											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-										/>
-										<p class="mt-1 text-xs text-gray-500">how many can be won/bought before it's out of stock</p>
+										{#if formInfiniteStock}
+											<div
+												class="flex w-full items-center justify-between rounded-lg border-2 border-black bg-gray-50 px-4 py-2"
+											>
+												<span class="font-bold text-gray-500">∞ unlimited</span>
+											</div>
+										{:else}
+											<input
+												id="count"
+												type="number"
+												value={formCount}
+												oninput={(e) => updateFromStock(parseInt(e.currentTarget.value) || 0)}
+												min="0"
+												class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+											/>
+										{/if}
+										<label class="mt-1 flex cursor-pointer items-center gap-2 text-xs text-gray-500">
+											<input
+												type="checkbox"
+												checked={formInfiniteStock}
+												onchange={(e) => toggleInfiniteStock(e.currentTarget.checked)}
+												class="cursor-pointer"
+											/>
+											unlimited stock (never sells out)
+										</label>
 									</div>
 									<div>
 										<label for="category" class="mb-1 block text-sm font-bold">categories</label>
@@ -897,11 +1213,71 @@
 											id="category"
 											type="text"
 											bind:value={formCategory}
-											placeholder="stickers, hardware"
+											placeholder="e.g. merch, blueprint, hardware"
 											class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 										/>
+										{#if existingCategories.length > 0}
+											<div class="mt-2 flex flex-wrap gap-1">
+												{#each existingCategories as cat (cat)}
+													<button
+														type="button"
+														onclick={() => addCategoryTag(cat)}
+														class="cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs transition-all hover:bg-gray-100"
+													>
+														+ {cat}
+													</button>
+												{/each}
+											</div>
+										{/if}
+										<p class="mt-1 text-xs text-gray-500">
+											comma-separate to add more than one — not limited to a fixed list, type
+											anything new and it becomes its own category
+										</p>
 									</div>
 								</div>
+
+								{#if formIsShirt}
+									<div class="rounded-xl border-2 border-dashed border-black p-3">
+										<p class="mb-2 text-sm font-bold">sizes</p>
+										<p class="mb-3 text-xs text-gray-500">
+											set stock per size — a size with 0 in stock is hidden from users entirely
+										</p>
+										<div class="flex flex-col gap-2">
+											{#each formSizeVariants as variant, i (i)}
+												<div class="flex items-center gap-2">
+													<input
+														type="text"
+														bind:value={variant.name}
+														placeholder="Small"
+														class="flex-1 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
+													/>
+													<input
+														type="number"
+														bind:value={variant.count}
+														min="0"
+														placeholder="0"
+														class="w-24 rounded-lg border-2 border-black px-3 py-1.5 text-sm focus:border-dashed focus:outline-none"
+													/>
+													<button
+														type="button"
+														onclick={() => removeSizeVariant(i)}
+														class="cursor-pointer rounded-lg border-2 border-black p-1.5 hover:bg-gray-100"
+														aria-label="remove size"
+													>
+														<X size={14} />
+													</button>
+												</div>
+											{/each}
+										</div>
+										<button
+											type="button"
+											onclick={addSizeVariant}
+											class="mt-2 cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold hover:bg-gray-100"
+										>
+											+ add size
+										</button>
+									</div>
+								{/if}
 
 								{#if formMonetaryValue > 0}
 									<div
@@ -947,6 +1323,14 @@
 										</div>
 									</div>
 								{/if}
+
+								<button
+									type="button"
+									onclick={randomizeOdds}
+									class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-purple-50 px-4 py-2 text-sm font-bold transition-all hover:border-dashed hover:bg-purple-100"
+								>
+									<Dices size={16} /> randomize odds (stays within optimal pricing)
+								</button>
 
 								<div class="grid grid-cols-2 gap-4">
 									<div>
@@ -1210,6 +1594,179 @@
 			>
 				ok
 			</button>
+		</div>
+	</div>
+{/if}
+
+{#if showGachaponModal}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={(e) => e.target === e.currentTarget && closeGachaponModal()}
+		onkeydown={(e) => e.key === 'Escape' && closeGachaponModal()}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border-4 border-black bg-white p-6">
+			<div class="mb-6 flex items-center justify-between">
+				<h2 class="text-2xl font-bold">{editingGachapon ? 'edit gachapon' : 'new gachapon'}</h2>
+				<button
+					onclick={closeGachaponModal}
+					class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
+				>
+					<X size={20} />
+				</button>
+			</div>
+
+			{#if gachaError}
+				<div class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm text-red-600">
+					{gachaError}
+				</div>
+			{/if}
+
+			<div class="space-y-4">
+				<div>
+					<label for="gacha-name" class="mb-1 block text-sm font-bold">name</label>
+					<input
+						id="gacha-name"
+						type="text"
+						bind:value={gachaName}
+						placeholder="Shirt Gachapon"
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<span class="mb-1 block text-sm font-bold">image</span>
+					<div class="flex items-center gap-3">
+						{#if gachaImage}
+							<img
+								src={gachaImage}
+								alt=""
+								class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
+							/>
+						{/if}
+						<label
+							class="flex cursor-pointer items-center gap-2 rounded-lg border-2 border-black px-4 py-2 font-bold transition-all hover:border-dashed {gachaUploadingImage
+								? 'opacity-50'
+								: ''}"
+						>
+							<Upload size={16} />
+							{gachaUploadingImage ? 'uploading…' : gachaImage ? 'replace' : 'upload'}
+							<input
+								type="file"
+								accept="image/*"
+								onchange={handleGachaImageUpload}
+								disabled={gachaUploadingImage}
+								class="hidden"
+							/>
+						</label>
+					</div>
+					<input
+						type="text"
+						bind:value={gachaImage}
+						placeholder="…or paste an image URL"
+						class="mt-2 w-full rounded-lg border-2 border-black px-4 py-2 text-sm focus:border-dashed focus:outline-none"
+					/>
+				</div>
+
+				<div>
+					<label for="gacha-description" class="mb-1 block text-sm font-bold">description</label>
+					<textarea
+						id="gacha-description"
+						bind:value={gachaDescription}
+						rows="2"
+						placeholder="one of five shirt designs, guaranteed"
+						class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					></textarea>
+				</div>
+
+				<div>
+					<label for="gacha-price" class="mb-1 block text-sm font-bold">price (scraps)</label>
+					<input
+						id="gacha-price"
+						type="number"
+						bind:value={gachaPrice}
+						min="1"
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+					<p class="mt-1 text-xs text-gray-500">
+						should be a bit above the pool's items' normal cost — you're paying for the guarantee
+					</p>
+				</div>
+
+				<div>
+					<span class="mb-1 block text-sm font-bold"
+						>items in this gachapon ({gachaSelectedItemIds.size} selected)</span
+					>
+					<div class="max-h-64 space-y-1 overflow-y-auto rounded-lg border-2 border-black p-2">
+						{#each items as item (item.id)}
+							<label
+								class="flex cursor-pointer items-center gap-2 rounded-lg p-1.5 hover:bg-gray-100 {gachaSelectedItemIds.has(
+									item.id
+								)
+									? 'bg-indigo-50'
+									: ''}"
+							>
+								<input
+									type="checkbox"
+									checked={gachaSelectedItemIds.has(item.id)}
+									onchange={() => toggleGachaItem(item.id)}
+									class="cursor-pointer"
+								/>
+								{#if item.image}
+									<img src={item.image} alt="" class="h-8 w-8 rounded object-cover" />
+								{/if}
+								<span class="flex-1 truncate text-sm">{item.name}</span>
+								<span class="text-xs text-gray-500"
+									>{isInfiniteStock(item.count) ? '∞' : stockLabel(item.count)}</span
+								>
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<button
+					onclick={handleGachaponSubmit}
+					disabled={gachaSaving}
+					class="w-full cursor-pointer rounded-full bg-black px-4 py-3 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
+				>
+					{gachaSaving ? 'saving…' : editingGachapon ? 'save changes' : 'create gachapon'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if gachaDeleteConfirmId}
+	{@const deleteGachapon = gachapons.find((g) => g.id === gachaDeleteConfirmId)}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={(e) => e.target === e.currentTarget && (gachaDeleteConfirmId = null)}
+		onkeydown={(e) => e.key === 'Escape' && (gachaDeleteConfirmId = null)}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
+			<h2 class="mb-4 text-2xl font-bold">delete gachapon</h2>
+			<p class="mb-6 text-gray-600">
+				are you sure you want to delete <span class="font-bold"
+					>{deleteGachapon?.name ?? 'this gachapon'}</span
+				>? this cannot be undone.
+			</p>
+			<div class="flex gap-3">
+				<button
+					onclick={() => (gachaDeleteConfirmId = null)}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
+				>
+					cancel
+				</button>
+				<button
+					onclick={() => confirmDeleteGachapon()}
+					class="flex-1 cursor-pointer rounded-full border-4 border-red-600 bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed"
+				>
+					delete
+				</button>
+			</div>
 		</div>
 	</div>
 {/if}

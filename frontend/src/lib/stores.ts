@@ -42,6 +42,7 @@ export interface ShopItem {
 	effectiveProbability: number;
 	nextUpgradeCost: number | null;
 	displayRollCost?: number;
+	sizeVariants?: { name: string; count: number }[];
 }
 
 export interface LeaderboardEntry {

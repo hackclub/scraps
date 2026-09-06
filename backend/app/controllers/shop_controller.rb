@@ -19,7 +19,7 @@ class ShopController < ApplicationController
   def daily_picks
     conn = ActiveRecord::Base.connection
     ids = Rails.cache.fetch("shop:daily:#{Date.current}", expires_in: 1.hour) do
-      pool = conn.select_all("SELECT id FROM shop_items WHERE count > 0").map { |r| r["id"].to_i }
+      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0").map { |r| r["id"].to_i }
       seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
       pool.shuffle(random: Random.new(seed)).first(5)
     end
@@ -69,6 +69,95 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     conn.execute("DELETE FROM shop_retained_items WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
     render_json({ success: true })
+  end
+
+  def gachapons
+    conn = ActiveRecord::Base.connection
+    gachapons = conn.select_all("SELECT * FROM shop_gachapons ORDER BY created_at ASC").to_a
+    return render_json([]) if gachapons.empty?
+
+    gachapon_ids = gachapons.map { |g| g["id"].to_i }
+    links = conn.select_all("SELECT gachapon_id, shop_item_id FROM shop_gachapon_items WHERE gachapon_id IN (#{gachapon_ids.join(',')})").to_a
+    item_ids = links.map { |l| l["shop_item_id"].to_i }.uniq
+    items_by_id = if item_ids.any?
+      rows = conn.select_all("SELECT id, name, image, count FROM shop_items WHERE id IN (#{item_ids.join(',')})").to_a
+      rows.each_with_object({}) { |r, h| h[r["id"].to_i] = { id: r["id"].to_i, name: r["name"], image: r["image"], count: r["count"].to_i } }
+    else
+      {}
+    end
+
+    items_by_gachapon = Hash.new { |h, k| h[k] = [] }
+    links.each { |l| items_by_gachapon[l["gachapon_id"].to_i] << items_by_id[l["shop_item_id"].to_i] }
+
+    render_json(gachapons.map { |g|
+      {
+        id: g["id"].to_i,
+        name: g["name"],
+        description: g["description"],
+        image: g["image"],
+        price: g["price"].to_i,
+        items: items_by_gachapon[g["id"].to_i].compact
+      }
+    })
+  end
+
+  def purchase_gachapon
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    gachapon_id = params[:id].to_i
+    conn = ActiveRecord::Base.connection
+    gachapon = conn.select_one("SELECT * FROM shop_gachapons WHERE id = #{gachapon_id}")
+    return render_json({ error: "Not found" }, status: :not_found) unless gachapon
+
+    price = gachapon["price"].to_i
+    phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
+
+    begin
+      order_row = ActiveRecord::Base.transaction do
+        conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
+
+        affordable = ScrapsService.can_afford?(current_user.id, price)
+        unless affordable
+          bal = ScrapsService.get_user_scraps_balance(current_user.id)[:balance]
+          raise({ type: "insufficient_funds", balance: bal }.to_s)
+        end
+
+        item_ids = conn.select_all("SELECT shop_item_id FROM shop_gachapon_items WHERE gachapon_id = #{gachapon_id}").map { |r| r["shop_item_id"].to_i }
+        raise({ type: "empty_gachapon" }.to_s) if item_ids.empty?
+
+        available = conn.select_all("SELECT * FROM shop_items WHERE id IN (#{item_ids.join(',')}) AND count != 0 FOR UPDATE").to_a
+        raise({ type: "out_of_stock" }.to_s) if available.empty?
+
+        won_item = available.sample
+        won_item_id = won_item["id"].to_i
+        conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{won_item_id}") unless infinite_stock?(won_item["count"])
+
+        order = conn.select_one(<<~SQL)
+          INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
+          VALUES (#{current_user.id}, #{won_item_id}, 1, #{price}, #{price}, NULL, #{conn.quote(phone)}, 'pending', 'gachapon', NOW(), NOW())
+          RETURNING *
+        SQL
+
+        { order: order, item: won_item }
+      end
+
+      render_json({
+        success: true,
+        order: {
+          id: order_row[:order]["id"].to_i,
+          item_name: order_row[:item]["name"],
+          item_image: order_row[:item]["image"],
+          total_price: price,
+          status: order_row[:order]["status"]
+        }
+      })
+    rescue ActiveRecord::StatementInvalid => e
+      msg = e.message
+      return render_json({ error: "Insufficient scraps", required: price }, status: :unprocessable_entity) if msg.include?("insufficient_funds")
+      return render_json({ error: "This gachapon has no items in it" }, status: :unprocessable_entity) if msg.include?("empty_gachapon")
+      return render_json({ error: "All items in this gachapon are sold out" }, status: :unprocessable_entity) if msg.include?("out_of_stock")
+      raise
+    end
   end
 
   def show_item
@@ -149,8 +238,9 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
+    infinite = infinite_stock?(item["count"])
 
-    if item["count"].to_i < quantity
+    if !infinite && item["count"].to_i < quantity
       return render_json({ error: "Not enough stock available" }, status: :unprocessable_entity)
     end
 
@@ -167,12 +257,14 @@ class ShopController < ApplicationController
           raise({ type: "insufficient_funds", balance: bal }.to_s)
         end
 
-        locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
-        unless locked && locked["count"].to_i >= quantity
-          raise({ type: "out_of_stock" }.to_s)
-        end
+        unless infinite
+          locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
+          unless locked && locked["count"].to_i >= quantity
+            raise({ type: "out_of_stock" }.to_s)
+          end
 
-        conn.execute("UPDATE shop_items SET count = count - #{quantity}, updated_at = NOW() WHERE id = #{item_id}")
+          conn.execute("UPDATE shop_items SET count = count - #{quantity}, updated_at = NOW() WHERE id = #{item_id}")
+        end
 
         conn.select_one(<<~SQL)
           INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
@@ -210,7 +302,8 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
-    return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if item["count"].to_i < 1
+    infinite = infinite_stock?(item["count"])
+    return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
     phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
 
@@ -218,8 +311,10 @@ class ShopController < ApplicationController
       roll_result = ActiveRecord::Base.transaction do
         conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
 
-        locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
-        raise({ type: "out_of_stock" }.to_s) unless locked && locked["count"].to_i >= 1
+        unless infinite
+          locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
+          raise({ type: "out_of_stock" }.to_s) unless locked && locked["count"].to_i >= 1
+        end
 
         boost_row = conn.select_one("SELECT COALESCE(SUM(boost_amount),0) AS bp FROM refinery_orders WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
         boost_pct = boost_row["bp"].to_f
@@ -260,7 +355,7 @@ class ShopController < ApplicationController
         SQL
 
         if won
-          conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{item_id}")
+          conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{item_id}") unless infinite
 
           order_row = conn.select_one(<<~SQL)
             INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
@@ -325,14 +420,17 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
-    return render_json({ error: "Item is out of stock" }, status: :unprocessable_entity) if item["count"].to_i < 1
+    infinite = infinite_stock?(item["count"])
+    return render_json({ error: "Item is out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
     begin
       result = ActiveRecord::Base.transaction do
         conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
 
-        stock = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
-        raise({ type: "out_of_stock" }.to_s) unless stock && stock["count"].to_i >= 1
+        unless infinite
+          stock = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
+          raise({ type: "out_of_stock" }.to_s) unless stock && stock["count"].to_i >= 1
+        end
 
         boost_row = conn.select_one("SELECT COALESCE(SUM(boost_amount),0) AS bp FROM refinery_orders WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
         current_boost = boost_row["bp"].to_f
@@ -443,44 +541,37 @@ class ShopController < ApplicationController
     render_json(rows.map { |r| { user_id: r["user_id"].to_i, username: r["username"], avatar: r["avatar"], created_at: r["created_at"] } })
   end
 
+  # Sourced from the users table (kept in sync from Hack Club Auth on every
+  # login, see AuthController), not a live call to the identity API — that
+  # API scopes legal name/phone to the individual address record, which made
+  # this randomly come back with holes ("undefined undefined") whenever a
+  # user hadn't filled those specific fields in on auth.hackclub.com.
   def addresses
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
     conn = ActiveRecord::Base.connection
-    user_data = conn.select_one("SELECT access_token, refresh_token FROM users WHERE id = #{current_user.id}")
-    return render_json([]) unless user_data&.dig("access_token")
+    u = conn.select_one(<<~SQL)
+      SELECT first_name, legal_first_name, legal_last_name, phone,
+             address_line1, address_line2, address_city, address_state,
+             address_postal_code, address_country
+      FROM users WHERE id = #{current_user.id}
+    SQL
+    return render_json([]) unless u
+    return render_json([]) if u["address_line1"].blank? && u["address_city"].blank?
 
-    access_token = user_data["access_token"]
-    refresh_token = user_data["refresh_token"]
-
-    identity_url = "https://identity.hackclub.com/api/v1/me"
-
-    resp = HTTParty.get(identity_url, headers: { "Authorization" => "Bearer #{access_token}" })
-
-    if [401, 403].include?(resp.code) && refresh_token.present?
-      token_resp = HTTParty.post(
-        "https://auth.hackclub.com/oauth/token",
-        headers: { "Content-Type" => "application/x-www-form-urlencoded" },
-        body: URI.encode_www_form(
-          client_id: ENV["HCAUTH_CLIENT_ID"],
-          client_secret: ENV["HCAUTH_CLIENT_SECRET"],
-          grant_type: "refresh_token",
-          refresh_token: refresh_token
-        )
-      )
-
-      if token_resp.success?
-        new_access = token_resp.parsed_response["access_token"]
-        new_refresh = token_resp.parsed_response["refresh_token"] || refresh_token
-        conn.execute("UPDATE users SET access_token = #{conn.quote(new_access)}, refresh_token = #{conn.quote(new_refresh)}, updated_at = NOW() WHERE id = #{current_user.id}")
-        access_token = new_access
-        resp = HTTParty.get(identity_url, headers: { "Authorization" => "Bearer #{access_token}" })
-      end
-    end
-
-    return render_json([]) unless resp.success?
-    addresses = resp.parsed_response.dig("identity", "addresses") || []
-    render_json(addresses)
+    render_json([{
+      id: "account",
+      first_name: u["legal_first_name"].presence || u["first_name"],
+      last_name: u["legal_last_name"],
+      line_1: u["address_line1"],
+      line_2: u["address_line2"],
+      city: u["address_city"],
+      state: u["address_state"],
+      postal_code: u["address_postal_code"],
+      country: u["address_country"],
+      phone_number: u["phone"],
+      primary: true
+    }])
   rescue StandardError => e
     Rails.logger.error("[SHOP/addresses] #{e.message}")
     render_json([])
@@ -678,6 +769,17 @@ class ShopController < ApplicationController
 
   private
 
+  def infinite_stock?(count)
+    count.to_i < 0
+  end
+
+  def parse_size_variants(raw)
+    return raw if raw.is_a?(Array)
+    JSON.parse(raw.to_s.presence || "[]")
+  rescue JSON::ParserError
+    []
+  end
+
   def hydrate_items(rows)
     return rows.map { |item| item_without_user(item) } unless current_user
 
@@ -722,6 +824,7 @@ class ShopController < ApplicationController
       roll_cost_override: item["roll_cost_override"]&.to_i,
       per_roll_multiplier: (item["per_roll_multiplier"] || 0.05).to_f,
       heart_count: item["heart_count"].to_i,
+      size_variants: parse_size_variants(item["size_variants"]).select { |v| v["count"].to_i > 0 },
       created_at: item["created_at"],
       updated_at: item["updated_at"]
     }
