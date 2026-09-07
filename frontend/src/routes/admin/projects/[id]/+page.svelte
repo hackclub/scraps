@@ -136,7 +136,9 @@
 						>{project.status}</span
 					>
 					{#if isDeleted}
-						<span class="rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white">deleted</span>
+						<span class="rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white"
+							>deleted</span
+						>
 					{/if}
 				</div>
 			</div>
@@ -152,9 +154,13 @@
 			<p class="mb-4 whitespace-pre-wrap text-gray-700">{project.description}</p>
 
 			<div class="mb-4 flex flex-wrap gap-3 text-sm">
-				<span class="rounded-full bg-gray-100 px-3 py-1 font-bold">{formatHours(project.hours)}h</span>
+				<span class="rounded-full bg-gray-100 px-3 py-1 font-bold"
+					>{formatHours(project.hours)}h</span
+				>
 				<span class="rounded-full bg-gray-100 px-3 py-1 font-bold">tier {project.tier}</span>
-				<span class="rounded-full bg-gray-100 px-3 py-1 font-bold">{project.scrapsAwarded} scraps</span>
+				<span class="rounded-full bg-gray-100 px-3 py-1 font-bold"
+					>{project.scrapsAwarded} scraps</span
+				>
 				<span class="rounded-full bg-gray-100 px-3 py-1 font-bold">{project.views} views</span>
 			</div>
 
@@ -208,7 +214,8 @@
 				disabled={restoring}
 				class="mt-6 flex items-center gap-2 rounded-full border-4 border-black px-5 py-2 font-bold transition-all hover:border-dashed disabled:opacity-50"
 			>
-				<RotateCcw size={18} /> {restoring ? 'restoring…' : 'restore project'}
+				<RotateCcw size={18} />
+				{restoring ? 'restoring…' : 'restore project'}
 			</button>
 		{:else}
 			<button
@@ -248,7 +255,8 @@
 					disabled={deleting}
 					class="flex flex-1 items-center justify-center gap-2 rounded-full border-4 border-red-600 bg-red-600 px-4 py-3 font-bold text-white hover:bg-red-700 disabled:opacity-50"
 				>
-					<Trash2 size={18} /> {deleting ? 'deleting…' : 'delete project'}
+					<Trash2 size={18} />
+					{deleting ? 'deleting…' : 'delete project'}
 				</button>
 			</div>
 		</div>

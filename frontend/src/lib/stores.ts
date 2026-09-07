@@ -105,6 +105,7 @@ export interface Toast {
 // Stores
 export const userStore = writable<User | null>(null);
 export const tutorialActiveStore = writable(false);
+export const onboardingSandbox = writable<number | null>(null);
 export const tutorialProjectIdStore = writable<number | null>(null);
 export const projectsStore = writable<Project[]>([]);
 export const shopItemsStore = writable<ShopItem[]>([]);
@@ -317,7 +318,7 @@ export async function prefetchUserData() {
 	if (!browser) return;
 
 	// Only warm what the dashboard (the post-login landing page) actually shows.
-	// Shop and leaderboard fetch their own data on navigation — prefetching those
+	// Shop and leaderboard fetch their own data on navigation: prefetching those
 	// here just competes for the API's limited threads on every page load.
 	await Promise.all([fetchProjects(), fetchNews()]);
 }

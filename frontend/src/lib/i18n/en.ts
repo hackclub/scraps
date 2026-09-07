@@ -600,7 +600,7 @@ export default {
 		notAllowed: {
 			title: 'check back later!',
 			description:
-				'scraps is currently in beta. you’re eligible — we just haven’t opened the doors to everyone yet. hang tight.'
+				'scraps is currently in beta. you’re eligible: we just haven’t opened the doors to everyone yet. hang tight.'
 		},
 		authFailed: {
 			title: 'authentication failed',
@@ -630,6 +630,6 @@ export default {
 		highSeas: 'high seas',
 		and: 'and',
 		summerOfMaking: 'summer of making',
-		similarPrizes: '— both gave out similar prizes for building personal projects.'
+		similarPrizes: ': both gave out similar prizes for building personal projects.'
 	}
 } as const;

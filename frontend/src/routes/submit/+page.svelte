@@ -160,7 +160,6 @@
 					<span class="rounded-full bg-gray-100 px-3 py-1 font-bold">{selectedProject.status}</span>
 				</div>
 			</div>
-
 		{/if}
 
 		<button

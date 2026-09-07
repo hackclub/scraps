@@ -22,8 +22,7 @@
 	let dollarsPerHour = $state(4);
 	const scrapsPerDollar = $derived(SCRAPS_PER_HOUR / dollarsPerHour);
 
-	const mockFeedback =
-		'this is testing. meaning this is a test. i am now goign to epxlldoe';
+	const mockFeedback = 'this is testing. meaning this is a test. i am now goign to epxlldoe';
 
 	let projects = $derived($projectsStore.filter((p) => p.hours > 0));
 	let selectedId = $state<number | null>(null);
@@ -35,7 +34,10 @@
 	function simulateBonusEV(min: number, max: number, spread: number) {
 		const N = 20000;
 		const draw = () =>
-			Math.min(max, Math.max(min, Math.round((1 + (Math.random() - Math.random()) * spread) * 100) / 100));
+			Math.min(
+				max,
+				Math.max(min, Math.round((1 + (Math.random() - Math.random()) * spread) * 100) / 100)
+			);
 		let sum1 = 0;
 		const samples: number[] = [];
 		for (let i = 0; i < N; i++) {
@@ -259,8 +261,12 @@
 		phase = 'idle';
 	}
 
-	let effectiveScrapsPerHourNoPowerUp = $derived(SCRAPS_PER_HOUR * reviewerMultiplier(2) * bonusEV.ev2);
-	let effectiveScrapsPerHourWithPowerUp = $derived(SCRAPS_PER_HOUR * reviewerMultiplier(2) * bonusEV.ev3);
+	let effectiveScrapsPerHourNoPowerUp = $derived(
+		SCRAPS_PER_HOUR * reviewerMultiplier(2) * bonusEV.ev2
+	);
+	let effectiveScrapsPerHourWithPowerUp = $derived(
+		SCRAPS_PER_HOUR * reviewerMultiplier(2) * bonusEV.ev3
+	);
 	let powerUpMarginalEV = $derived(bonusEV.ev3 - bonusEV.ev2);
 	let suggestedPowerUpCostScraps = $derived(Math.round(baseScraps * powerUpMarginalEV));
 	let powerUpCostScraps = $derived(Math.round(baseScraps * (powerUpCostPct / 100)));
@@ -300,7 +306,7 @@
 		<h1 class="text-4xl font-bold md:text-5xl">payout flow</h1>
 	</div>
 	<p class="mb-8 text-lg text-gray-600">
-		Sandbox — review feedback → hours × score → roll a bonus. Backend untouched.
+		Sandbox: review feedback → hours × score → roll a bonus. Backend untouched.
 	</p>
 
 	<div class="grid gap-8 lg:grid-cols-[1fr_320px]">
@@ -339,7 +345,9 @@
 							class="animate-[pop_.4s_ease] rounded-2xl border-2 border-black bg-white p-5 text-center"
 						>
 							<p class="text-xs font-bold tracking-wide text-gray-400 uppercase">Reviewer score</p>
-							<p class="text-4xl font-black">{reviewerScore.toFixed(1)}<span class="text-xl text-gray-400">/5</span></p>
+							<p class="text-4xl font-black">
+								{reviewerScore.toFixed(1)}<span class="text-xl text-gray-400">/5</span>
+							</p>
 							<p class="text-sm font-bold text-indigo-600">
 								{scoreLabel(reviewerScore)} · ×{scoreMultiplier.toFixed(2)} payout
 							</p>
@@ -368,7 +376,9 @@
 								? 'bg-yellow-50'
 								: 'bg-white'}"
 						>
-							<p class="mb-2 text-xs font-bold tracking-wide text-gray-400 uppercase">Final bonus</p>
+							<p class="mb-2 text-xs font-bold tracking-wide text-gray-400 uppercase">
+								Final bonus
+							</p>
 							{#if phase === 'rollReady'}
 								<button
 									onclick={() => doSpin(false)}
@@ -413,9 +423,11 @@
 							{/if}
 
 							{#if phase === 'powerUpOffer'}
-								<div class="mt-4 rounded-xl border-2 border-dashed border-indigo-400 bg-indigo-50 p-4">
+								<div
+									class="mt-4 rounded-xl border-2 border-dashed border-indigo-400 bg-indigo-50 p-4"
+								>
 									<p class="mb-3 text-sm font-bold text-indigo-700">
-										Power-up available — go again for one more binding roll?
+										Power-up available: go again for one more binding roll?
 									</p>
 									<div class="flex justify-center gap-3">
 										<button
@@ -432,7 +444,8 @@
 										</button>
 									</div>
 									<p class="mt-2 text-xs text-gray-500">
-										This is attempt {attempt} of {MAX_ATTEMPTS}. The next roll is final — no more choices.
+										This is attempt {attempt} of {MAX_ATTEMPTS}. The next roll is final: no more
+										choices.
 									</p>
 								</div>
 							{/if}
@@ -467,11 +480,8 @@
 		<div class="space-y-5 rounded-2xl border-2 border-dashed border-black p-5 text-sm">
 			<div>
 				<p class="mb-1 font-bold">Project</p>
-				<select
-					bind:value={selectedId}
-					class="w-full rounded-lg border-2 border-black px-2 py-1"
-				>
-					<option value={null}>— manual hours —</option>
+				<select bind:value={selectedId} class="w-full rounded-lg border-2 border-black px-2 py-1">
+					<option value={null}>| manual hours |</option>
 					{#each projects as p (p.id)}
 						<option value={p.id}>{p.name} ({(p.hoursOverride ?? p.hours).toFixed(1)}h)</option>
 					{/each}
@@ -493,17 +503,31 @@
 			<div class="border-t-2 border-dashed border-gray-300 pt-4">
 				<p class="mb-2 font-bold text-gray-500">score → multiplier curve</p>
 				<p class="mb-2 text-xs text-gray-500">
-					1-3 scale. Score 2 is pinned to exactly ×1 (neutral). Below 2 is always &lt; 1x — a bad
+					1-3 scale. Score 2 is pinned to exactly ×1 (neutral). Below 2 is always &lt; 1x: a bad
 					score is on the user.
 				</p>
 				<label class="block">
 					score 1 = ×{scoreFloorMult.toFixed(2)}
-					<input type="range" min="0" max="1" step="0.05" bind:value={scoreFloorMult} class="w-full" />
+					<input
+						type="range"
+						min="0"
+						max="1"
+						step="0.05"
+						bind:value={scoreFloorMult}
+						class="w-full"
+					/>
 				</label>
 				<p class="mt-2">score 2 = ×1.00 (fixed)</p>
 				<label class="mt-2 block">
 					score 3 = ×{scoreCeilMult.toFixed(2)}
-					<input type="range" min="1" max="3" step="0.05" bind:value={scoreCeilMult} class="w-full" />
+					<input
+						type="range"
+						min="1"
+						max="3"
+						step="0.05"
+						bind:value={scoreCeilMult}
+						class="w-full"
+					/>
 				</label>
 				<table class="mt-3 w-full border-collapse text-xs">
 					<thead>
@@ -515,7 +539,11 @@
 					</thead>
 					<tbody>
 						{#each curvePreview as row (row.score)}
-							<tr class="border-b border-gray-100 {row.score === 2 ? 'font-bold text-indigo-700' : ''}">
+							<tr
+								class="border-b border-gray-100 {row.score === 2
+									? 'font-bold text-indigo-700'
+									: ''}"
+							>
 								<td class="py-1">{row.score.toFixed(1)}</td>
 								<td class="py-1">×{row.mult.toFixed(2)}</td>
 								<td class="py-1">${row.dollarsPerHour.toFixed(2)}</td>
@@ -529,7 +557,14 @@
 				<p class="mb-2 font-bold text-gray-500">bonus roll</p>
 				<label class="block">
 					swing ±{bonusSpread.toFixed(2)}
-					<input type="range" min="0.1" max="1.5" step="0.05" bind:value={bonusSpread} class="w-full" />
+					<input
+						type="range"
+						min="0.1"
+						max="1.5"
+						step="0.05"
+						bind:value={bonusSpread}
+						class="w-full"
+					/>
 				</label>
 				<div class="mt-2 flex gap-2">
 					<label class="flex-1">
@@ -543,9 +578,10 @@
 				</div>
 				<label class="mt-3 flex cursor-pointer items-center justify-between gap-2">
 					<span class="text-sm font-bold text-red-700">Trigger low payout</span>
-					<span class="relative inline-block h-7 w-12 shrink-0 rounded-full transition-colors {lowPayoutOn
-						? 'bg-red-600'
-						: 'bg-gray-300'}"
+					<span
+						class="relative inline-block h-7 w-12 shrink-0 rounded-full transition-colors {lowPayoutOn
+							? 'bg-red-600'
+							: 'bg-gray-300'}"
 					>
 						<span
 							class="absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform {lowPayoutOn
@@ -558,7 +594,9 @@
 			</div>
 
 			<div class="border-t-2 border-dashed border-gray-300 pt-4 text-xs text-gray-600">
-				<p>base = {hours.toFixed(1)}h × {SCRAPS_PER_HOUR.toFixed(2)}/h × {scoreMultiplier.toFixed(2)}</p>
+				<p>
+					base = {hours.toFixed(1)}h × {SCRAPS_PER_HOUR.toFixed(2)}/h × {scoreMultiplier.toFixed(2)}
+				</p>
 				<p class="font-bold">= {baseScraps.toLocaleString()} scraps before bonus</p>
 			</div>
 
@@ -570,7 +608,14 @@
 				</label>
 				<label class="mt-2 block">
 					shop price: {powerUpCostPct}% of base payout
-					<input type="range" min="0" max="30" step="1" bind:value={powerUpCostPct} class="w-full" />
+					<input
+						type="range"
+						min="0"
+						max="30"
+						step="1"
+						bind:value={powerUpCostPct}
+						class="w-full"
+					/>
 				</label>
 				<p class="mt-1 text-xs text-gray-600">
 					= {powerUpCostScraps.toLocaleString()} scraps at current hours/score
@@ -581,10 +626,19 @@
 				<p class="mb-2 font-bold text-gray-500">economy baseline</p>
 				<label class="block">
 					target $/hour: {dollarsPerHour.toFixed(2)}
-					<input type="range" min="1" max="10" step="0.25" bind:value={dollarsPerHour} class="w-full" />
+					<input
+						type="range"
+						min="1"
+						max="10"
+						step="0.25"
+						bind:value={dollarsPerHour}
+						class="w-full"
+					/>
 				</label>
 				<div class="mt-3 space-y-1 rounded-lg border-2 border-black bg-gray-50 p-3 text-xs">
-					<p>nominal rate: {SCRAPS_PER_HOUR.toFixed(2)} scraps/h ({scrapsPerDollar.toFixed(2)} scraps/$)</p>
+					<p>
+						nominal rate: {SCRAPS_PER_HOUR.toFixed(2)} scraps/h ({scrapsPerDollar.toFixed(2)} scraps/$)
+					</p>
 					<p>reviewer mult at score 2 (neutral, fixed): ×{reviewerMultiplier(2).toFixed(3)}</p>
 					<p>bonus EV, no reroll: ×{bonusEV.ev1.toFixed(3)}</p>
 					<p>bonus EV, 1 free reroll (today): ×{bonusEV.ev2.toFixed(3)}</p>
@@ -603,7 +657,8 @@
 						power-up's true marginal edge: ×{powerUpMarginalEV.toFixed(3)} → breakeven price ≈
 						<span class="font-bold">{suggestedPowerUpCostScraps.toLocaleString()} scraps</span>
 						({((suggestedPowerUpCostScraps / Math.max(1, baseScraps)) * 100).toFixed(1)}% of base).
-						Price above this for a scrap sink with house edge; at or below it's a free-money exploit.
+						Price above this for a scrap sink with house edge; at or below it's a free-money
+						exploit.
 					</p>
 				</div>
 			</div>

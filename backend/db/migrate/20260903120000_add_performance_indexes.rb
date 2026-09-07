@@ -1,10 +1,10 @@
 class AddPerformanceIndexes < ActiveRecord::Migration[8.1]
   def change
-    # Correlated COUNT(*) subquery in ShopController#items — was a full scan per item.
+    # Correlated COUNT(*) subquery in ShopController#items: was a full scan per item.
     add_index :shop_hearts, :shop_item_id, if_not_exists: true
 
     # Per-user aggregates in the scraps balance calc, the shop item overlay, and
-    # the leaderboard subqueries — all full scans without these.
+    # the leaderboard subqueries: all full scans without these.
     add_index :user_bonuses, :user_id, if_not_exists: true
     add_index :shop_orders, :user_id, if_not_exists: true
     add_index :refinery_spending_history, :user_id, if_not_exists: true

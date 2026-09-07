@@ -4,7 +4,7 @@ class AirtableSyncJob < ApplicationJob
   AIRTABLE_BASE_URL = "https://api.airtable.com/v0"
 
   # Pushes shipped scraps projects into the "YSWS Project Submission" table
-  # (AIRTABLE_BASE_ID / AIRTABLE_PROJECTS_TABLE_ID) — the grant-fulfillment pipeline.
+  # (AIRTABLE_BASE_ID / AIRTABLE_PROJECTS_TABLE_ID): the grant-fulfillment pipeline.
   #
   # perform(project_id) syncs one project (called when a project passes review).
   # perform      syncs every shipped project (the 5-minute cron backstop).
@@ -126,7 +126,7 @@ class AirtableSyncJob < ApplicationJob
   # first submissions, where there is no prior ship to bound the range).
   PROGRAM_START = "2026-08-01".freeze
 
-  # Templated "Optional - Override Hours Spent Justification" — mirrors the-game's
+  # Templated "Optional - Override Hours Spent Justification": mirrors the-game's
   # macro: tracked vs approved time, submission/reship context, Hackatime projects
   # and the date range the work covers, and who reviewed it.
   def build_justification(project, approved, include_lapse: false)

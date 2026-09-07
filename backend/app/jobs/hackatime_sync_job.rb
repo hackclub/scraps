@@ -20,7 +20,7 @@ class HackatimeSyncJob < ApplicationJob
     ht_projects = HackatimeService.fetch_user_projects(ht_user[:user_id])
     return { hours: project["hours"], updated: false } unless ht_projects
 
-    # hackatime_project_str is stored as "<ht_user_id>:<name>,U123/<name>,..." — reduce
+    # hackatime_project_str is stored as "<ht_user_id>:<name>,U123/<name>,...": reduce
     # it to the bare project names so we can match against Hackatime's own names.
     target_names = HackatimeService.strip_hackatime_ids(hackatime_project_str)
       .to_s.split(",").map(&:strip).reject(&:empty?).to_set

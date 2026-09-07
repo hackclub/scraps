@@ -48,13 +48,10 @@
 	async function upgradeProbability(item: ShopItem) {
 		upgrading = item.id;
 		try {
-			const res = await fetch(
-				`${API_URL}/shop/items/${item.id}/upgrade-probability`,
-				{
-					method: 'POST',
-					credentials: 'include'
-				}
-			);
+			const res = await fetch(`${API_URL}/shop/items/${item.id}/upgrade-probability`, {
+				method: 'POST',
+				credentials: 'include'
+			});
 			const data = await res.json();
 			if (data.error) {
 				alertMessage = data.error;
@@ -83,13 +80,10 @@
 	async function undoRefinery(item: ShopItem) {
 		undoing = item.id;
 		try {
-			const res = await fetch(
-				`${API_URL}/shop/items/${item.id}/refinery/undo`,
-				{
-					method: 'POST',
-					credentials: 'include'
-				}
-			);
+			const res = await fetch(`${API_URL}/shop/items/${item.id}/refinery/undo`, {
+				method: 'POST',
+				credentials: 'include'
+			});
 			const data = await res.json();
 			if (data.error) {
 				alertMessage = data.error;
@@ -120,13 +114,10 @@
 	async function undoAllRefinery(item: ShopItem) {
 		undoing = item.id;
 		try {
-			const res = await fetch(
-				`${API_URL}/shop/items/${item.id}/refinery/undo-all`,
-				{
-					method: 'POST',
-					credentials: 'include'
-				}
-			);
+			const res = await fetch(`${API_URL}/shop/items/${item.id}/refinery/undo-all`, {
+				method: 'POST',
+				credentials: 'include'
+			});
 			const data = await res.json();
 			if (data.error) {
 				alertMessage = data.error;

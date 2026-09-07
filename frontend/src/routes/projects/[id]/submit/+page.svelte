@@ -346,7 +346,11 @@
 			{/if}
 
 			<!-- Project Image Upload -->
-			<div class="mb-6">
+			<div
+				class="mb-6 rounded-xl border-2 p-3 transition-colors {hasImage
+					? 'border-transparent'
+					: 'border-yellow-400 bg-yellow-50'}"
+			>
 				<label class="mb-2 block text-sm font-bold"
 					>{$t.project.projectImage} <span class="text-red-500">*</span></label
 				>
@@ -385,7 +389,11 @@
 			<!-- Editable Fields -->
 			<div class="mb-6 space-y-4">
 				<!-- Name -->
-				<div>
+				<div
+					class="rounded-xl border-2 p-3 transition-colors {hasName
+						? 'border-transparent'
+						: 'border-yellow-400 bg-yellow-50'}"
+				>
 					<label for="name" class="mb-2 block text-sm font-bold"
 						>{$t.project.name} <span class="text-red-500">*</span></label
 					>
@@ -400,7 +408,11 @@
 				</div>
 
 				<!-- Description -->
-				<div>
+				<div
+					class="rounded-xl border-2 p-3 transition-colors {hasDescription
+						? 'border-transparent'
+						: 'border-yellow-400 bg-yellow-50'}"
+				>
 					<label for="description" class="mb-2 block text-sm font-bold"
 						>{$t.project.description} <span class="text-red-500">*</span></label
 					>
@@ -421,7 +433,11 @@
 				</div>
 
 				<!-- GitHub URL -->
-				<div>
+				<div
+					class="rounded-xl border-2 p-3 transition-colors {hasGithub
+						? 'border-transparent'
+						: 'border-yellow-400 bg-yellow-50'}"
+				>
 					<label for="githubUrl" class="mb-2 block text-sm font-bold"
 						>{$t.project.githubUrl} <span class="text-red-500">*</span></label
 					>
@@ -441,7 +457,11 @@
 				</div>
 
 				<!-- Playable URL -->
-				<div>
+				<div
+					class="rounded-xl border-2 p-3 transition-colors {hasPlayableUrl
+						? 'border-transparent'
+						: 'border-yellow-400 bg-yellow-50'}"
+				>
 					<label for="playableUrl" class="mb-2 block text-sm font-bold"
 						>{$t.project.playableUrl} <span class="text-red-500">*</span></label
 					>
@@ -463,7 +483,11 @@
 				</div>
 
 				<!-- Hackatime Project Dropdown -->
-				<div>
+				<div
+					class="rounded-xl border-2 p-3 transition-colors {hasHackatime
+						? 'border-transparent'
+						: 'border-yellow-400 bg-yellow-50'}"
+				>
 					<label class="mb-2 block text-sm font-bold"
 						>{$t.project.hackatimeProject} <span class="text-red-500">*</span></label
 					>

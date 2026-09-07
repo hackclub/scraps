@@ -4,7 +4,7 @@ module AppVersion
   # Resolved once at boot. Order of preference:
   #   1. an explicit env var (set by the deploy, or a Docker build arg)
   #   2. a REVISION file written at image build time
-  #   3. the local git checkout (dev) — read directly, no shelling out
+  #   3. the local git checkout (dev): read directly, no shelling out
   def self.from_git
     root = Rails.root
     root = root.parent while root != root.parent && !root.join(".git").exist?

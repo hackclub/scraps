@@ -116,7 +116,10 @@
 			});
 
 			// Save role if admin
-			if ((user?.role === 'admin' || user?.role === 'creator') && editingRole !== editingUser.role) {
+			if (
+				(user?.role === 'admin' || user?.role === 'creator') &&
+				editingRole !== editingUser.role
+			) {
 				await fetch(`${API_URL}/admin/users/${editingUser.id}/role`, {
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },

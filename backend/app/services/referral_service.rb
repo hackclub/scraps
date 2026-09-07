@@ -1,6 +1,6 @@
 module ReferralService
   # A referred user counts as "converted" once Hack Club Auth reports them fully
-  # verified. Tracking only — there is no scraps reward.
+  # verified. Tracking only: there is no scraps reward.
   VERIFIED_STATUSES = %w[verified].freeze
 
   # Lazily assign and persist a share code for the user.

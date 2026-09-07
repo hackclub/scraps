@@ -124,7 +124,7 @@ class ProjectsController < ApplicationController
     is_staff = %w[admin reviewer creator].include?(current_user.role)
 
     # Soft-deleted projects stay in the DB and remain visible to staff, but are
-    # gone for everyone else — including the original owner.
+    # gone for everyone else: including the original owner.
     if project["deleted"].to_i == 1 && !is_staff
       return render_json({ error: "Not found" }, status: :not_found)
     end
@@ -355,7 +355,7 @@ class ProjectsController < ApplicationController
     is_owner = project["user_id"].to_i == current_user.id
     is_admin = %w[admin creator].include?(current_user.role)
 
-    # Owners can delete their own project only while it is still in progress —
+    # Owners can delete their own project only while it is still in progress:
     # once it's in review or shipped it's out of their hands. Admins: any status.
     unless is_admin || (is_owner && project["status"] == "in_progress")
       return render_json({ error: "This project can no longer be deleted." }, status: :forbidden)

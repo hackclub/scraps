@@ -140,7 +140,6 @@ class ShopController < ApplicationController
         available = conn.select_all("SELECT * FROM shop_items WHERE id IN (#{item_ids.join(',')}) AND count != 0 FOR UPDATE").to_a
         raise({ type: "out_of_stock" }.to_s) if available.empty?
 
-        # Rarer = more valuable: an item's pull odds fall as its scraps value rises.
         won_item = weighted_sample(available) { |row| gachapon_pull_weight(row["price"]) }
         won_item_id = won_item["id"].to_i
         conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{won_item_id}") unless infinite_stock?(won_item["count"])
@@ -152,6 +151,17 @@ class ShopController < ApplicationController
         SQL
 
         { order: order, item: won_item }
+      end
+
+      if ENV["SLACK_BOT_TOKEN"].present?
+        SlackService.notify_shop_win(
+          token: ENV["SLACK_BOT_TOKEN"],
+          user_slack_id: current_user.slack_id,
+          item_name: order_row[:item]["name"],
+          item_image: order_row[:item]["image"].to_s.presence,
+          frontend_url: ENV.fetch("FRONTEND_URL") { "http://localhost:5173" },
+          activity_channel_id: ENV["SLACK_ACTIVITY_CHANNEL_ID"]
+        ) rescue nil
       end
 
       render_json({
@@ -280,11 +290,28 @@ class ShopController < ApplicationController
           conn.execute("UPDATE shop_items SET count = count - #{quantity}, updated_at = NOW() WHERE id = #{item_id}")
         end
 
-        conn.select_one(<<~SQL)
-          INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
-          VALUES (#{current_user.id}, #{item_id}, #{quantity}, #{item['price'].to_i}, #{total_price}, NULL, #{conn.quote(phone)}, 'pending', 'purchase', NOW(), NOW())
-          RETURNING *
+        mergeable = conn.select_one(<<~SQL)
+          SELECT * FROM shop_orders
+          WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}
+            AND order_type = 'purchase' AND status = 'pending' AND price_per_item = #{item["price"].to_i}
+          FOR UPDATE
+          LIMIT 1
         SQL
+
+        if mergeable
+          conn.select_one(<<~SQL)
+            UPDATE shop_orders
+            SET quantity = quantity + #{quantity}, total_price = total_price + #{total_price}, updated_at = NOW()
+            WHERE id = #{mergeable["id"].to_i}
+            RETURNING *
+          SQL
+        else
+          conn.select_one(<<~SQL)
+            INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
+            VALUES (#{current_user.id}, #{item_id}, #{quantity}, #{item['price'].to_i}, #{total_price}, NULL, #{conn.quote(phone)}, 'pending', 'purchase', NOW(), NOW())
+            RETURNING *
+          SQL
+        end
       end
 
       render_json({
@@ -361,7 +388,7 @@ class ShopController < ApplicationController
         rolled = rand(1..100)
         threshold = ScrapsService.compute_roll_threshold(effective_prob)
         won = rolled <= threshold
-        # Don't reveal the roll was actually a win-zone miss — shift display value past effective_prob
+        # Don't reveal the roll was actually a win-zone miss: shift display value past effective_prob
         display_rolled = (!won && rolled <= effective_prob) ? rand((effective_prob.to_i + 1)..100) : rolled
 
         conn.execute(<<~SQL)
@@ -558,7 +585,7 @@ class ShopController < ApplicationController
   end
 
   # Sourced from the users table (kept in sync from Hack Club Auth on every
-  # login, see AuthController), not a live call to the identity API — that
+  # login, see AuthController), not a live call to the identity API: that
   # API scopes legal name/phone to the individual address record, which made
   # this randomly come back with holes ("undefined undefined") whenever a
   # user hadn't filled those specific fields in on auth.hackclub.com.
@@ -806,9 +833,6 @@ class ShopController < ApplicationController
     rows.last
   end
 
-  # Pull weight for a gachapon item, derived from its scraps value. Inversely
-  # proportional so a pricier prize is rarer; softened by sqrt so a 10x price
-  # gap is ~3x rarity rather than 10x. Tune the curve here.
   def gachapon_pull_weight(price)
     p = [price.to_i, 1].max
     1.0 / Math.sqrt(p)

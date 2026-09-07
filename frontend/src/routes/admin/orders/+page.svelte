@@ -152,7 +152,9 @@
 			result = result.filter((o) => new Date(o.createdAt) <= to);
 		}
 
-		return [...result].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+		return [...result].sort(
+			(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+		);
 	});
 
 	let mainOrders = $derived(filteredOrders.filter((o) => !o.hackatimeBanned));
@@ -350,14 +352,14 @@
 					/>
 				</div>
 				<button
-				onclick={() => (hideConsolations = !hideConsolations)}
-				class="cursor-pointer rounded-xl border-4 border-black px-3 py-2 font-bold transition-all duration-200 {hideConsolations
-					? 'bg-black text-white'
-					: 'hover:border-dashed'}"
-			>
-				hide consolations
-			</button>
-			{#if dateFrom || dateTo || filterItem || filterUser || filterRegion || hideConsolations}
+					onclick={() => (hideConsolations = !hideConsolations)}
+					class="cursor-pointer rounded-xl border-4 border-black px-3 py-2 font-bold transition-all duration-200 {hideConsolations
+						? 'bg-black text-white'
+						: 'hover:border-dashed'}"
+				>
+					hide consolations
+				</button>
+				{#if dateFrom || dateTo || filterItem || filterUser || filterRegion || hideConsolations}
 					<button
 						onclick={() => {
 							dateFrom = '';
@@ -438,7 +440,9 @@
 								</span>
 							{/if}
 						</div>
-						<span class="text-xs text-gray-400">order #{order.id} • {formatDate(order.createdAt)}</span>
+						<span class="text-xs text-gray-400"
+							>order #{order.id} • {formatDate(order.createdAt)}</span
+						>
 					</div>
 				</button>
 			{/each}
@@ -449,11 +453,15 @@
 				<div class="mb-4 flex items-center gap-3">
 					<ShieldAlert size={24} class="text-red-600" />
 					<h2 class="text-2xl font-bold text-red-700">hackatime banned orders</h2>
-					<span class="rounded-full border-2 border-red-600 bg-red-100 px-3 py-0.5 text-sm font-bold text-red-700">
+					<span
+						class="rounded-full border-2 border-red-600 bg-red-100 px-3 py-0.5 text-sm font-bold text-red-700"
+					>
 						{bannedOrders.length}
 					</span>
 				</div>
-				<p class="mb-6 text-sm text-gray-500">these orders belong to users who are banned on hackatime — do not fulfill</p>
+				<p class="mb-6 text-sm text-gray-500">
+					these orders belong to users who are banned on hackatime: do not fulfill
+				</p>
 				<div class="flex flex-col gap-3">
 					{#each bannedOrders as order}
 						<button
@@ -495,7 +503,9 @@
 									<ShieldAlert size={12} />
 									ht banned
 								</span>
-								<span class="text-xs text-red-400">order #{order.id} • {formatDate(order.createdAt)}</span>
+								<span class="text-xs text-red-400"
+									>order #{order.id} • {formatDate(order.createdAt)}</span
+								>
 							</div>
 						</button>
 					{/each}

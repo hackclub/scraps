@@ -275,7 +275,7 @@
 		>
 			<span class="flex items-center gap-2">
 				<Eye size={18} />
-				public view — this is what everyone else sees
+				public view: this is what everyone else sees
 			</span>
 			<a
 				href="/admin/projects/{data.id}"
@@ -721,7 +721,8 @@
 		<div class="w-full max-w-lg rounded-2xl border-4 border-black bg-white p-6">
 			<h2 class="mb-4 text-2xl font-bold">delete this project?</h2>
 			<p class="mb-6 text-gray-700">
-				this permanently removes <span class="font-bold">{project.name}</span>. this can't be undone.
+				this permanently removes <span class="font-bold">{project.name}</span>. this can't be
+				undone.
 			</p>
 			<div class="flex gap-4">
 				<button

@@ -48,7 +48,9 @@
 	>
 		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
 			<div class="mb-4 flex items-center justify-between">
-				<h2 class="flex items-center gap-2 text-2xl font-bold"><Spool size={24} /> scraps history</h2>
+				<h2 class="flex items-center gap-2 text-2xl font-bold">
+					<Spool size={24} /> scraps history
+				</h2>
 				<button
 					onclick={close}
 					class="cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100"
@@ -68,7 +70,7 @@
 
 				<div class="mb-4">
 					<p class="mb-2 flex items-center gap-1 font-bold text-green-700">
-						<TrendingUp size={16} /> earned — {balance.earned.toLocaleString()}
+						<TrendingUp size={16} /> earned: {balance.earned.toLocaleString()}
 					</p>
 					<div class="flex flex-col gap-1 pl-5 text-sm text-gray-600">
 						<div class="flex justify-between">
@@ -90,7 +92,7 @@
 
 				<div>
 					<p class="mb-2 flex items-center gap-1 font-bold text-red-700">
-						<TrendingDown size={16} /> spent — {balance.spent.toLocaleString()}
+						<TrendingDown size={16} /> spent: {balance.spent.toLocaleString()}
 					</p>
 					<div class="flex flex-col gap-1 pl-5 text-sm text-gray-600">
 						<div class="flex justify-between">

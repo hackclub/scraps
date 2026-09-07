@@ -310,7 +310,7 @@ class AdminController < ApplicationController
   end
 
   def submit_review
-    # NB: not params[:action] — Rails' routing reserves :action for the controller method name.
+    # NB: not params[:action] | Rails' routing reserves :action for the controller method name.
     action = params[:decision].presence.to_s
     feedback = params[:feedbackForAuthor].to_s.strip
     rejection_reason = params[:rejectionReason].to_s.strip
@@ -354,7 +354,7 @@ class AdminController < ApplicationController
     set_parts = ["status = '#{new_status}'", "updated_at = NOW()"]
     set_parts << "is_reship = #{reship_flag ? 'true' : 'false'}" unless reship_flag.nil?
 
-    # On approval the reviewer's "hours to approve" value is final — store it as
+    # On approval the reviewer's "hours to approve" value is final: store it as
     # hours_override and grant on it directly (deductions were already shown in
     # the review UI to inform the number, not re-applied here).
     grant_hours =
@@ -770,10 +770,6 @@ class AdminController < ApplicationController
     })
   end
 
-  # Resolves a gachapon's item list to shop_item ids. Each entry is either
-  # { id: <existing shop item> } or { new: { name, price, image, count } },
-  # where a `new` entry is created as a gachapon-only shop item first.
-  # Falls back to a bare `itemIds: [id]` array. Returns de-duped ids.
   def resolve_gachapon_item_ids(conn)
     raw = params[:items]
     unless raw.is_a?(Array) && raw.any?
@@ -782,25 +778,46 @@ class AdminController < ApplicationController
 
     raw.filter_map { |entry|
       existing_id = (entry[:id] || entry[:shop_item_id]).to_i
+      edit_spec = entry[:update] || entry["update"]
+
+      if existing_id.positive? && edit_spec
+        apply_gachapon_item_spec(conn, edit_spec, id: existing_id)
+        next existing_id
+      end
+
       next existing_id if existing_id.positive?
 
       spec = entry[:new] || entry["new"]
       next unless spec
 
-      name = spec[:name].to_s.strip
-      price = spec[:price].to_i
-      raise GachaponError, "New gachapon items need a name and a cost above 0" if name.blank? || price <= 0
-      image = spec[:image].to_s.strip
-      count = spec.key?(:count) ? spec[:count].to_i : 0
+      apply_gachapon_item_spec(conn, spec)
+    }.uniq
+  end
 
-      pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, nil)
-      created = conn.select_one(<<~SQL)
+  def apply_gachapon_item_spec(conn, spec, id: nil)
+    name = spec[:name].to_s.strip
+    price = spec[:price].to_i
+    raise GachaponError, "Gachapon items need a name and a cost above 0" if name.blank? || price <= 0
+    image = spec[:image].to_s.strip
+    count = spec.key?(:count) ? spec[:count].to_i : 0
+    pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, nil)
+
+    if id
+      conn.execute(<<~SQL)
+        UPDATE shop_items SET
+          name = #{conn.quote(name)}, image = #{conn.quote(image)}, price = #{price}, count = #{count},
+          base_probability = #{pricing[:base_probability]}, base_upgrade_cost = #{pricing[:base_upgrade_cost]},
+          boost_amount = #{pricing[:boost_amount]}, updated_at = NOW()
+        WHERE id = #{id.to_i} AND gachapon_only = true
+      SQL
+      id.to_i
+    else
+      conn.select_one(<<~SQL)["id"].to_i
         INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, size_variants, gachapon_only, created_at, updated_at)
         VALUES (#{conn.quote(name)}, #{conn.quote(image)}, '', #{price}, 'gachapon', #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, NULL, 0.05, '[]', true, NOW(), NOW())
         RETURNING id
       SQL
-      created["id"].to_i
-    }.uniq
+    end
   end
 
   def create_gachapon

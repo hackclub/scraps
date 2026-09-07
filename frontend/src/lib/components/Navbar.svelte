@@ -51,7 +51,9 @@
 	let currentPath = $derived(page.url.pathname);
 	let isHomePage = $derived(currentPath === '/');
 	let isLoggedIn = $derived(user !== null);
-	let isReviewer = $derived(user?.role === 'admin' || user?.role === 'reviewer' || user?.role === 'creator');
+	let isReviewer = $derived(
+		user?.role === 'admin' || user?.role === 'reviewer' || user?.role === 'creator'
+	);
 	let isAdminOnly = $derived(user?.role === 'admin' || user?.role === 'creator');
 	let isInAdminSection = $derived(currentPath.startsWith('/admin'));
 	let dashboardMoreActive = $derived(currentPath === '/shop' || currentPath === '/refinery');
@@ -152,7 +154,6 @@
 	function handleMobileNavClick() {
 		showMobileMenu = false;
 	}
-
 </script>
 
 <svelte:window

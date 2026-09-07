@@ -121,7 +121,7 @@
 	);
 	// The pre-filled suggestion: logged hours minus overlap deductions.
 	let suggestedHours = $derived(project ? Math.max(0, project.hours - deductedHours) : 0);
-	// The reviewer's "hours to approve" — what scraps are granted on and what goes
+	// The reviewer's "hours to approve": what scraps are granted on and what goes
 	// to Airtable. Defaults to the suggestion until the reviewer edits it.
 	let effectiveHours = $derived(hoursOverride ?? suggestedHours);
 
@@ -487,20 +487,16 @@
 							{#if dup.codeUrl}
 								<p class="mt-1 truncate text-sm">
 									<span class="font-bold">code:</span>
-									<a
-										href={dup.codeUrl}
-										target="_blank"
-										class="text-blue-600 hover:underline">{dup.codeUrl}</a
+									<a href={dup.codeUrl} target="_blank" class="text-blue-600 hover:underline"
+										>{dup.codeUrl}</a
 									>
 								</p>
 							{/if}
 							{#if dup.playableUrl}
 								<p class="truncate text-sm">
 									<span class="font-bold">playable:</span>
-									<a
-										href={dup.playableUrl}
-										target="_blank"
-										class="text-blue-600 hover:underline">{dup.playableUrl}</a
+									<a href={dup.playableUrl} target="_blank" class="text-blue-600 hover:underline"
+										>{dup.playableUrl}</a
 									>
 								</p>
 							{/if}
@@ -616,7 +612,7 @@
 				<div class="mt-4 rounded-lg border-2 border-dashed border-yellow-500 bg-yellow-50 p-4">
 					<p class="mb-2 flex items-center gap-1.5 text-sm font-bold text-yellow-700">
 						<AlertTriangle size={14} />
-						shared hackatime project — hours will be deducted
+						shared hackatime project: hours will be deducted
 					</p>
 					<p class="mb-2 text-sm text-yellow-700">
 						this project shares a hackatime project with other shipped projects. hours from those
@@ -627,7 +623,7 @@
 							<li class="flex items-center gap-2">
 								<span>•</span>
 								<a href="/projects/{op.id}" class="font-bold underline">{op.name}</a>
-								<span>— {formatHours(op.hours)}h</span>
+								<span>| {formatHours(op.hours)}h</span>
 							</li>
 						{/each}
 					</ul>
@@ -653,7 +649,7 @@
 				<div class="mt-4 rounded-lg border-2 border-dashed border-blue-500 bg-blue-50 p-4">
 					<p class="mb-2 flex items-center gap-1.5 text-sm font-bold text-blue-700">
 						<RefreshCw size={14} />
-						update — scraps preview
+						update: scraps preview
 					</p>
 					<p class="mb-2 text-sm text-blue-700">
 						this is an updated project. previously awarded scraps will be subtracted from the new
@@ -766,7 +762,6 @@
 				</a>
 			{/if}
 		</div>
-
 
 		<!-- Previous Reviews -->
 		{#if reviews.length > 0}
@@ -884,7 +879,6 @@
 		<div
 			class="relative {!isReviewable ? 'pointer-events-none opacity-50 grayscale select-none' : ''}"
 		>
-
 			<!-- Review Form -->
 			<div class="rounded-2xl border-4 border-black p-6">
 				<h2 class="mb-4 text-xl font-bold">submit review</h2>
@@ -897,7 +891,7 @@
 						/>
 						<span class="text-sm font-bold"
 							>reship <span class="font-normal text-gray-500"
-								>(this project was shipped before — drives the Airtable hours justification)</span
+								>(this project was shipped before: drives the Airtable hours justification)</span
 							></span
 						>
 					</label>
@@ -928,11 +922,19 @@
 					<div>
 						<label class="mb-1 block text-sm font-bold">
 							reviewer score: {reviewerScore.toFixed(1)} <span class="text-red-500">*</span>
-							<span class="text-gray-400">(2 is neutral — ×{previewScoreMultiplier.toFixed(2)})</span>
+							<span class="text-gray-400">(2 is neutral: ×{previewScoreMultiplier.toFixed(2)})</span
+							>
 						</label>
-						<input type="range" min="1" max="3" step="0.1" bind:value={reviewerScore} class="w-full" />
+						<input
+							type="range"
+							min="1"
+							max="3"
+							step="0.1"
+							bind:value={reviewerScore}
+							class="w-full"
+						/>
 						<p class="mt-1 text-xs text-gray-500">
-							1 is a severe penalty, 2 is neutral (×1), 3 is a strong reward — this sets the payout
+							1 is a severe penalty, 2 is neutral (×1), 3 is a strong reward: this sets the payout
 							rate directly, required for approval
 						</p>
 					</div>
@@ -948,7 +950,7 @@
 							class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 						></textarea>
 						<p class="mt-1 text-xs text-gray-500">
-							never shown to the user — synced to Airtable as the override justification
+							never shown to the user: synced to Airtable as the override justification
 						</p>
 					</div>
 

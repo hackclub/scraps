@@ -172,7 +172,9 @@
 
 		const candidate = projects
 			.filter((p) => p.status === 'shipped' && (p.scrapsAwarded ?? 0) > 0 && !alreadySeen(p))
-			.sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())[0];
+			.sort(
+				(a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()
+			)[0];
 
 		if (candidate) {
 			setTimeout(() => openCelebration(candidate), 1200);
@@ -185,7 +187,9 @@
 		class="fixed inset-0 z-[400] flex items-center justify-center bg-black/60 p-4"
 		transition:fade={{ duration: closing ? 300 : 500 }}
 	>
-		<div class="relative h-[520px] w-full max-w-lg overflow-hidden rounded-3xl border-4 border-black">
+		<div
+			class="relative h-[520px] w-full max-w-lg overflow-hidden rounded-3xl border-4 border-black"
+		>
 			{#if stage === 'intro'}
 				<div class="absolute inset-0" transition:fly={{ x: 300, duration: 400 }}>
 					<div class="absolute inset-0">
@@ -194,7 +198,9 @@
 						{:else}
 							<ProjectPlaceholder seed={celebProject.id} />
 						{/if}
-						<div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/10"></div>
+						<div
+							class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/10"
+						></div>
 					</div>
 					<button
 						onclick={close}
@@ -203,9 +209,13 @@
 					>
 						<X size={18} />
 					</button>
-					<div class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 p-8 text-center text-white">
+					<div
+						class="absolute inset-x-0 bottom-0 flex flex-col items-center gap-4 p-8 text-center text-white"
+					>
 						<PartyPopper size={40} />
-						<h2 class="text-3xl font-black wrap-break-word">{celebProject.name} has been approved!</h2>
+						<h2 class="text-3xl font-black wrap-break-word">
+							{celebProject.name} has been approved!
+						</h2>
 						<button
 							onclick={next}
 							class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-white bg-white px-6 py-3 font-bold text-black transition-all hover:bg-gray-100"
@@ -225,9 +235,11 @@
 						out:fly={{ x: 300, duration: 400 }}
 					>
 						{#if stage === 'feedback'}
-							<p class="text-xs font-bold tracking-wide text-gray-400 uppercase">Reviewer feedback</p>
+							<p class="text-xs font-bold tracking-wide text-gray-400 uppercase">
+								Reviewer feedback
+							</p>
 							<p class="max-h-64 overflow-y-auto text-lg text-gray-700">
-								{feedback || 'Nice work — this shipped!'}
+								{feedback || 'Nice work: this shipped!'}
 							</p>
 							<button
 								onclick={next}

@@ -3,6 +3,8 @@
 	import { fade } from 'svelte/transition';
 	import ShopItemModal from '$lib/components/ShopItemModal.svelte';
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
+	import GachaponPull from '$lib/components/GachaponPull.svelte';
+	import GachaponDetailModal from '$lib/components/GachaponDetailModal.svelte';
 	import { API_URL } from '$lib/config';
 	import { getUser } from '$lib/auth-client';
 	import {
@@ -52,9 +54,51 @@
 		items: { id: number; name: string; image: string; count: number; pullChance: number }[];
 	}
 
+	const domeColors = ['#f87171', '#fbbf24', '#60a5fa', '#c084fc', '#4ade80'];
+
 	let gachapons = $state<Gachapon[]>([]);
 	let gachaponsLoading = $state(true);
 	let pullingGachaponId = $state<number | null>(null);
+	let twitchingGachaponId = $state<number | null>(null);
+	let detailGachapon = $state<Gachapon | null>(null);
+
+	function domeFor(g: Gachapon): string {
+		const i = gachapons.findIndex((x) => x.id === g.id);
+		return domeColors[(i < 0 ? 0 : i) % domeColors.length];
+	}
+
+	function scatter(id: number, i: number, n: number) {
+		const rnd = (k: number) => {
+			const x = Math.sin(id * (k + 1) * 12.9898 + i * 4.1414) * 43758.5453;
+			return x - Math.floor(x);
+		};
+		const slots = Math.max(n, 1);
+		const slice = 100 / slots;
+		const base = n <= 2 ? 116 : n <= 3 ? 98 : n <= 4 ? 84 : n <= 5 ? 74 : 64;
+		return {
+			left: Math.min(86, Math.max(14, (i + 0.5) * slice + (rnd(0) - 0.5) * slice * 0.6)),
+			top: 32 + (rnd(1) - 0.5) * 42,
+			rot: rnd(2) * 32 - 16,
+			size: base + Math.round(rnd(3) * 14)
+		};
+	}
+
+	function startPull(gachapon: Gachapon) {
+		if (pullingGachaponId === gachapon.id || twitchingGachaponId === gachapon.id || pullReveal) {
+			return;
+		}
+		twitchingGachaponId = gachapon.id;
+		setTimeout(() => {
+			twitchingGachaponId = null;
+			pullGachapon(gachapon);
+		}, 380);
+	}
+	let pullReveal = $state<{
+		orderId: number;
+		itemName: string;
+		itemImage: string | null;
+		gachaponName: string;
+	} | null>(null);
 
 	async function fetchGachapons() {
 		gachaponsLoading = true;
@@ -77,8 +121,12 @@
 			});
 			const data = await res.json();
 			if (res.ok && data.success) {
-				winningItemName = data.order.itemName;
-				winningOrderId = data.order.id;
+				pullReveal = {
+					orderId: data.order.id,
+					itemName: data.order.itemName,
+					itemImage: data.order.itemImage ?? null,
+					gachaponName: gachapon.name
+				};
 			} else {
 				showToast(data.error || 'could not pull that gachapon', 'error');
 			}
@@ -88,6 +136,14 @@
 		} finally {
 			pullingGachaponId = null;
 		}
+	}
+
+	function finishPullReveal() {
+		if (!pullReveal) return;
+		winningItemName = pullReveal.itemName;
+		winningOrderId = pullReveal.orderId;
+		pullReveal = null;
+		detailGachapon = null;
 	}
 
 	let dailyDate = $state('');
@@ -165,7 +221,7 @@
 				credentials: 'include'
 			});
 			if (res.ok) {
-				showToast('kept in your shop for good', 'success');
+				showToast('moved to shop!', 'success');
 				fetchRetained();
 			} else {
 				const data = await res.json().catch(() => ({}));
@@ -252,22 +308,19 @@
 		return 'bg-red-100';
 	}
 
-	async function checkPendingOrders() {
+	async function refreshPendingAddress() {
 		try {
 			const response = await fetch(`${API_URL}/shop/orders/pending-address`, {
 				credentials: 'include'
 			});
 			if (response.ok) {
 				const data = await response.json();
-				if (Array.isArray(data) && data.length > 0) {
-					pendingOrders = data.map((o: { id: number; itemName: string }) => ({
-						orderId: o.id,
-						itemName: o.itemName
-					}));
-					const first = pendingOrders[0];
-					winningOrderId = first.orderId;
-					winningItemName = first.itemName;
-				}
+				pendingOrders = Array.isArray(data)
+					? data.map((o: { id: number; itemName: string }) => ({
+							orderId: o.id,
+							itemName: o.itemName
+						}))
+					: [];
 			}
 		} catch (e) {
 			console.error('Failed to check pending orders:', e);
@@ -304,12 +357,7 @@
 		fetchGachapons();
 		winningOrderId = null;
 		winningItemName = null;
-		pendingOrders = pendingOrders.slice(1);
-		if (pendingOrders.length > 0) {
-			const next = pendingOrders[0];
-			winningOrderId = next.orderId;
-			winningItemName = next.itemName;
-		}
+		refreshPendingAddress();
 	}
 
 	onMount(async () => {
@@ -318,7 +366,7 @@
 		fetchDaily();
 		fetchRetained();
 		fetchGachapons();
-		checkPendingOrders();
+		refreshPendingAddress();
 	});
 </script>
 
@@ -351,7 +399,7 @@
 				<Sparkles size={22} /> today's picks
 			</h2>
 			<p class="mb-4 text-sm text-gray-600">
-				Drag one down into <strong>your shop</strong> to keep it forever, even after today — or drag one
+				Drag one down into <strong>your shop</strong> to keep it forever, even after today | or drag one
 				back up here to let it go.
 			</p>
 			{#if visibleDailyItems.length === 0}
@@ -420,12 +468,12 @@
 				{/each}
 			</div>
 
-			<!-- Your permanent shop — drop target -->
+			<!-- Your permanent shop: drop target -->
 			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
 				<Bookmark size={22} /> your shop
 			</h2>
 			<p class="mb-4 text-sm text-gray-600">
-				{retainedItems.length}/{retainedCap} slots used — items here stay yours forever, even after they
+				{retainedItems.length}/{retainedCap} slots used: items here stay yours forever, even after they
 				rotate out.
 			</p>
 			<div
@@ -436,7 +484,7 @@
 				class="mb-12 min-h-40 rounded-2xl border-4 p-4 transition-all {dropHover
 					? 'border-dashed border-black bg-indigo-50'
 					: retainedItems.length > 0
-						? 'border-solid border-green-500'
+						? 'border-solid border-black'
 						: 'border-dashed border-gray-300'}"
 			>
 				{#if retainedLoading}
@@ -454,7 +502,7 @@
 								draggable={true}
 								ondragstart={(e) => onDragStart(e, item)}
 								ondragend={onDragEnd}
-								class="relative cursor-grab overflow-hidden rounded-2xl border-4 border-green-500 transition-all active:cursor-grabbing {item.count ===
+								class="relative cursor-grab overflow-hidden rounded-2xl border-4 border-black transition-all active:cursor-grabbing {item.count ===
 								0
 									? 'opacity-50 grayscale'
 									: ''} {draggingId === item.id ? 'opacity-30' : ''}"
@@ -487,7 +535,7 @@
 								</button>
 								<button
 									onclick={() => unretain(item.id)}
-									class="flex w-full cursor-pointer items-center justify-center gap-1 border-t-2 border-green-500 py-2 text-xs font-bold text-gray-500 hover:text-red-600"
+									class="flex w-full cursor-pointer items-center justify-center gap-1 border-t-2 border-black py-2 text-xs font-bold text-gray-500 hover:text-red-600"
 								>
 									<X size={14} /> remove from shop
 								</button>
@@ -503,7 +551,7 @@
 		<PackageOpen size={22} /> gachapons
 	</h2>
 	<p class="mb-4 text-sm text-gray-600">
-		guaranteed to get one item from the pool — costs a bit more than buying it straight, since
+		guaranteed to get one item from the pool: costs a bit more than buying it straight, since
 		there's no risk.
 	</p>
 	{#if gachaponsLoading}
@@ -513,58 +561,66 @@
 			no gachapons right now
 		</p>
 	{:else}
-		<div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-			{#each gachapons as gachapon (gachapon.id)}
+		<div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+			{#each gachapons as gachapon, gi (gachapon.id)}
 				{@const inStock = gachapon.items.filter((i) => i.count !== 0)}
-				<div class="overflow-hidden rounded-2xl border-4 border-black bg-purple-50">
-					{#if gachapon.image}
-						<img src={gachapon.image} alt={gachapon.name} class="h-32 w-full object-cover" />
-					{:else}
-						<div class="flex h-32 w-full items-center justify-center bg-purple-100">
-							<PackageOpen size={32} class="text-purple-300" />
-						</div>
-					{/if}
-					<div class="p-5">
-						<h3 class="mb-1 text-xl font-bold">{gachapon.name}</h3>
-						{#if gachapon.description}
-							<p class="mb-3 text-sm text-gray-600">{gachapon.description}</p>
-						{/if}
-						<div class="mb-3 flex flex-wrap gap-2">
-							{#each gachapon.items as item (item.id)}
+				{@const dome = domeColors[gi % domeColors.length]}
+				<div
+					class="gachapon-machine"
+					class:twitch={twitchingGachaponId === gachapon.id}
+					style="--dome:{dome}"
+				>
+					<button
+						type="button"
+						onclick={() => (detailGachapon = gachapon)}
+						class="gachapon-globe cursor-pointer"
+						title="see what's inside"
+					>
+						<div class="gachapon-globe-inner">
+							{#each gachapon.items.slice(0, 6) as item, i (item.id)}
+								{@const s = scatter(item.id, i, Math.min(gachapon.items.length, 6))}
 								<div
-									class="flex w-10 flex-col items-center gap-0.5 {item.count === 0
-										? 'opacity-30 grayscale'
-										: ''}"
+									class="gachapon-scatter {item.count === 0 ? 'opacity-30 grayscale' : ''}"
+									style="left:{s.left}%; top:{s.top}%; width:{s.size}px; height:{s.size}px; transform: translate(-50%, -50%) rotate({s.rot}deg)"
 									title="{item.name}{item.count === 0
 										? ' (sold out)'
-										: ` — ${item.pullChance}% chance`}"
+										: `: ${item.pullChance}% chance`}"
 								>
-									<img
-										src={item.image}
-										alt={item.name}
-										class="h-10 w-10 rounded-lg border-2 border-black object-cover"
-									/>
-									<span class="text-[10px] font-bold text-gray-500">
-										{item.count === 0 ? '—' : `${item.pullChance}%`}
-									</span>
+									{#if item.image}
+										<img src={item.image} alt={item.name} />
+									{:else}
+										<Spool size={s.size * 0.5} class="text-gray-400" />
+									{/if}
 								</div>
 							{/each}
 						</div>
-						<p class="mb-3 text-xs text-gray-500">
-							guaranteed one of {gachapon.items.length} items — {inStock.length} in stock
-						</p>
-						<button
-							onclick={() => pullGachapon(gachapon)}
-							disabled={pullingGachaponId === gachapon.id || inStock.length === 0}
-							class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							<Spool size={18} />
-							{inStock.length === 0
-								? 'sold out'
-								: pullingGachaponId === gachapon.id
-									? 'pulling…'
-									: `pull for ${gachapon.price}`}
-						</button>
+						<span class="gachapon-glass"></span>
+					</button>
+
+					<div class="gachapon-body">
+						<h3 class="text-lg font-bold">{gachapon.name}</h3>
+						{#if gachapon.description}
+							<p class="mt-0.5 text-sm text-gray-600">{gachapon.description}</p>
+						{/if}
+
+						<div class="mt-3 flex items-center gap-3">
+							<button
+								onclick={() => startPull(gachapon)}
+								disabled={pullingGachaponId === gachapon.id ||
+									twitchingGachaponId === gachapon.id ||
+									inStock.length === 0 ||
+									!!pullReveal}
+								class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<Spool size={18} />
+								{inStock.length === 0
+									? 'sold out'
+									: pullingGachaponId === gachapon.id || twitchingGachaponId === gachapon.id
+										? 'pulling…'
+										: `pull for ${gachapon.price}`}
+							</button>
+							<span class="gachapon-knob" aria-hidden="true"></span>
+						</div>
 					</div>
 				</div>
 			{/each}
@@ -582,13 +638,33 @@
 	/>
 {/if}
 
-{#if winningOrderId && winningItemName}
+{#if detailGachapon && !pullReveal}
+	<GachaponDetailModal
+		gachapon={detailGachapon}
+		domeColor={domeFor(detailGachapon)}
+		pulling={pullingGachaponId === detailGachapon.id}
+		onPull={() => detailGachapon && pullGachapon(detailGachapon)}
+		onClose={() => (detailGachapon = null)}
+	/>
+{/if}
+
+{#if pullReveal}
+	<GachaponPull
+		itemName={pullReveal.itemName}
+		itemImage={pullReveal.itemImage}
+		gachaponName={pullReveal.gachaponName}
+		onDone={finishPullReveal}
+	/>
+{/if}
+
+{#if winningOrderId && winningItemName && !pullReveal}
 	<AddressSelectModal
 		orderId={winningOrderId}
 		itemName={winningItemName}
 		onClose={() => {
 			winningOrderId = null;
 			winningItemName = null;
+			refreshPendingAddress();
 		}}
 		onComplete={handleAddressComplete}
 	/>
@@ -631,4 +707,126 @@
 >
 	<PackageCheck size={20} />
 	<span class="hidden sm:inline">{$t.shop.myOrders}</span>
+	{#if pendingOrders.length > 0}
+		<span
+			class="absolute -top-2 -right-2 flex h-6 min-w-6 items-center justify-center rounded-full border-2 border-black bg-white px-1 text-xs font-bold text-black"
+			title="{pendingOrders.length} order{pendingOrders.length === 1
+				? ''
+				: 's'} still need a shipping address"
+		>
+			{pendingOrders.length}
+		</span>
+	{/if}
 </a>
+
+<style>
+	.gachapon-machine {
+		display: flex;
+		flex-direction: column;
+		border: 4px solid #000;
+		border-radius: 6rem 6rem 1rem 1rem;
+		background: color-mix(in srgb, var(--dome) 22%, #fff);
+		overflow: hidden;
+	}
+
+	.gachapon-machine.twitch {
+		animation: machine-twitch 0.38s ease-in-out;
+	}
+
+	@keyframes machine-twitch {
+		0%,
+		100% {
+			transform: translateX(0) rotate(0);
+		}
+		20% {
+			transform: translateX(-4px) rotate(-1.2deg);
+		}
+		45% {
+			transform: translateX(4px) rotate(1.2deg);
+		}
+		70% {
+			transform: translateX(-3px) rotate(-0.8deg);
+		}
+	}
+
+	.gachapon-globe {
+		position: relative;
+		display: block;
+		width: 100%;
+		margin: 0;
+		height: 12rem;
+		border: none;
+		border-bottom: 4px solid #000;
+		border-radius: 0;
+		background:
+			radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.92), transparent 48%),
+			color-mix(in srgb, var(--dome) 26%, #fff);
+	}
+
+	.gachapon-globe-inner {
+		position: absolute;
+		inset: 0.4rem 0.3rem 0.3rem;
+		overflow: hidden;
+	}
+
+	.gachapon-scatter {
+		position: absolute;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.gachapon-scatter img {
+		width: 100%;
+		height: 100%;
+		object-fit: contain;
+		filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+	}
+
+	.gachapon-glass {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		box-shadow: inset 0 -0.6rem 1rem rgba(0, 0, 0, 0.12);
+	}
+
+	.gachapon-body {
+		position: relative;
+		padding: 1rem 1.25rem 1.25rem;
+		background: color-mix(in srgb, var(--dome) 22%, #fff);
+	}
+
+	.gachapon-knob {
+		position: relative;
+		display: block;
+		width: 2.25rem;
+		height: 2.25rem;
+		flex-shrink: 0;
+		border: 4px solid #000;
+		border-radius: 999px;
+		background: #fff;
+		transition: transform 0.2s ease;
+	}
+
+	.gachapon-knob::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		width: 4px;
+		height: 0.85rem;
+		transform: translate(-50%, -50%);
+		border-radius: 2px;
+		background: #000;
+	}
+
+	.gachapon-machine.twitch .gachapon-knob {
+		transform: rotate(150deg);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.gachapon-machine.twitch {
+			animation-duration: 0.01ms;
+		}
+	}
+</style>

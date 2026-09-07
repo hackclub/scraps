@@ -248,7 +248,7 @@
 	<div
 		class="fixed inset-0 flex items-center justify-center p-4 {tutorialMode
 			? 'z-200 bg-transparent'
-			: 'z-50 bg-black/50'}"
+			: 'z-[95] bg-black/50'}"
 		onclick={handleBackdropClick}
 		onkeydown={(e) => !tutorialMode && e.key === 'Escape' && handleClose()}
 		role="dialog"

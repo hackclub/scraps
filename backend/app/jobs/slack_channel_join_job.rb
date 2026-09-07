@@ -5,7 +5,7 @@ class SlackChannelJoinJob < ApplicationJob
   # #scraps, #scraps-activity, #scraps-bulletin, #scraps-help.
   CHANNELS = %w[C0ADMQFFU56 C0AE5RQV26S C0AE36DGR36 C0ACV8C3MPH].freeze
 
-  # Safe to re-run — "already in channel" is treated as success.
+  # Safe to re-run: "already in channel" is treated as success.
   #
   # Note: a bot token can only invite full workspace members. Guest / restricted
   # accounts (common for new Hack Club folks) will fail here; those need a

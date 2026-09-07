@@ -26,7 +26,7 @@ class HackatimeBanSyncJob < ApplicationJob
       rescue StandardError
         nil
       end
-      next if banned.nil? # transient failure — leave the old value, retry next pass
+      next if banned.nil? # transient failure: leave the old value, retry next pass
 
       conn.execute(<<~SQL)
         UPDATE users

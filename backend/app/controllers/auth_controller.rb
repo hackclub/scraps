@@ -159,7 +159,7 @@ class AuthController < ApplicationController
       response_type: "code",
       scope: OAUTH_SCOPE
     }
-    # HC Auth echoes `state` back to the callback unchanged — we use it to carry
+    # HC Auth echoes `state` back to the callback unchanged: we use it to carry
     # the referral code through the redirect (the SPA has no server session).
     query[:state] = referral_code.to_s.strip if referral_code.present?
     "#{HACKCLUB_AUTH_URL}/oauth/authorize?#{URI.encode_www_form(query)}"
@@ -341,7 +341,7 @@ class AuthController < ApplicationController
     nil
   end
 
-  # https://cachet.dunkirk.sh/swagger — { displayName, realName, pronouns, imageUrl, ... }
+  # https://cachet.dunkirk.sh/swagger | { displayName, realName, pronouns, imageUrl, ... }
   def fetch_cachet_profile(slack_id)
     resp = HTTParty.get("https://cachet.dunkirk.sh/users/#{slack_id}", timeout: 5)
     return nil unless resp.success?

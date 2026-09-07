@@ -169,7 +169,12 @@
 
 	onMount(async () => {
 		currentUser = await getUser();
-		if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'reviewer' && currentUser.role !== 'creator')) {
+		if (
+			!currentUser ||
+			(currentUser.role !== 'admin' &&
+				currentUser.role !== 'reviewer' &&
+				currentUser.role !== 'creator')
+		) {
 			goto('/dashboard');
 			return;
 		}
@@ -177,7 +182,7 @@
 		try {
 			const [userResponse, bonusesResponse] = await Promise.all([
 				fetch(`${API_URL}/admin/users/${data.id}`, { credentials: 'include' }),
-				(currentUser.role === 'admin' || currentUser.role === 'creator')
+				currentUser.role === 'admin' || currentUser.role === 'creator'
 					? fetch(`${API_URL}/admin/users/${data.id}/bonuses`, { credentials: 'include' })
 					: Promise.resolve(null)
 			]);
@@ -215,7 +220,10 @@
 				body: JSON.stringify({ internalNotes: editingNotes })
 			});
 
-			if ((currentUser?.role === 'admin' || currentUser?.role === 'creator') && editingRole !== targetUser.role) {
+			if (
+				(currentUser?.role === 'admin' || currentUser?.role === 'creator') &&
+				editingRole !== targetUser.role
+			) {
 				await fetch(`${API_URL}/admin/users/${targetUser.id}/role`, {
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },
@@ -687,7 +695,7 @@
 					<button
 						onclick={saveChanges}
 						disabled={saving}
-						class="cursor-pointer rounded-full bg-black px-6 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+						class="cursor-pointer rounded-full bg-black px-6 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
 					>
 						{saving ? $t.common.saving : $t.project.saveChanges}
 					</button>
@@ -695,7 +703,7 @@
 						<button
 							onclick={() => (showDeleteUserConfirm = true)}
 							disabled={deletingUser}
-							class="cursor-pointer rounded-full border-4 border-red-600 px-6 py-2 font-bold text-red-600 transition-all duration-200 hover:border-dashed disabled:opacity-50 disabled:cursor-not-allowed"
+							class="cursor-pointer rounded-full border-4 border-red-600 px-6 py-2 font-bold text-red-600 transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 						>
 							delete user
 						</button>
@@ -1119,8 +1127,10 @@
 		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
 			<h2 class="mb-4 text-2xl font-bold">delete user</h2>
 			<p class="mb-6 text-gray-600">
-				are you sure you want to permanently delete <strong>{targetUser?.username || 'this user'}</strong>?
-				this will remove all their data including projects, orders, bonuses, and sessions. this cannot be undone.
+				are you sure you want to permanently delete <strong
+					>{targetUser?.username || 'this user'}</strong
+				>? this will remove all their data including projects, orders, bonuses, and sessions. this
+				cannot be undone.
 			</p>
 			<div class="flex gap-3">
 				<button
@@ -1132,7 +1142,7 @@
 				<button
 					onclick={deleteUser}
 					disabled={deletingUser}
-					class="flex-1 cursor-pointer rounded-full border-4 border-red-600 bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:opacity-50 disabled:cursor-not-allowed"
+					class="flex-1 cursor-pointer rounded-full border-4 border-red-600 bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{deletingUser ? 'deleting...' : 'delete permanently'}
 				</button>

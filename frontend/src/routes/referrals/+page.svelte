@@ -65,8 +65,8 @@
 <div class="mx-auto max-w-3xl px-6 pt-24 pb-24 md:px-12">
 	<h1 class="mb-2 text-4xl font-bold md:text-5xl">invite friends</h1>
 	<p class="mb-8 text-lg text-gray-600">
-		Check the link below and get other people to join with it! If they sign up and log in,
-		you get an invite :)
+		Check the link below and get other people to join with it! If they sign up and log in, you get
+		an invite :)
 	</p>
 
 	{#if loggedIn && mine}
@@ -131,7 +131,9 @@
 		</div>
 	{/if}
 
-	<h2 class="mb-3 flex items-center gap-2 text-2xl font-bold"><Trophy size={22} /> top referrers</h2>
+	<h2 class="mb-3 flex items-center gap-2 text-2xl font-bold">
+		<Trophy size={22} /> top referrers
+	</h2>
 	{#if loading}
 		<p class="text-gray-500">loading…</p>
 	{:else if leaderboard.length === 0}
@@ -150,7 +152,9 @@
 					{/if}
 					<span class="flex-1 truncate font-bold">{row.username || 'someone'}</span>
 					<span class="font-bold">{row.verifiedCount}</span>
-					<span class="text-sm text-gray-500">verified{row.total > row.verifiedCount ? ` (${row.total} total)` : ''}</span>
+					<span class="text-sm text-gray-500"
+						>verified{row.total > row.verifiedCount ? ` (${row.total} total)` : ''}</span
+					>
 				</li>
 			{/each}
 		</ul>

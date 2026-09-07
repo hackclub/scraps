@@ -20,7 +20,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { t } from '$lib/i18n';
 
-	let { onComplete }: { onComplete: () => void } = $props();
+	let { onComplete, sandbox = false }: { onComplete: () => void; sandbox?: boolean } = $props();
 
 	let currentStep = $state(0);
 	let loading = $state(false);
@@ -70,12 +70,14 @@
 		// Preload pages that the tutorial will navigate to
 		preloadData('/dashboard');
 		preloadData('/shop');
+		return () => {
+			window.removeEventListener('mousemove', handleDragMove);
+			window.removeEventListener('mouseup', handleDragEnd);
+		};
 	});
 
 	onDestroy(() => {
 		tutorialActiveStore.set(false);
-		window.removeEventListener('mousemove', handleDragMove);
-		window.removeEventListener('mouseup', handleDragEnd);
 	});
 
 	const stepConfigs = [
@@ -209,6 +211,7 @@
 	});
 
 	$effect(() => {
+		if (sandbox) return;
 		if (currentStepData.highlight === 'shop') {
 			goto('/shop', { invalidateAll: false });
 		} else if (
@@ -265,6 +268,10 @@
 	}
 
 	async function completeTutorial() {
+		if (sandbox) {
+			onComplete();
+			return;
+		}
 		loading = true;
 		try {
 			await fetch(`${API_URL}/user/complete-tutorial`, {
@@ -449,14 +456,14 @@
 				>
 					{$t.tutorial.skip}
 				</button>
-				{#if currentStepData.waitForClick}
+				{#if currentStepData.waitForClick && !sandbox}
 					<div
 						class="flex flex-1 items-center justify-center gap-2 rounded-full bg-gray-200 px-4 py-2 font-bold text-gray-600"
 					>
 						<ArrowRight size={18} />
 						<span>{$t.tutorial.clickToContinue}</span>
 					</div>
-				{:else if (currentStepData as { waitForEvent?: string }).waitForEvent}
+				{:else if (currentStepData as { waitForEvent?: string }).waitForEvent && !sandbox}
 					<div
 						class="flex flex-1 items-center justify-center gap-2 rounded-full bg-gray-200 px-4 py-2 font-bold text-gray-600"
 					>

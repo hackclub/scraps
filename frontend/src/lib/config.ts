@@ -32,6 +32,6 @@ export async function fetchServerConfig(): Promise<void> {
 		Object.assign(serverConfig, data);
 		if (data.version) deployVersion.set({ short: data.version, url: data.versionUrl ?? null });
 	} catch (_e) {
-		// Intentionally ignore errors — frontend can fall back to local constants if needed
+		// Intentionally ignore errors: frontend can fall back to local constants if needed
 	}
 }

@@ -1,5 +1,5 @@
 <script lang="ts">
-	// SANDBOX PAGE — /shopredesign
+	// SANDBOX PAGE: /shopredesign
 	// Playground for trying out shop layout ideas. Pulls the same live shop items as
 	// /shop (fetchShopItems), so anything uploaded in admin shows up here too.
 	// Not linked in the navbar on purpose. Delete or fold into /shop once an idea sticks.
@@ -46,7 +46,7 @@
 			savedIds = Array.isArray(parsed.savedIds) ? parsed.savedIds : [];
 			saveLog = parsed.saveLog && typeof parsed.saveLog === 'object' ? parsed.saveLog : {};
 		} catch {
-			/* private window / cleared storage — start empty */
+			/* private window / cleared storage: start empty */
 		}
 	}
 
@@ -85,9 +85,7 @@
 	const inStock = $derived($shopItemsStore.filter((i) => i.count !== 0));
 
 	// ---- Featured ----
-	const featured = $derived(
-		[...inStock].sort((a, b) => b.heartCount - a.heartCount).slice(0, 4)
-	);
+	const featured = $derived([...inStock].sort((a, b) => b.heartCount - a.heartCount).slice(0, 4));
 	const rest = $derived(inStock.filter((i) => !featured.some((f) => f.id === i.id)));
 
 	// ---- Sections ----
@@ -126,14 +124,12 @@
 
 	const rotating = $derived(seededShuffle(inStock, currentWeek()).slice(0, rotationSize));
 
-	// your permanent personal shop — saved items, looked up from the full catalog
+	// your permanent personal shop: saved items, looked up from the full catalog
 	// (so a saved item still shows even after it rotates out or sells out)
 	const savedItems = $derived(
-		savedIds
-			.map((id) => $shopItemsStore.find((i) => i.id === id))
-			.filter((i): i is ShopItem => !!i)
+		savedIds.map((id) => $shopItemsStore.find((i) => i.id === id)).filter((i): i is ShopItem => !!i)
 	);
-	// items not in this week's rotation and not saved — you can't touch these
+	// items not in this week's rotation and not saved: you can't touch these
 	const rotatingRest = $derived(
 		inStock.filter((i) => !rotating.some((r) => r.id === i.id) && !savedIds.includes(i.id))
 	);
@@ -210,7 +206,7 @@
 		<h1 class="text-4xl font-bold md:text-5xl">shop redesign</h1>
 	</div>
 	<p class="mb-8 text-lg text-gray-600">
-		Sandbox for layout ideas. Live items from <code>/shop</code> — uploads show up here too.
+		Sandbox for layout ideas. Live items from <code>/shop</code>: uploads show up here too.
 	</p>
 
 	<!-- Mode switcher -->
@@ -301,7 +297,8 @@
 			<h2 class="text-2xl font-bold">🎲 This week's picks</h2>
 		</div>
 		<p class="mb-4 text-sm text-gray-600">
-			Save the ones you want to keep forever — {slotsLeft} slot{slotsLeft === 1 ? '' : 's'} left this week.
+			Save the ones you want to keep forever | {slotsLeft} slot{slotsLeft === 1 ? '' : 's'} left this
+			week.
 		</p>
 		<div class="mb-12 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
 			{#each rotating as item (item.id)}
@@ -313,7 +310,7 @@
 		<p class="mb-4 text-sm text-gray-600">
 			{savedItems.length === 0
 				? 'Nothing saved yet. Items you save stay here permanently, even after they rotate out.'
-				: `${savedItems.length} item${savedItems.length === 1 ? '' : 's'} — always available to you.`}
+				: `${savedItems.length} item${savedItems.length === 1 ? '' : 's'}: always available to you.`}
 		</p>
 		{#if savedItems.length > 0}
 			<div class="mb-12 grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
@@ -379,7 +376,10 @@
 			? 'ring-4 ring-green-400'
 			: ''}"
 	>
-		<button onclick={() => (selectedItem = item)} class="w-full cursor-pointer p-5 text-left hover:opacity-90">
+		<button
+			onclick={() => (selectedItem = item)}
+			class="w-full cursor-pointer p-5 text-left hover:opacity-90"
+		>
 			<div class="relative">
 				<img src={item.image} alt={item.name} class="mb-4 h-40 w-full object-contain" />
 				<span
@@ -394,7 +394,9 @@
 			<p class="mb-3 line-clamp-2 text-sm text-gray-600">{item.description}</p>
 			<div class="flex items-end justify-between">
 				<div>
-					<span class="flex items-center gap-1 text-xl font-bold"><Spool size={20} />{rollCost}</span>
+					<span class="flex items-center gap-1 text-xl font-bold"
+						><Spool size={20} />{rollCost}</span
+					>
 					<span class="mt-1 flex items-center gap-1 text-xs text-gray-500"
 						><Clock size={14} />~{estimateHours(rollCost)}h · {item.count} left</span
 					>
@@ -420,7 +422,8 @@
 {#snippet saveControl(item: ShopItem)}
 	{#if isSaved(item.id)}
 		<div class="flex items-center justify-between text-sm font-bold">
-			<span class="flex items-center gap-1 text-green-700"><Bookmark size={16} /> in your shop</span>
+			<span class="flex items-center gap-1 text-green-700"><Bookmark size={16} /> in your shop</span
+			>
 			<button
 				onclick={() => unsaveItem(item.id)}
 				class="cursor-pointer text-xs text-gray-500 underline hover:text-red-600"
@@ -463,7 +466,9 @@
 			</div>
 			<h3 class="mb-1 truncate text-xl font-bold">{item.name}</h3>
 			<span class="flex items-center gap-1 text-lg font-bold"><Spool size={18} />{rollCost}</span>
-			<span class="text-xs text-gray-500">{item.count === 0 ? 'restocking' : `${item.count} left`}</span>
+			<span class="text-xs text-gray-500"
+				>{item.count === 0 ? 'restocking' : `${item.count} left`}</span
+			>
 		</button>
 		<button
 			onclick={() => unsaveItem(item.id)}

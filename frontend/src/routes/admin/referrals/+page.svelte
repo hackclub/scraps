@@ -43,7 +43,11 @@
 	});
 
 	function fmtDate(s: string) {
-		return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+		return new Date(s).toLocaleDateString('en-US', {
+			month: 'short',
+			day: 'numeric',
+			year: 'numeric'
+		});
 	}
 </script>
 
@@ -60,7 +64,8 @@
 			<span class="text-2xl font-bold">{total}</span> <span class="text-gray-500">referrals</span>
 		</div>
 		<div class="rounded-xl border-4 border-black bg-green-100 px-4 py-3">
-			<span class="text-2xl font-bold">{verifiedTotal}</span> <span class="text-gray-600">verified</span>
+			<span class="text-2xl font-bold">{verifiedTotal}</span>
+			<span class="text-gray-600">verified</span>
 		</div>
 	</div>
 
@@ -73,7 +78,9 @@
 	{:else}
 		<ul class="flex flex-col gap-2">
 			{#each entries as e (e.id)}
-				<li class="flex flex-wrap items-center gap-3 rounded-xl border-2 border-black bg-white px-4 py-3">
+				<li
+					class="flex flex-wrap items-center gap-3 rounded-xl border-2 border-black bg-white px-4 py-3"
+				>
 					<div class="flex min-w-0 items-center gap-2">
 						{#if e.referrer.avatar}
 							<img src={e.referrer.avatar} alt="" class="h-8 w-8 rounded-full" />
@@ -96,7 +103,9 @@
 
 					<div class="ml-auto flex shrink-0 items-center gap-2">
 						{#if e.referred.verified}
-							<span class="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700">verified</span>
+							<span class="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-700"
+								>verified</span
+							>
 						{:else}
 							<span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600"
 								>{e.referred.verificationStatus || 'unverified'}</span

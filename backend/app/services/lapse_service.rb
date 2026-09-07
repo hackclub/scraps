@@ -5,7 +5,7 @@ module LapseService
   # Hackatime project names, created within [start_time, end_time].
   #
   # Without LAPSE_API_KEY only public timelapses are returned; with it, the
-  # user's unlisted ones too. Returns [] on any failure — this is supplementary
+  # user's unlisted ones too. Returns [] on any failure: this is supplementary
   # evidence, never load-bearing.
   def self.timelapses_for(hackatime_user_id:, project_names:, start_time:, end_time:)
     return [] if hackatime_user_id.blank? || project_names.blank?

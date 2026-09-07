@@ -2,7 +2,7 @@ class ReferralsController < ApplicationController
   before_action :require_auth, only: %i[me]
   before_action :require_reviewer, only: %i[admin_list]
 
-  # GET /referrals/me — the signed-in user's own code, link and invitees.
+  # GET /referrals/me: the signed-in user's own code, link and invitees.
   def me
     code = ReferralService.share_code_for(current_user)
     conn = ActiveRecord::Base.connection
@@ -32,7 +32,7 @@ class ReferralsController < ApplicationController
     })
   end
 
-  # GET /referrals/leaderboard — public. Top referrers by verified invitees.
+  # GET /referrals/leaderboard: public. Top referrers by verified invitees.
   def leaderboard
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(<<~SQL).to_a
@@ -60,7 +60,7 @@ class ReferralsController < ApplicationController
     end)
   end
 
-  # GET /admin/referrals — reviewer+. Every referral pair with conversion state.
+  # GET /admin/referrals: reviewer+. Every referral pair with conversion state.
   def admin_list
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(<<~SQL).to_a

@@ -6,10 +6,11 @@
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
 	import Tutorial from '$lib/components/Tutorial.svelte';
+	import ScrappyOnboarding from '$lib/components/ScrappyOnboarding.svelte';
 	import ErrorModal from '$lib/components/ErrorModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import PayoutCelebration from '$lib/components/PayoutCelebration.svelte';
-	import { handleNavigation, prefetchUserData } from '$lib/stores';
+	import { handleNavigation, prefetchUserData, onboardingSandbox } from '$lib/stores';
 	import { getUser, type User } from '$lib/auth-client';
 
 	let { children } = $props();
@@ -100,6 +101,12 @@
 
 {#if showTutorial}
 	<Tutorial onComplete={handleTutorialComplete} />
+{/if}
+
+{#if $onboardingSandbox !== null}
+	{#key $onboardingSandbox}
+		<ScrappyOnboarding onComplete={() => onboardingSandbox.set(null)} />
+	{/key}
 {/if}
 
 <ErrorModal />

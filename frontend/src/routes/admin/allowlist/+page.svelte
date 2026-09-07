@@ -163,7 +163,7 @@
 <div class="mx-auto max-w-3xl px-6 pt-24 pb-24 md:px-12">
 	<h1 class="mb-2 text-4xl font-bold">Allowed to Log In</h1>
 	<p class="mb-6 text-gray-600">
-		Add emails or Slack IDs. While this list has at least one entry, only listed people can log in —
+		Add emails or Slack IDs. While this list has at least one entry, only listed people can log in:
 		everyone else is turned away at sign-in. Empty the list to reopen sign-up. Existing
 		admins/creators can always log in.
 	</p>
@@ -174,11 +174,12 @@
 			: 'bg-yellow-100'}"
 	>
 		{#if gating}
-			<ShieldCheck size={20} /> Login is restricted to the {entries.length} entr{entries.length === 1
+			<ShieldCheck size={20} /> Login is restricted to the {entries.length} entr{entries.length ===
+			1
 				? 'y'
 				: 'ies'} below.
 		{:else}
-			<ShieldOff size={20} /> Login is open — anyone eligible can sign up.
+			<ShieldOff size={20} /> Login is open: anyone eligible can sign up.
 		{/if}
 	</div>
 
@@ -262,14 +263,12 @@
 		<p class="text-gray-500">Loading…</p>
 	{:else if entries.length === 0}
 		<p class="rounded-xl border-2 border-dashed border-gray-300 p-6 text-center text-gray-500">
-			No entries — login is open.
+			No entries: login is open.
 		</p>
 	{:else}
 		<ul class="flex flex-col gap-2">
 			{#each entries as entry (entry.id)}
-				<li
-					class="flex items-center gap-3 rounded-xl border-2 border-black bg-white px-4 py-3"
-				>
+				<li class="flex items-center gap-3 rounded-xl border-2 border-black bg-white px-4 py-3">
 					{#if entry.identifierType === 'email'}
 						<Mail size={18} class="shrink-0 text-gray-500" />
 					{:else}
@@ -277,17 +276,19 @@
 					{/if}
 					<span class="font-mono text-sm">{entry.identifier}</span>
 					{#if entry.note}
-						<span class="truncate text-sm text-gray-500">— {entry.note}</span>
+						<span class="truncate text-sm text-gray-500">| {entry.note}</span>
 					{/if}
 					<div class="ml-auto shrink-0">
 						{#if deleteConfirmId === entry.id}
 							<button
 								onclick={() => removeEntry(entry.id)}
-								class="rounded-full bg-red-600 px-3 py-1 text-sm font-bold text-white">Confirm</button
+								class="rounded-full bg-red-600 px-3 py-1 text-sm font-bold text-white"
+								>Confirm</button
 							>
 							<button
 								onclick={() => (deleteConfirmId = null)}
-								class="rounded-full border-2 border-black px-3 py-1 text-sm font-bold">Cancel</button
+								class="rounded-full border-2 border-black px-3 py-1 text-sm font-bold"
+								>Cancel</button
 							>
 						{:else}
 							<button

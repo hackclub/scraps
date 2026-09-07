@@ -426,7 +426,6 @@
 				</div>
 			</div>
 		{/if}
-
 	{/if}
 </div>
 
@@ -624,8 +623,7 @@
 								{#each dupResult.nonScrapsMatches as match}
 									<div class="rounded-xl border-2 border-red-200 bg-red-50 p-3">
 										<div class="flex flex-wrap items-center gap-2">
-											<span
-												class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
+											<span class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
 												>{match.ysws}</span
 											>
 											<span class="text-xs text-gray-500">matched by: {match.matchType}</span>
@@ -656,9 +654,7 @@
 						</div>
 					{:else}
 						<div class="rounded-lg bg-green-50 p-4">
-							<p class="font-bold text-green-700">
-								no scraps URLs found in other YSWS programs
-							</p>
+							<p class="font-bold text-green-700">no scraps URLs found in other YSWS programs</p>
 						</div>
 					{/if}
 				</div>
@@ -700,7 +696,7 @@
 							{#each fixResult.fixed as u}
 								<li>
 									<span class="font-medium">{u.username ?? `User #${u.userId}`}</span>
-									— awarded {u.deficit} scraps
+									| awarded {u.deficit} scraps
 								</li>
 							{/each}
 						</ul>

@@ -54,16 +54,17 @@
 		itemIds: number[];
 	}
 
+	type GachaNewFields = {
+		name: string;
+		price: number;
+		image: string;
+		count: number;
+		uploading: boolean;
+	};
 	type GachaRow =
 		| { kind: 'existing'; itemId: number }
-		| {
-				kind: 'new';
-				name: string;
-				price: number;
-				image: string;
-				count: number;
-				uploading: boolean;
-		  };
+		| ({ kind: 'new' } & GachaNewFields)
+		| ({ kind: 'edit'; itemId: number } & GachaNewFields);
 
 	interface EVResult {
 		upgradeLevel: number;
@@ -254,7 +255,7 @@
 		let bestLevel = 0;
 		let bestCost = Infinity;
 
-		// backend constants mirrored — no budget cap; upgrades run until 100%.
+		// backend constants mirrored: no budget cap; upgrades run until 100%.
 		const UPGRADE_START_PERCENT = 0.25;
 		const UPGRADE_DECAY = 1.05;
 		const startCost = baseUpgradeCost || Math.max(1, Math.floor(price * UPGRADE_START_PERCENT));
@@ -369,7 +370,7 @@
 	);
 
 	async function recalculatePricing(applyToForm = true) {
-		// Nothing to price until a dollar value is entered — skip the call (and the
+		// Nothing to price until a dollar value is entered: skip the call (and the
 		// 400 it would return) rather than spam the console.
 		if (!(formMonetaryValue > 0)) {
 			optimalPricing = null;
@@ -525,7 +526,21 @@
 		gachaDescription = g.description ?? '';
 		gachaImage = g.image ?? '';
 		gachaPrice = g.price;
-		gachaRows = g.itemIds.map((id) => ({ kind: 'existing', itemId: id }) as GachaRow);
+		gachaRows = g.itemIds.map((id) => {
+			const it = items.find((i) => i.id === id);
+			if (it?.gachaponOnly) {
+				return {
+					kind: 'edit',
+					itemId: id,
+					name: it.name,
+					price: it.price,
+					image: it.image,
+					count: it.count,
+					uploading: false
+				} as GachaRow;
+			}
+			return { kind: 'existing', itemId: id } as GachaRow;
+		});
 		gachaError = null;
 		showGachaponModal = true;
 	}
@@ -558,8 +573,8 @@
 	}
 
 	function gachaRowPrice(row: GachaRow): number {
-		if (row.kind === 'new') return row.price;
-		return items.find((i) => i.id === row.itemId)?.price ?? 0;
+		if (row.kind === 'existing') return items.find((i) => i.id === row.itemId)?.price ?? 0;
+		return row.price;
 	}
 
 	let gachaChances = $derived.by(() => {
@@ -572,7 +587,7 @@
 	});
 
 	async function handleGachaRowImageUpload(row: GachaRow, event: Event) {
-		if (row.kind !== 'new') return;
+		if (row.kind === 'existing') return;
 		const file = (event.target as HTMLInputElement).files?.[0];
 		if (!file) return;
 		if (file.size > 5 * 1024 * 1024) {
@@ -640,8 +655,8 @@
 			return;
 		}
 		for (const row of gachaRows) {
-			if (row.kind === 'new' && (!row.name.trim() || row.price <= 0)) {
-				gachaError = 'New items need a name and a cost above 0';
+			if (row.kind !== 'existing' && (!row.name.trim() || row.price <= 0)) {
+				gachaError = 'Gachapon items need a name and a cost above 0';
 				return;
 			}
 		}
@@ -663,18 +678,16 @@
 					description: gachaDescription,
 					image: gachaImage,
 					price: gachaPrice,
-					items: gachaRows.map((r) =>
-						r.kind === 'existing'
-							? { id: r.itemId }
-							: {
-									new: {
-										name: r.name.trim(),
-										price: r.price,
-										image: r.image.trim(),
-										count: r.count
-									}
-								}
-					)
+					items: gachaRows.map((r) => {
+						if (r.kind === 'existing') return { id: r.itemId };
+						const fields = {
+							name: r.name.trim(),
+							price: r.price,
+							image: r.image.trim(),
+							count: r.count
+						};
+						return r.kind === 'edit' ? { id: r.itemId, update: fields } : { new: fields };
+					})
 				})
 			});
 
@@ -753,7 +766,7 @@
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
-		// Prefetch canonical pricing so modal EV/optimal UI matches backend — never
+		// Prefetch canonical pricing so modal EV/optimal UI matches backend: never
 		// let a pricing hiccup keep the modal from opening.
 		recalculatePricing().catch((e) => console.error('[ADMIN] pricing prefetch failed', e));
 	}
@@ -779,7 +792,7 @@
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
-		// Comparison pricing only — must not block the modal from opening.
+		// Comparison pricing only: must not block the modal from opening.
 		recalculatePricing(false).catch((e) => console.error('[ADMIN] pricing prefetch failed', e));
 	}
 
@@ -916,7 +929,7 @@
 		</div>
 		<p class="mt-2 text-xs text-gray-500">
 			roll cost scales with effective probability (including upgrades). upgrades raise the win
-			chance and the roll cost together, with no scraps cap — a user can keep upgrading until they
+			chance and the roll cost together, with no scraps cap: a user can keep upgrading until they
 			reach 100% effective probability.
 		</p>
 	</div>
@@ -1058,7 +1071,7 @@
 				<PackageOpen size={22} /> gachapons
 			</h2>
 			<p class="text-gray-600">
-				guaranteed-win bundles — pay a premium, get one random item from the pool
+				guaranteed-win bundles: pay a premium, get one random item from the pool
 			</p>
 		</div>
 		<button
@@ -1269,7 +1282,7 @@
 						placeholder="what it actually costs to ship one"
 						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 					/>
-					<p class="mt-1 text-xs text-gray-500">manual — not derived from value</p>
+					<p class="mt-1 text-xs text-gray-500">manual: not derived from value</p>
 				</div>
 
 				<div class="grid grid-cols-2 gap-4">
@@ -1324,7 +1337,7 @@
 							</div>
 						{/if}
 						<p class="mt-1 text-xs text-gray-500">
-							comma-separate to add more than one — not limited to a fixed list, type anything new
+							comma-separate to add more than one: not limited to a fixed list, type anything new
 							and it becomes its own category
 						</p>
 					</div>
@@ -1334,7 +1347,7 @@
 					<div class="rounded-xl border-2 border-dashed border-black p-3">
 						<p class="mb-2 text-sm font-bold">sizes</p>
 						<p class="mb-3 text-xs text-gray-500">
-							set stock per size — a size with 0 in stock is hidden from users entirely
+							set stock per size: a size with 0 in stock is hidden from users entirely
 						</p>
 						<div class="flex flex-col gap-2">
 							{#each formSizeVariants as variant, i (i)}
@@ -1378,7 +1391,7 @@
 					<span class="text-sm">
 						<span class="font-bold">gachapon only</span>
 						<span class="block text-xs text-gray-500">
-							hide from the normal shop (daily picks, rolls, keep-forever) — only winnable from a
+							hide from the normal shop (daily picks, rolls, keep-forever): only winnable from a
 							gachapon it's added to
 						</span>
 					</span>
@@ -1519,10 +1532,10 @@
 							>
 								{#if formEV.isUnderpriced}
 									<AlertTriangle size={16} />
-									EV ANALYSIS — UNDERPRICED
+									EV ANALYSIS: UNDERPRICED
 								{:else}
 									<ShieldCheck size={16} />
-									EV ANALYSIS — OK
+									EV ANALYSIS: OK
 								{/if}
 							</h3>
 							<button
@@ -1572,7 +1585,7 @@
 
 						{#if formEV.isUnderpriced}
 							<div class="mt-3 rounded-lg bg-red-100 p-2 text-xs font-bold text-red-700">
-								⚠ Users can profit at upgrade level {formEV.bestPlayerLevel} — expected cost ({formEV.bestPlayerCost})
+								⚠ Users can profit at upgrade level {formEV.bestPlayerLevel}: expected cost ({formEV.bestPlayerCost})
 								is below item price ({formPrice}). Consider increasing upgrade costs or lowering
 								boost amount.
 							</div>
@@ -1785,7 +1798,7 @@
 						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 					/>
 					<p class="mt-1 text-xs text-gray-500">
-						should be a bit above the pool's items' normal cost — you're paying for the guarantee
+						should be a bit above the pool's items' normal cost: you're paying for the guarantee
 					</p>
 				</div>
 
@@ -1794,7 +1807,7 @@
 						>items in this gachapon ({gachaRows.length})</span
 					>
 					<p class="mb-2 text-xs text-gray-500">
-						pull odds are set automatically from each item's scraps value — pricier prizes come out
+						pull odds are set automatically from each item's scraps value: pricier prizes come out
 						rarer.
 					</p>
 
@@ -1821,7 +1834,7 @@
 										<span
 											class="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700"
 										>
-											new · gachapon only
+											{row.kind === 'edit' ? 'editing · gachapon only' : 'new · gachapon only'}
 										</span>
 										<span class="flex-1"></span>
 									{/if}
@@ -1841,7 +1854,7 @@
 									</button>
 								</div>
 
-								{#if row.kind === 'new'}
+								{#if row.kind !== 'existing'}
 									<div class="mt-2 grid grid-cols-2 gap-2">
 										<input
 											type="text"
@@ -1881,6 +1894,12 @@
 												class="hidden"
 											/>
 										</label>
+										<input
+											type="text"
+											bind:value={row.image}
+											placeholder="…or paste an image URL / CDN link"
+											class="col-span-2 rounded-lg border-2 border-black px-3 py-1.5 text-xs focus:border-dashed focus:outline-none"
+										/>
 									</div>
 								{/if}
 							</div>

@@ -14,6 +14,7 @@
 	import { API_URL } from '$lib/config';
 	import { getUser } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
+	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
 
 	interface Order {
 		id: number;
@@ -34,14 +35,13 @@
 	let orders = $state<Order[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let addressOrder = $state<Order | null>(null);
 
-	onMount(async () => {
-		const user = await getUser();
-		if (!user) {
-			goto('/');
-			return;
-		}
+	let needsAddressCount = $derived(
+		orders.filter((o) => !o.shippingAddress && !o.isFulfilled).length
+	);
 
+	async function fetchOrders() {
 		try {
 			const response = await fetch(`${API_URL}/shop/orders`, {
 				credentials: 'include'
@@ -62,6 +62,15 @@
 		} finally {
 			loading = false;
 		}
+	}
+
+	onMount(async () => {
+		const user = await getUser();
+		if (!user) {
+			goto('/');
+			return;
+		}
+		await fetchOrders();
 	});
 
 	function formatDate(dateString: string): string {
@@ -182,6 +191,20 @@
 
 	<h1 class="mb-8 text-4xl font-bold md:text-5xl">{$t.orders.myOrders}</h1>
 
+	{#if needsAddressCount > 0}
+		<div class="mb-6 rounded-2xl border-4 border-yellow-500 bg-yellow-50 p-4">
+			<p class="font-bold text-yellow-800">
+				{needsAddressCount} order{needsAddressCount === 1 ? '' : 's'} still need{needsAddressCount ===
+				1
+					? 's'
+					: ''} a shipping address
+			</p>
+			<p class="mt-1 text-sm text-yellow-700">
+				pick one below and add where it should ship: we can't send it until you do.
+			</p>
+		</div>
+	{/if}
+
 	{#if loading}
 		<div class="py-12 text-center text-gray-500">{$t.orders.loadingOrders}</div>
 	{:else if error}
@@ -203,8 +226,11 @@
 			{#each orders as order}
 				{@const StatusIcon = getStatusIcon(order.status, order.isFulfilled)}
 				{@const isConsolation = order.orderType === 'consolation'}
+				{@const needsAddress = !order.shippingAddress && !order.isFulfilled}
 				<div
-					class="rounded-2xl border-4 border-black p-6 transition-all duration-200 hover:border-dashed"
+					class="rounded-2xl border-4 p-6 transition-all duration-200 hover:border-dashed {needsAddress
+						? 'border-yellow-500'
+						: 'border-black'}"
 				>
 					<div class="flex gap-4">
 						{#if isConsolation}
@@ -259,10 +285,18 @@
 									<MapPin size={16} class="mt-0.5 shrink-0" />
 									<span class="wrap-break-word">{formatAddress(order.shippingAddress)}</span>
 								</div>
-							{:else if !order.isFulfilled}
-								<p class="mt-3 text-sm font-bold text-yellow-600">
-									{$t.orders.noShippingAddress}
-								</p>
+							{:else if needsAddress}
+								<div class="mt-3 flex flex-wrap items-center gap-3">
+									<p class="text-sm font-bold text-yellow-600">
+										{$t.orders.noShippingAddress}
+									</p>
+									<button
+										onclick={() => (addressOrder = order)}
+										class="flex cursor-pointer items-center gap-1 rounded-full border-2 border-black bg-black px-3 py-1 text-sm font-bold text-white transition-all hover:bg-gray-800"
+									>
+										<MapPin size={14} /> add shipping address
+									</button>
+								</div>
 							{/if}
 
 							{#if order.trackingNumber}
@@ -278,3 +312,17 @@
 		</div>
 	{/if}
 </div>
+
+{#if addressOrder}
+	<AddressSelectModal
+		orderId={addressOrder.id}
+		itemName={addressOrder.orderType === 'consolation'
+			? $t.orders.paperScraps
+			: addressOrder.itemName}
+		onClose={() => (addressOrder = null)}
+		onComplete={() => {
+			addressOrder = null;
+			fetchOrders();
+		}}
+	/>
+{/if}

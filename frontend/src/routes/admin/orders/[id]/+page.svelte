@@ -142,7 +142,10 @@
 				const wasFulfilled = order.isFulfilled;
 				order.isFulfilled = !wasFulfilled;
 				if (!wasFulfilled) order.trackingNumber = trackingInput.trim() || null;
-				showToast(wasFulfilled ? 'order marked as unfulfilled' : 'order marked as fulfilled', 'success');
+				showToast(
+					wasFulfilled ? 'order marked as unfulfilled' : 'order marked as fulfilled',
+					'success'
+				);
 			} else {
 				const data = await response.json().catch(() => ({}));
 				showToast(data.error || 'failed to update order', 'error');
@@ -191,7 +194,7 @@
 			const data = await response.json().catch(() => ({}));
 			if (response.ok) {
 				order.userNote = userNoteInput;
-				showToast('note saved — will be sent via Slack DM when the order is fulfilled', 'success');
+				showToast('note saved: will be sent via Slack DM when the order is fulfilled', 'success');
 			} else {
 				showToast(data.error || 'failed to save note', 'error');
 			}
@@ -285,7 +288,10 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-6 pt-24 pb-24 md:px-12">
-	<a href="/admin/orders" class="mb-6 inline-flex items-center gap-2 font-bold text-gray-500 hover:underline">
+	<a
+		href="/admin/orders"
+		class="mb-6 inline-flex items-center gap-2 font-bold text-gray-500 hover:underline"
+	>
 		<ArrowLeft size={18} />
 		back to orders
 	</a>
@@ -310,7 +316,9 @@
 				<div class="min-w-0 flex-1">
 					<h1 class="text-2xl font-bold md:text-3xl">{order.itemName}</h1>
 					<div class="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-						<a href="/admin/users/{order.userId}" class="font-bold hover:underline">@{order.username}</a>
+						<a href="/admin/users/{order.userId}" class="font-bold hover:underline"
+							>@{order.username}</a
+						>
 						<span class="text-gray-400">•</span>
 						<span>{formatDate(order.createdAt)}</span>
 						<span class="text-gray-400">•</span>
@@ -351,8 +359,10 @@
 
 			<div class="border-t-4 border-dashed border-gray-200 p-6">
 				{#if order.hackatimeBanned}
-					<p class="mb-4 rounded-xl border-2 border-red-500 bg-red-100 p-3 text-sm font-bold text-red-700">
-						this user is hackatime banned — do not fulfill
+					<p
+						class="mb-4 rounded-xl border-2 border-red-500 bg-red-100 p-3 text-sm font-bold text-red-700"
+					>
+						this user is hackatime banned: do not fulfill
 					</p>
 				{/if}
 
@@ -370,28 +380,54 @@
 									class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 blur-sm transition-all duration-300 select-none group-hover/addr:blur-none group-hover/addr:select-auto"
 								>
 									<span class="font-bold text-gray-500">name</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(formatName(addr))}>{formatName(addr)}</span>
+									<span
+										class="cursor-pointer hover:underline"
+										onclick={() => copyField(formatName(addr))}>{formatName(addr)}</span
+									>
 									<span class="font-bold text-gray-500">address 1</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.address1)}>{addr.address1}</span>
+									<span
+										class="cursor-pointer hover:underline"
+										onclick={() => copyField(addr.address1)}>{addr.address1}</span
+									>
 									{#if addr.address2}
 										<span class="font-bold text-gray-500">address 2</span>
-										<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.address2!)}>{addr.address2}</span>
+										<span
+											class="cursor-pointer hover:underline"
+											onclick={() => copyField(addr.address2!)}>{addr.address2}</span
+										>
 									{/if}
 									<span class="font-bold text-gray-500">city</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.city)}>{addr.city}</span>
+									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.city)}
+										>{addr.city}</span
+									>
 									<span class="font-bold text-gray-500">state</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.state)}>{addr.state}</span>
+									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.state)}
+										>{addr.state}</span
+									>
 									<span class="font-bold text-gray-500">zip</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.postalCode)}>{addr.postalCode}</span>
+									<span
+										class="cursor-pointer hover:underline"
+										onclick={() => copyField(addr.postalCode)}>{addr.postalCode}</span
+									>
 									<span class="font-bold text-gray-500">country</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.country)}>{addr.country}</span>
+									<span
+										class="cursor-pointer hover:underline"
+										onclick={() => copyField(addr.country)}>{addr.country}</span
+									>
 									{#if order.phone || addr.phone}
 										<span class="font-bold text-gray-500">phone</span>
-										<span class="cursor-pointer hover:underline" onclick={() => copyField((order.phone || addr.phone)!)}>{order.phone || addr.phone}</span>
+										<span
+											class="cursor-pointer hover:underline"
+											onclick={() => copyField((order.phone || addr.phone)!)}
+											>{order.phone || addr.phone}</span
+										>
 									{/if}
 									{#if order.email}
 										<span class="font-bold text-gray-500">email</span>
-										<span class="cursor-pointer hover:underline" onclick={() => copyField(order.email!)}>{order.email}</span>
+										<span
+											class="cursor-pointer hover:underline"
+											onclick={() => copyField(order.email!)}>{order.email}</span
+										>
 									{/if}
 								</div>
 							</div>
@@ -405,18 +441,26 @@
 								<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
 									{#if order.phone}
 										<span class="font-bold text-gray-500">phone</span>
-										<span class="cursor-pointer hover:underline" onclick={() => copyField(order.phone!)}>{order.phone}</span>
+										<span
+											class="cursor-pointer hover:underline"
+											onclick={() => copyField(order.phone!)}>{order.phone}</span
+										>
 									{/if}
 									{#if order.email}
 										<span class="font-bold text-gray-500">email</span>
-										<span class="cursor-pointer hover:underline" onclick={() => copyField(order.email!)}>{order.email}</span>
+										<span
+											class="cursor-pointer hover:underline"
+											onclick={() => copyField(order.email!)}>{order.email}</span
+										>
 									{/if}
 								</div>
 							</div>
 						{/if}
 
 						<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
-							<p class="mb-2 text-xs font-bold text-gray-500 uppercase">internal notes (admins only)</p>
+							<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
+								internal notes (admins only)
+							</p>
 							<textarea
 								bind:value={notesInput}
 								placeholder="anything weird about this order? leave a note for other admins"
@@ -433,7 +477,9 @@
 						</div>
 
 						<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
-							<p class="mb-2 text-xs font-bold text-gray-500 uppercase">note to user (sent via slack dm once fulfilled)</p>
+							<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
+								note to user (sent via slack dm once fulfilled)
+							</p>
 							{#if order.slackId}
 								<textarea
 									bind:value={userNoteInput}
@@ -526,11 +572,15 @@
 			<h2 class="mb-4 text-2xl font-bold">delete order</h2>
 			<p class="mb-2 text-gray-600">
 				this will permanently delete the order for <span class="font-bold">@{order.username}</span>
-				and remove associated refinery/roll/penalty records from their financial timeline. No refund
-				or bonus will be issued.
+				and remove associated refinery/roll/penalty records from their financial timeline. No refund or
+				bonus will be issued.
 			</p>
-			<p class="mb-6 text-sm font-bold text-red-600">this action is destructive and cannot be undone from here.</p>
-			<label for="confirm-reason" class="mb-2 block text-sm font-bold text-gray-700">reason (min 3 chars)</label>
+			<p class="mb-6 text-sm font-bold text-red-600">
+				this action is destructive and cannot be undone from here.
+			</p>
+			<label for="confirm-reason" class="mb-2 block text-sm font-bold text-gray-700"
+				>reason (min 3 chars)</label
+			>
 			<textarea
 				id="confirm-reason"
 				aria-describedby="confirm-reason-error"
@@ -542,7 +592,9 @@
 				placeholder="brief reason for deleting this order (required)"
 			></textarea>
 			{#if confirmReason && confirmReason.trim().length > 0 && confirmReason.trim().length < 3}
-				<p id="confirm-reason-error" class="mb-4 text-sm text-red-600">reason must be at least 3 characters</p>
+				<p id="confirm-reason-error" class="mb-4 text-sm text-red-600">
+					reason must be at least 3 characters
+				</p>
 			{:else}
 				<div class="mb-4" aria-hidden="true"></div>
 			{/if}

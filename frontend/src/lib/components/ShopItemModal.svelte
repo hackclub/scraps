@@ -171,7 +171,7 @@
 				const parts = [data.error || $t.shop.failedToTryLuck];
 				if (data.required !== undefined) parts.push(`need: ${data.required} scraps`);
 				if (data.available !== undefined) parts.push(`have: ${data.available} scraps`);
-				alertMessage = parts.join(' — ');
+				alertMessage = parts.join(' | ');
 				return;
 			}
 
@@ -210,7 +210,7 @@
 				const parts = [data.error || $t.shop.somethingWentWrong];
 				if (data.required !== undefined) parts.push(`need: ${data.required} scraps`);
 				if (data.available !== undefined) parts.push(`have: ${data.available} scraps`);
-				alertMessage = parts.join(' — ');
+				alertMessage = parts.join(' | ');
 				return;
 			}
 
@@ -473,7 +473,7 @@
 					onclick={() => (showBuyConfirmation = true)}
 					disabled={tryingLuck || purchasing || !canAffordFull}
 					class="cursor-pointer rounded-full border-4 border-black px-4 py-3 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-					title="{$t.shop.buyNowTooltip}"
+					title={$t.shop.buyNowTooltip}
 				>
 					<ShoppingBag size={20} />
 				</button>
