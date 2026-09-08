@@ -530,32 +530,6 @@
 					</div>
 				</div>
 
-				<!-- Tier Selector -->
-				<div>
-					<label class="mb-2 block text-sm font-bold">{$t.project.projectTier}</label>
-					<div class="grid grid-cols-2 gap-2">
-						{#each TIERS as tier}
-							<button
-								type="button"
-								onclick={() => (selectedTier = tier.value)}
-								class="cursor-pointer rounded-lg border-2 border-black px-3 py-2 text-left font-bold transition-all duration-200 {selectedTier ===
-								tier.value
-									? 'bg-black text-white'
-									: 'hover:border-dashed'}"
-							>
-								<span>{$t.project.tier.replace('{value}', String(tier.value))}</span>
-								<p
-									class="mt-1 text-xs {selectedTier === tier.value
-										? 'text-gray-300'
-										: 'text-gray-500'}"
-								>
-									{$t.project.tierDescriptions[tier.descriptionKey]}
-								</p>
-							</button>
-						{/each}
-					</div>
-				</div>
-
 				<!-- Is Update Checkbox -->
 				<div>
 					<label class="flex cursor-pointer items-center gap-3">

@@ -34,13 +34,6 @@
 		reviewerNotes: string | null;
 	}
 
-	const TIERS = [
-		{ value: 1, descriptionKey: 'tier1' as const },
-		{ value: 2, descriptionKey: 'tier2' as const },
-		{ value: 3, descriptionKey: 'tier3' as const },
-		{ value: 4, descriptionKey: 'tier4' as const }
-	];
-
 	interface HackatimeProject {
 		name: string;
 		hours: number;
@@ -59,7 +52,6 @@
 	let selectedHackatimeNames = $state<string[]>([]);
 	let loadingProjects = $state(false);
 	let showDropdown = $state(false);
-	let selectedTier = $state(1);
 	let isShippedUpdate = $state(false);
 	let updateDescription = $state('');
 	let usedAi = $state(false);
@@ -133,7 +125,6 @@
 					})
 					.filter((p: string) => p.length > 0);
 			}
-			selectedTier = project?.tier ?? 1;
 			fetchHackatimeProjects();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load project';
@@ -264,7 +255,6 @@
 					githubUrl: project.githubUrl,
 					playableUrl: project.playableUrl,
 					hackatimeProject: hackatimeValue,
-					tier: selectedTier,
 					updateDescription: isShippedUpdate ? updateDescription : null,
 					aiDescription: usedAi ? aiDescription : null,
 					reviewerNotes: reviewerNotes.trim() || null
@@ -297,6 +287,7 @@
 				throw new Error(submitData.message || 'Failed to submit project');
 			}
 
+			window.dispatchEvent(new CustomEvent('tutorial:project-submitted'));
 			goto(`/projects/${project.id}${isAdminUser ? '?view=public' : ''}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to submit project';
@@ -561,39 +552,6 @@
 							</div>
 						{/if}
 					</div>
-				</div>
-			</div>
-
-			<!-- Tier Selection -->
-			<div class="mb-6">
-				<label class="mb-2 block text-sm font-bold"
-					>{$t.project.projectTier} <span class="text-red-500">*</span></label
-				>
-				<p class="mb-3 text-xs text-gray-500">
-					{$t.project.selectComplexityTier}
-				</p>
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					{#each TIERS as tier}
-						<button
-							type="button"
-							onclick={() => (selectedTier = tier.value)}
-							class="cursor-pointer rounded-full border-4 border-black px-4 py-3 text-left font-bold transition-all duration-200 {selectedTier ===
-							tier.value
-								? 'bg-black text-white'
-								: 'hover:border-dashed'}"
-						>
-							<div class="flex items-center justify-between">
-								<span>{$t.project.tier.replace('{value}', String(tier.value))}</span>
-							</div>
-							<p
-								class="mt-1 text-xs {selectedTier === tier.value
-									? 'text-gray-300'
-									: 'text-gray-500'}"
-							>
-								{$t.project.tierDescriptions[tier.descriptionKey]}
-							</p>
-						</button>
-					{/each}
 				</div>
 			</div>
 

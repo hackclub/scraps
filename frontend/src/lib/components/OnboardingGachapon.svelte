@@ -4,10 +4,10 @@
 	let { onFinal }: { onFinal?: (reward: number) => void } = $props();
 
 	const REWARDS = [
-		{ amount: 5, weight: 55, color: 'text-gray-600', bg: 'bg-gray-100' },
-		{ amount: 10, weight: 30, color: 'text-green-600', bg: 'bg-green-100' },
-		{ amount: 50, weight: 12, color: 'text-blue-600', bg: 'bg-blue-100' },
-		{ amount: 100, weight: 3, color: 'text-yellow-600', bg: 'bg-yellow-100' }
+		{ amount: 1, weight: 55, color: 'text-gray-600', bg: 'bg-gray-100' },
+		{ amount: 5, weight: 30, color: 'text-green-600', bg: 'bg-green-100' },
+		{ amount: 10, weight: 12, color: 'text-blue-600', bg: 'bg-blue-100' },
+		{ amount: 50, weight: 3, color: 'text-yellow-600', bg: 'bg-yellow-100' }
 	];
 	const TOTAL_WEIGHT = REWARDS.reduce((n, r) => n + r.weight, 0);
 
@@ -39,11 +39,13 @@
 		}
 		landed = result;
 		phase = 'done';
+		await sleep(1800);
 		onFinal?.(result.amount);
 	}
 </script>
 
 <div class="w-[min(92vw,26rem)] rounded-2xl border-4 border-black bg-white p-4 shadow-xl">
+	<p class="text-sm font-bold">you can win 1, 5, 10 or 50 scraps</p>
 	<p class="mb-2 text-xs font-bold text-gray-500">ONBOARDING GACHAPON</p>
 	<div class="flex items-center gap-3 text-sm">
 		<div
@@ -55,15 +57,12 @@
 			🎱
 		</div>
 		{#if phase === 'idle'}
-			<div class="flex-1">
-				<p class="mb-2 text-gray-600">5, 10, 50 or 100 scraps · no losing</p>
-				<button
-					onclick={pull}
-					class="w-full cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 text-sm font-bold text-white transition-all hover:bg-gray-800"
-				>
-					Pull →
-				</button>
-			</div>
+			<button
+				onclick={pull}
+				class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 text-sm font-bold text-white transition-all hover:bg-gray-800"
+			>
+				Pull →
+			</button>
 		{:else if phase === 'spinning'}
 			<p class="flex flex-1 items-center gap-1 text-2xl font-black text-gray-400">
 				<Spool size={20} />{spinAmount}

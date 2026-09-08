@@ -10,8 +10,7 @@
 		ArrowRight,
 		X,
 		LayoutDashboard,
-		Plus,
-		Layers
+		Plus
 	} from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
 	import { refreshUserScraps } from '$lib/auth-client';
@@ -103,7 +102,6 @@
 			position: 'bottom-center'
 		},
 		{ titleKey: 'submitReviewTitle', descKey: 'submitReviewDesc', highlight: 'submit-button' },
-		{ titleKey: 'projectTiersTitle', descKey: 'projectTiersDesc', highlight: null },
 		{ titleKey: 'earnScrapsTitle', descKey: 'earnScrapsDesc', highlight: 'scraps-counter' },
 		{ titleKey: 'shopTitle', descKey: 'shopDesc', highlight: 'shop' },
 		{ titleKey: 'refineryTitle', descKey: 'refineryDesc', highlight: 'refinery' },
@@ -420,10 +418,8 @@
 				{:else if currentStep === 6}
 					<ShoppingBag size={32} />
 				{:else if currentStep === 7}
-					<Layers size={32} />
-				{:else if currentStep === 8}
 					<Flame size={32} />
-				{:else if currentStep === 9}
+				{:else if currentStep === 8}
 					<Trophy size={32} />
 				{:else}
 					<Gift size={32} />

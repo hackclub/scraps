@@ -6,13 +6,13 @@
 	import OnboardingPayout from './OnboardingPayout.svelte';
 	import OnboardingGachapon from './OnboardingGachapon.svelte';
 	import CreateProjectModal from './CreateProjectModal.svelte';
-	import { addProject, type Project } from '$lib/stores';
+	import { addProject, fetchShopItems, shopItemsStore, type Project } from '$lib/stores';
 
 	let { onComplete }: { onComplete: () => void } = $props();
 
 	type Emotion = 'normal' | 'excited' | 'happy' | 'bored' | 'sadorcrying' | 'sus';
 
-	type Panel = null | 'ship-form' | 'payout' | 'shop-pick' | 'gachapon';
+	type Panel = null | 'payout' | 'shop-pick' | 'gachapon';
 
 	interface Beat {
 		emotion: Emotion;
@@ -20,14 +20,22 @@
 		sub?: string;
 		panel?: Panel;
 		highlight?: string;
-		nav?: string;
+		nav?: string | (() => string | null);
 		when?: () => boolean;
-		waitFor?: 'project-created' | 'payout-resolved' | 'gachapon-pulled';
+		waitFor?:
+			| 'project-created'
+			| 'project-submitted'
+			| 'payout-resolved'
+			| 'gachapon-pulled'
+			| 'shop-picked';
 	}
 
 	let showCreateModal = $state(false);
+	let createdProjectId = $state<number | null>(null);
+	let projectSubmitted = $state(false);
 	let finalRollMult = $state<number | null>(null);
-	let pickedShopItems = $state(0);
+	let gachaponReward = $state<number | null>(null);
+	let pickedItemIds = $state<number[]>([]);
 
 	const beats: Beat[] = [
 		{
@@ -50,14 +58,13 @@
 		},
 		{
 			emotion: 'normal',
-			text: "But to **ship** it (that's how you turn hours into scraps) a few more fields need filling in first. The glowing ones here are required.",
-			nav: '/dashboard',
-			panel: 'ship-form'
+			text: "That's your project's page now. To **ship** it (that's how hours become scraps) a few fields still need filling in.",
+			sub: 'heading to the submit page...'
 		},
 		{
 			emotion: 'normal',
-			text: 'Fill those, hit submit, and it goes into the review queue.',
-			nav: '/dashboard'
+			text: "The glowing fields here are the ones still missing. Fill those in for real and hit submit, that's how you turn this into scraps.",
+			nav: () => (createdProjectId !== null ? `/projects/${createdProjectId}/submit` : null)
 		},
 
 		{
@@ -96,7 +103,8 @@
 			emotion: 'excited',
 			text: "One-time thing, just for you: pick **any 2 items** from the whole shop so you can see everything that's up for grabs.",
 			nav: '/shop',
-			panel: 'shop-pick'
+			panel: 'shop-pick',
+			waitFor: 'shop-picked'
 		},
 		{
 			emotion: 'happy',
@@ -119,14 +127,30 @@
 
 		{
 			emotion: 'excited',
-			text: 'Thanks for finishing the tutorial! As a reward, try your luck at the gachapon: you can get **5**, **10**, **50** or **100** scraps!',
+			text: 'Thanks for finishing the tutorial! As a reward, try your luck at the gachapon: you can get **1**, **5**, **10** or **50** scraps!',
 			nav: '/shop',
 			panel: 'gachapon',
 			waitFor: 'gachapon-pulled'
 		},
 		{
+			emotion: 'normal',
+			text: "Hey, a win's a win. Every scrap counts around here.",
+			when: () => gachaponReward === 1
+		},
+		{
 			emotion: 'happy',
-			text: "And that's it. Go build something silly. 👋"
+			text: 'Solid pull! Not bad at all.',
+			when: () => gachaponReward === 5 || gachaponReward === 10
+		},
+		{
+			emotion: 'excited',
+			text: 'WHOA. Jackpot energy right there!!',
+			when: () => gachaponReward === 50
+		},
+		{
+			emotion: 'happy',
+			text: "And that's it. Go build something silly. 👋",
+			nav: '/dashboard'
 		}
 	];
 
@@ -222,7 +246,10 @@
 			if (!showCreateModal) showCreateModal = true;
 			return;
 		}
-		if (beat.waitFor === 'payout-resolved' || beat.waitFor === 'gachapon-pulled') return;
+		if (beat.waitFor === 'project-submitted' && !projectSubmitted) return;
+		if (beat.waitFor === 'payout-resolved' && finalRollMult === null) return;
+		if (beat.waitFor === 'gachapon-pulled' && gachaponReward === null) return;
+		if (beat.waitFor === 'shop-picked' && pickedItemIds.length < 2) return;
 		const nxt = nextVisibleFrom(idx + 1);
 		if (nxt === -1) {
 			onComplete();
@@ -238,7 +265,8 @@
 		else idx = nxt;
 	}
 
-	function onGachaponFinal(_reward: number) {
+	function onGachaponFinal(reward: number) {
+		gachaponReward = reward;
 		const nxt = nextVisibleFrom(idx + 1);
 		if (nxt === -1) onComplete();
 		else idx = nxt;
@@ -252,7 +280,7 @@
 	let currentNav = $state('');
 
 	$effect(() => {
-		const target = beat.nav;
+		const target = typeof beat.nav === 'function' ? beat.nav() : beat.nav;
 		if (!browser || !target || target === currentNav) return;
 		currentNav = target;
 		goto(target, { invalidateAll: false, noScroll: true }).catch(() => {});
@@ -288,9 +316,21 @@
 	function onProjectCreated(project: Project) {
 		showCreateModal = false;
 		addProject(project);
+		createdProjectId = project.id;
+		currentNav = `/projects/${project.id}`;
+		goto(currentNav, { invalidateAll: false, noScroll: true }).catch(() => {});
 		const nxt = nextVisibleFrom(idx + 1);
 		if (nxt === -1) onComplete();
 		else idx = nxt;
+	}
+
+	function onProjectSubmitted() {
+		projectSubmitted = true;
+		if (beat.waitFor === 'project-submitted') {
+			const nxt = nextVisibleFrom(idx + 1);
+			if (nxt === -1) onComplete();
+			else idx = nxt;
+		}
 	}
 
 	function onKey(e: KeyboardEvent) {
@@ -306,9 +346,12 @@
 
 	onMount(() => {
 		document.body.style.overflow = 'hidden';
+		window.addEventListener('tutorial:project-submitted', onProjectSubmitted);
+		fetchShopItems();
 	});
 	onDestroy(() => {
 		clearTimer();
+		window.removeEventListener('tutorial:project-submitted', onProjectSubmitted);
 		if (typeof document !== 'undefined') document.body.style.overflow = '';
 	});
 
@@ -322,16 +365,6 @@
 		return Math.round(secs / 6) / 10;
 	});
 
-	const shipFields = [
-		{ label: 'project name', required: true },
-		{ label: 'description', required: true },
-		{ label: 'demo / repo link', required: true },
-		{ label: 'hackatime project', required: true },
-		{ label: 'screenshot', required: true },
-		{ label: 'extra notes', required: false }
-	];
-	const shopMock = Array.from({ length: 9 }, (_, i) => i);
-
 	let showPanel = $derived(beat.panel != null);
 </script>
 
@@ -344,7 +377,9 @@
 />
 
 <div
-	class="fixed inset-0 z-[90] {hlRect ? 'pointer-events-none' : ''}"
+	class="fixed inset-0 z-[90] {hlRect || beat.waitFor === 'project-submitted'
+		? 'pointer-events-none'
+		: ''}"
 	transition:fade={{ duration: 150 }}
 >
 	<button
@@ -382,40 +417,36 @@
 				12}px; height:{hlRect.height + 12}px"
 		></div>
 	{:else}
-		<div class="absolute inset-0 {beat.nav ? 'bg-black/35' : 'bg-black/70'}"></div>
+		<div
+			class="absolute inset-0 {beat.nav || beat.waitFor === 'project-submitted'
+				? 'bg-black/35'
+				: 'bg-black/70'}"
+		></div>
 	{/if}
 
 	{#if showPanel}
 		<div class="pointer-events-auto absolute top-20 left-1/2 -translate-x-1/2">
 			{#if beat.panel === 'payout'}
 				<OnboardingPayout onFinal={onPayoutFinal} />
-			{:else if beat.panel === 'ship-form'}
-				<div class="w-[min(92vw,30rem)] rounded-2xl border-4 border-black bg-white p-4 shadow-xl">
-					<p class="mb-2 text-xs font-bold text-gray-500">SHIP CHECKLIST</p>
-					<div class="grid gap-2 sm:grid-cols-2">
-						{#each shipFields as f (f.label)}
-							<div
-								class="rounded-lg border-2 px-3 py-2 text-sm {f.required
-									? 'animate-pulse border-yellow-500 bg-yellow-50 font-bold'
-									: 'border-gray-300 text-gray-400'}"
-							>
-								{f.label}{f.required ? ' *' : ''}
-							</div>
-						{/each}
-					</div>
-				</div>
 			{:else if beat.panel === 'shop-pick'}
-				<div class="w-[min(92vw,26rem)] rounded-2xl border-4 border-black bg-white p-4 shadow-xl">
-					<p class="mb-2 text-xs font-bold text-gray-500">
-						PICK ANY 2 · {pickedShopItems}/2 chosen
+				<div class="w-[min(94vw,44rem)] rounded-2xl border-4 border-black bg-white p-5 shadow-xl">
+					<p class="mb-3 text-sm font-bold text-gray-500">
+						PICK ANY 2 · {pickedItemIds.length}/2 chosen
 					</p>
-					<div class="grid grid-cols-3 gap-2">
-						{#each shopMock as i (i)}
+					<div class="scrollbar-black grid max-h-[26rem] grid-cols-3 gap-3 overflow-y-auto pr-2 sm:grid-cols-4">
+						{#each $shopItemsStore as item (item.id)}
+							{@const picked = pickedItemIds.includes(item.id)}
 							<button
-								onclick={() => (pickedShopItems = Math.min(2, pickedShopItems + 1))}
-								class="flex aspect-square cursor-pointer items-center justify-center rounded-lg border-2 border-black text-lg transition-all hover:border-dashed"
+								onclick={() => {
+									if (picked) pickedItemIds = pickedItemIds.filter((id) => id !== item.id);
+									else if (pickedItemIds.length < 2) pickedItemIds = [...pickedItemIds, item.id];
+								}}
+								class="flex flex-col items-center gap-1.5 rounded-xl border-4 p-3 transition-all {picked
+									? 'border-green-500 bg-green-50'
+									: 'border-black hover:border-dashed'}"
 							>
-								🎁
+								<img src={item.image} alt={item.name} class="h-20 w-20 object-contain" />
+								<span class="w-full truncate text-center text-sm font-bold">{item.name}</span>
 							</button>
 						{/each}
 					</div>
@@ -462,13 +493,21 @@
 					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
 						{showCreateModal ? 'fill out the form to continue' : 'click or press enter to create a project'}
 					</p>
-				{:else if beat.waitFor === 'payout-resolved' && shown >= fullLen}
+				{:else if beat.waitFor === 'project-submitted' && !projectSubmitted && shown >= fullLen}
+					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
+						fill out the required fields and submit to continue
+					</p>
+				{:else if beat.waitFor === 'payout-resolved' && finalRollMult === null && shown >= fullLen}
 					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
 						roll it out above to continue
 					</p>
-				{:else if beat.waitFor === 'gachapon-pulled' && shown >= fullLen}
+				{:else if beat.waitFor === 'gachapon-pulled' && gachaponReward === null && shown >= fullLen}
 					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
 						pull the gachapon above to continue
+					</p>
+				{:else if beat.waitFor === 'shop-picked' && pickedItemIds.length < 2 && shown >= fullLen}
+					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
+						pick {2 - pickedItemIds.length} more item{2 - pickedItemIds.length === 1 ? '' : 's'} above to continue
 					</p>
 				{:else}
 					<p class="mt-2 text-right text-xs text-gray-400">
@@ -530,5 +569,20 @@
 		.strike.on::after {
 			width: 100%;
 		}
+	}
+
+	.scrollbar-black {
+		scrollbar-width: thin;
+		scrollbar-color: black transparent;
+	}
+	.scrollbar-black::-webkit-scrollbar {
+		width: 4px;
+	}
+	.scrollbar-black::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	.scrollbar-black::-webkit-scrollbar-thumb {
+		background-color: black;
+		border-radius: 9999px;
 	}
 </style>

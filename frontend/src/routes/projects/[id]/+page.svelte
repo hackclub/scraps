@@ -335,11 +335,6 @@
 					{/if}
 				</div>
 				<div class="mb-4 flex flex-wrap items-center gap-2">
-					<span
-						class="rounded-full border-2 border-gray-400 bg-gray-100 px-3 py-1 text-sm font-bold text-gray-700"
-					>
-						{$t.project.tier.replace('{value}', String(project.tier))}
-					</span>
 					{#if project.usedAi}
 						<span
 							class="flex items-center gap-1 rounded-full border-2 border-purple-400 bg-purple-100 px-3 py-1 text-sm font-bold text-purple-700"

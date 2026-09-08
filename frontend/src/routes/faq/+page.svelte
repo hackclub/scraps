@@ -29,10 +29,6 @@
 			answer: $t.faq.whatIsRefineryAnswer
 		},
 		{
-			question: $t.faq.whatAreProjectTiers,
-			answer: $t.faq.whatAreProjectTiersAnswer
-		},
-		{
 			question: $t.faq.howLongDoesReviewTake,
 			answer: $t.faq.howLongDoesReviewTakeAnswer
 		},

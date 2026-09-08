@@ -47,18 +47,10 @@
 	let showDropdown = $state(false);
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let selectedTier = $state(1);
 	let isUpdate = $state(false);
 	let updateDescription = $state('');
 	let usedAi = $state(false);
 	let aiDescription = $state('');
-
-	const TIERS = [
-		{ value: 1, description: $t.createProject.tierDescriptions.tier1 },
-		{ value: 2, description: $t.createProject.tierDescriptions.tier2 },
-		{ value: 3, description: $t.createProject.tierDescriptions.tier3 },
-		{ value: 4, description: $t.createProject.tierDescriptions.tier4 }
-	];
 
 	const NAME_MAX = 50;
 	const DESC_MIN = 20;
@@ -166,7 +158,6 @@
 		imagePreview = null;
 		selectedHackatimeProjects = [];
 		showDropdown = false;
-		selectedTier = 1;
 		isUpdate = false;
 		updateDescription = '';
 		usedAi = false;
@@ -202,7 +193,6 @@
 					image: imageUrl || null,
 					githubUrl: finalGithubUrl,
 					hackatimeProject: hackatimeValue,
-					tier: selectedTier,
 					updateDescription: isUpdate ? updateDescription : null,
 					isReship: isUpdate,
 					aiDescription: usedAi ? aiDescription : null
@@ -447,32 +437,6 @@
 						placeholder="https://github.com/user/repo"
 						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
 					/>
-				</div>
-
-				<!-- Tier Selector -->
-				<div>
-					<label class="mb-1 block text-sm font-bold">{$t.createProject.projectTier}</label>
-					<div class="grid grid-cols-2 gap-2">
-						{#each TIERS as tier}
-							<button
-								type="button"
-								onclick={() => (selectedTier = tier.value)}
-								class="cursor-pointer rounded-lg border-2 border-black px-3 py-2 text-left font-bold transition-all duration-200 {selectedTier ===
-								tier.value
-									? 'bg-black text-white'
-									: 'hover:border-dashed'}"
-							>
-								<span>{$t.dashboard.tier} {tier.value}</span>
-								<p
-									class="mt-1 text-xs {selectedTier === tier.value
-										? 'text-gray-300'
-										: 'text-gray-500'}"
-								>
-									{tier.description}
-								</p>
-							</button>
-						{/each}
-					</div>
 				</div>
 
 				<!-- Is Update Checkbox -->

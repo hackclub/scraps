@@ -88,11 +88,7 @@
 								>{formatHours(project.hoursOverride ?? project.hours)}h</span
 							>
 						</div>
-						<div class="flex items-center justify-between">
-							<span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs">
-								{$t.dashboard.tier}
-								{project.tier}
-							</span>
+						<div class="flex items-center justify-end">
 							<span
 								class="rounded-full px-2 py-0.5 text-xs {project.status === 'shipped'
 									? 'bg-green-100'
