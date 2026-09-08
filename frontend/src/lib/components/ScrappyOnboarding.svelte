@@ -7,8 +7,27 @@
 	import OnboardingGachapon from './OnboardingGachapon.svelte';
 	import CreateProjectModal from './CreateProjectModal.svelte';
 	import { addProject, fetchShopItems, shopItemsStore, type Project } from '$lib/stores';
+	import { API_URL } from '$lib/config';
+	import { refreshUserScraps } from '$lib/auth-client';
 
-	let { onComplete }: { onComplete: () => void } = $props();
+	let { onComplete, sandbox = false }: { onComplete: () => void; sandbox?: boolean } = $props();
+
+	async function completeTutorial() {
+		if (sandbox) {
+			onComplete();
+			return;
+		}
+		try {
+			await fetch(`${API_URL}/user/complete-tutorial`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			await refreshUserScraps();
+		} catch {
+			/* still let them out even if the award call fails */
+		}
+		onComplete();
+	}
 
 	type Emotion = 'normal' | 'excited' | 'happy' | 'bored' | 'sadorcrying' | 'sus';
 
@@ -252,7 +271,7 @@
 		if (beat.waitFor === 'shop-picked' && pickedItemIds.length < 2) return;
 		const nxt = nextVisibleFrom(idx + 1);
 		if (nxt === -1) {
-			onComplete();
+			completeTutorial();
 			return;
 		}
 		idx = nxt;
@@ -261,14 +280,14 @@
 	function onPayoutFinal(mult: number) {
 		finalRollMult = mult;
 		const nxt = nextVisibleFrom(idx + 1);
-		if (nxt === -1) onComplete();
+		if (nxt === -1) completeTutorial();
 		else idx = nxt;
 	}
 
 	function onGachaponFinal(reward: number) {
 		gachaponReward = reward;
 		const nxt = nextVisibleFrom(idx + 1);
-		if (nxt === -1) onComplete();
+		if (nxt === -1) completeTutorial();
 		else idx = nxt;
 	}
 
@@ -320,7 +339,7 @@
 		currentNav = `/projects/${project.id}`;
 		goto(currentNav, { invalidateAll: false, noScroll: true }).catch(() => {});
 		const nxt = nextVisibleFrom(idx + 1);
-		if (nxt === -1) onComplete();
+		if (nxt === -1) completeTutorial();
 		else idx = nxt;
 	}
 
@@ -328,7 +347,7 @@
 		projectSubmitted = true;
 		if (beat.waitFor === 'project-submitted') {
 			const nxt = nextVisibleFrom(idx + 1);
-			if (nxt === -1) onComplete();
+			if (nxt === -1) completeTutorial();
 			else idx = nxt;
 		}
 	}
@@ -383,7 +402,7 @@
 	transition:fade={{ duration: 150 }}
 >
 	<button
-		onclick={onComplete}
+		onclick={completeTutorial}
 		class="pointer-events-auto absolute top-4 right-4 z-20 cursor-pointer rounded-full border-2 border-white/60 bg-black/40 px-3 py-1 text-xs font-bold text-white transition-all hover:bg-black/70"
 	>
 		skip

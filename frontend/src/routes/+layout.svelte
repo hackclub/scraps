@@ -5,7 +5,6 @@
 	import favicon from '$lib/assets/favicon.ico';
 	import Navbar from '$lib/components/Navbar.svelte';
 	import Footer from '$lib/components/Footer.svelte';
-	import Tutorial from '$lib/components/Tutorial.svelte';
 	import ScrappyOnboarding from '$lib/components/ScrappyOnboarding.svelte';
 	import ErrorModal from '$lib/components/ErrorModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -100,12 +99,12 @@
 </div>
 
 {#if showTutorial}
-	<Tutorial onComplete={handleTutorialComplete} />
+	<ScrappyOnboarding onComplete={handleTutorialComplete} />
 {/if}
 
 {#if $onboardingSandbox !== null}
 	{#key $onboardingSandbox}
-		<ScrappyOnboarding onComplete={() => onboardingSandbox.set(null)} />
+		<ScrappyOnboarding sandbox onComplete={() => onboardingSandbox.set(null)} />
 	{/key}
 {/if}
 
