@@ -16,7 +16,7 @@
 		PackageOpen
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
-	import { API_URL } from '$lib/config';
+	import { API_URL, serverConfig } from '$lib/config';
 	import { t } from '$lib/i18n';
 	import { isInfiniteStock, stockLabel } from '$lib/utils';
 
@@ -195,8 +195,8 @@
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in template
 	let errorModal = $state<string | null>(null);
 
-	const SCRAPS_PER_HOUR = 64;
-	const DOLLARS_PER_HOUR = 4;
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
+	const DOLLARS_PER_HOUR = serverConfig.dollarsPerHour ?? 4;
 	const SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 
 	function calculateRollCost(

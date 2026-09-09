@@ -7,7 +7,7 @@
 	import { reviewerScoreMultiplier } from '$lib/utils';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 
-	const SCRAPS_PER_HOUR = 64;
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
 	const FALLBACK_SCORE_MULTS = { floor: 0.5, neutral: 1.0, ceil: 2.0 };
 	const GRADIENTS = [
 		'from-blue-50',

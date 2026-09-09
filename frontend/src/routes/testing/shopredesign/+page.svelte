@@ -15,9 +15,9 @@
 		updateShopItemHeart,
 		type ShopItem
 	} from '$lib/stores';
-	import { API_URL } from '$lib/config';
+	import { API_URL, serverConfig } from '$lib/config';
 
-	const SCRAPS_PER_HOUR = 64;
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
 
 	type Mode = 'featured' | 'sections' | 'rotating';
 	let mode = $state<Mode>('featured');

@@ -1227,6 +1227,8 @@ class AdminController < ApplicationController
 
   def pricing_config
     render_json({
+      scraps_per_hour: ScrapsService::SCRAPS_PER_HOUR,
+      dollars_per_hour: ScrapsService::DOLLARS_PER_HOUR,
       scraps_per_dollar: ScrapsService::SCRAPS_PER_DOLLAR,
       tier_multipliers: ScrapsService::TIER_MULTIPLIERS,
       reviewer_score_floor_mult: ScrapsService::SCORE_FLOOR_MULT,

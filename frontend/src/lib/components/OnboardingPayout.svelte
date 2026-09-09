@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
 	import { Spool, Check, RotateCcw } from '@lucide/svelte';
+	import { serverConfig } from '$lib/config';
 
 	let { onFinal }: { onFinal?: (finalMult: number) => void } = $props();
 
 	// Fixed example project. Same formula the real payout uses (ScrapsService):
-	// scraps = floor(hours * 64 * reviewerMultiplier(score)), score 2 pinned to ×1.00.
+	// scraps = floor(hours * scrapsPerHour * reviewerMultiplier(score)), score 2 pinned to ×1.00.
 	const HOURS = 8;
-	const SCRAPS_PER_HOUR = 64;
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
 	const SCORE = 2;
 	const SCORE_FLOOR_MULT = 0.5;
 	const SCORE_CEIL_MULT = 2.0;

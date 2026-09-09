@@ -4,8 +4,9 @@
 	import { getUser } from '$lib/auth-client';
 	import { projectsStore, fetchProjects, type Project } from '$lib/stores';
 	import { Spool, Dice5, RotateCcw, Check } from '@lucide/svelte';
+	import { serverConfig } from '$lib/config';
 
-	const SCRAPS_PER_HOUR = 64;
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
 
 	// ---- tunables ----
 	let reviewerScore = $state(2.5);

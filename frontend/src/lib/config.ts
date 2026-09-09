@@ -8,6 +8,8 @@ export const API_URL =
 		: 'http://localhost:3000');
 
 export interface ServerConfig {
+	scrapsPerHour: number;
+	dollarsPerHour: number;
 	scrapsPerDollar: number;
 	tierMultipliers: Record<number, number>;
 	reviewerScoreFloorMult: number;

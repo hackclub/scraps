@@ -131,7 +131,7 @@
 		}
 	});
 
-	const SCRAPS_PER_HOUR = 64;
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
 	const FALLBACK_SCORE_MULTS = { floor: 0.5, neutral: 1.0, ceil: 2.0 };
 
 	let isUpdate = $derived(project ? project.scrapsAwarded > 0 : false);
