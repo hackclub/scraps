@@ -24,11 +24,9 @@
 	let phraseIndex = Math.floor(Math.random() * 8);
 	let randomPhrase = $derived(greetingPhrases[phraseIndex]);
 
-	// Soft-launch gate: swap for a ysws_eligible check on the user object once this rolls out to everyone.
-	const ALLOWED_SLACK_ID = 'U0828FYS2UC';
 	let showCreateModal = $state(false);
 	let user = $state<Awaited<ReturnType<typeof getUser>>>(null);
-	let canCreateProject = $derived(user?.slackId === ALLOWED_SLACK_ID);
+	let canCreateProject = $derived(!!user);
 	onMount(async () => {
 		const userData = await getUser();
 		if (!userData) {
