@@ -13,6 +13,16 @@ Rails.application.routes.draw do
     post   "logout",         to: "auth#logout"
   end
 
+  scope :admin do
+    mount Blazer::Engine, at: "blazer"
+  end
+
+  spa_navigation = ->(req) do
+    req.get_header("HTTP_SEC_FETCH_DEST") == "document" ||
+      req.get_header("HTTP_ACCEPT").to_s.include?("text/html")
+  end
+  get "*path", to: "static#fallback", constraints: spa_navigation, format: false
+
   # Projects
   scope :projects do
     get    "explore",              to: "projects#explore"
@@ -98,8 +108,6 @@ Rails.application.routes.draw do
 
   # Admin
   scope :admin do
-    mount  Blazer::Engine,                    at: "blazer"
-
     get    "stats",                           to: "admin#stats"
     get    "config",                          to: "admin#pricing_config"
     post   "sync-airtable",                   to: "admin#sync_airtable"

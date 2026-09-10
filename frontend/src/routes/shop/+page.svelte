@@ -14,7 +14,8 @@
 		Bookmark,
 		GripVertical,
 		X,
-		PackageOpen
+		PackageOpen,
+		HelpCircle
 	} from '@lucide/svelte';
 	import { shopLoading, fetchShopItems, showToast, type ShopItem } from '$lib/stores';
 	import { t } from '$lib/i18n';
@@ -65,22 +66,6 @@
 	function domeFor(g: Gachapon): string {
 		const i = gachapons.findIndex((x) => x.id === g.id);
 		return domeColors[(i < 0 ? 0 : i) % domeColors.length];
-	}
-
-	function scatter(id: number, i: number, n: number) {
-		const rnd = (k: number) => {
-			const x = Math.sin(id * (k + 1) * 12.9898 + i * 4.1414) * 43758.5453;
-			return x - Math.floor(x);
-		};
-		const slots = Math.max(n, 1);
-		const slice = 100 / slots;
-		const base = n <= 2 ? 116 : n <= 3 ? 98 : n <= 4 ? 84 : n <= 5 ? 74 : 64;
-		return {
-			left: Math.min(86, Math.max(14, (i + 0.5) * slice + (rnd(0) - 0.5) * slice * 0.6)),
-			top: 32 + (rnd(1) - 0.5) * 42,
-			rot: rnd(2) * 32 - 16,
-			size: base + Math.round(rnd(3) * 14)
-		};
 	}
 
 	function startPull(gachapon: Gachapon) {
@@ -296,18 +281,6 @@
 		draggingId = null;
 	}
 
-	function getProbabilityColor(prob: number): string {
-		if (prob >= 70) return 'text-green-600';
-		if (prob >= 40) return 'text-yellow-600';
-		return 'text-red-600';
-	}
-
-	function getProbabilityBgColor(prob: number): string {
-		if (prob >= 70) return 'bg-green-100';
-		if (prob >= 40) return 'bg-yellow-100';
-		return 'bg-red-100';
-	}
-
 	async function refreshPendingAddress() {
 		try {
 			const response = await fetch(`${API_URL}/shop/orders/pending-address`, {
@@ -395,6 +368,7 @@
 		</button>
 	{:else}
 		<div in:fade={{ duration: 400 }}>
+			<section class="mb-12 rounded-2xl border border-gray-300 p-5 sm:p-6">
 			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
 				<Sparkles size={22} /> today's picks
 			</h2>
@@ -408,7 +382,7 @@
 					ondragleave={onDailyZoneDragLeave}
 					ondrop={onDailyZoneDrop}
 					role="list"
-					class="mb-12 rounded-2xl border-4 border-dashed p-8 text-center transition-all {dailyDropHover
+					class="mb-4 rounded-2xl border-4 border-dashed p-8 text-center transition-all {dailyDropHover
 						? 'border-black bg-indigo-50 text-gray-600'
 						: 'border-gray-300 text-gray-400'}"
 				>
@@ -420,7 +394,7 @@
 				ondragleave={onDailyZoneDragLeave}
 				ondrop={onDailyZoneDrop}
 				role="list"
-				class="mb-12 grid grid-cols-5 gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
+				class="grid grid-cols-5 gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
 					? 'border-dashed border-black bg-indigo-50'
 					: 'border-transparent'}"
 			>
@@ -430,7 +404,7 @@
 						draggable={true}
 						ondragstart={(e) => onDragStart(e, item)}
 						ondragend={onDragEnd}
-						class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-yellow-50 transition-all active:cursor-grabbing {draggingId ===
+						class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-white transition-all active:cursor-grabbing {draggingId ===
 						item.id
 							? 'opacity-30'
 							: ''}"
@@ -446,9 +420,7 @@
 									class="mb-1 h-14 w-full object-contain sm:h-20"
 								/>
 								<span
-									class="absolute top-0 right-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold {getProbabilityBgColor(
-										item.effectiveProbability
-									)} {getProbabilityColor(item.effectiveProbability)}"
+									class="absolute top-0 right-0 rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold text-white"
 								>
 									{item.effectiveProbability.toFixed(0)}%
 								</span>
@@ -467,6 +439,7 @@
 					</div>
 				{/each}
 			</div>
+			</section>
 
 			<!-- Your permanent shop: drop target -->
 			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
@@ -514,9 +487,7 @@
 									<div class="relative">
 										<img src={item.image} alt={item.name} class="mb-4 h-32 w-full object-contain" />
 										<span
-											class="absolute top-0 right-0 rounded-full px-2 py-1 text-xs font-bold {getProbabilityBgColor(
-												item.effectiveProbability
-											)} {getProbabilityColor(item.effectiveProbability)}"
+											class="absolute top-0 right-0 rounded-full bg-black px-2 py-1 text-xs font-bold text-white"
 										>
 											{item.effectiveProbability.toFixed(0)}%
 										</span>
@@ -577,22 +548,13 @@
 						title="see what's inside"
 					>
 						<div class="gachapon-globe-inner">
-							{#each gachapon.items.slice(0, 6) as item, i (item.id)}
-								{@const s = scatter(item.id, i, Math.min(gachapon.items.length, 6))}
-								<div
-									class="gachapon-scatter {item.count === 0 ? 'opacity-30 grayscale' : ''}"
-									style="left:{s.left}%; top:{s.top}%; width:{s.size}px; height:{s.size}px; transform: translate(-50%, -50%) rotate({s.rot}deg)"
-									title="{item.name}{item.count === 0
-										? ' (sold out)'
-										: `: ${item.pullChance}% chance`}"
-								>
-									{#if item.image}
-										<img src={item.image} alt={item.name} />
-									{:else}
-										<Spool size={s.size * 0.5} class="text-gray-400" />
-									{/if}
+							{#if gachapon.image}
+								<img class="gachapon-hero" src={gachapon.image} alt={gachapon.name} />
+							{:else}
+								<div class="gachapon-hero-fallback">
+									<HelpCircle size={72} strokeWidth={2.5} />
 								</div>
-							{/each}
+							{/if}
 						</div>
 						<span class="gachapon-glass"></span>
 					</button>
@@ -769,18 +731,19 @@
 		overflow: hidden;
 	}
 
-	.gachapon-scatter {
+	.gachapon-hero,
+	.gachapon-hero-fallback {
 		position: absolute;
+		inset: 12%;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		object-fit: contain;
+		filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.22));
 	}
 
-	.gachapon-scatter img {
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
-		filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+	.gachapon-hero-fallback {
+		color: color-mix(in srgb, var(--dome) 55%, #000);
 	}
 
 	.gachapon-glass {
