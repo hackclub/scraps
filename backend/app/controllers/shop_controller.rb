@@ -1,5 +1,25 @@
 class ShopController < ApplicationController
-  RETAINED_ITEMS_CAP = 2
+  RETAINED_ITEMS_CAP_BASE = 2
+
+  def self.retained_items_cap_for(user)
+    return RETAINED_ITEMS_CAP_BASE unless user
+
+    conn = ActiveRecord::Base.connection
+    row = conn.select_one("SELECT retained_cap_bonus, retained_cap_checked_on FROM users WHERE id = #{user.id}")
+    bonus = row["retained_cap_bonus"].to_i
+    checked_on = row["retained_cap_checked_on"] && Date.parse(row["retained_cap_checked_on"].to_s)
+    today = Date.current
+
+    if checked_on.nil?
+      conn.execute("UPDATE users SET retained_cap_checked_on = #{conn.quote(today.to_s)} WHERE id = #{user.id}")
+    elsif today > checked_on
+      days_away = (today - checked_on).to_i
+      bonus += [days_away / 2, 1].max
+      conn.execute("UPDATE users SET retained_cap_bonus = #{bonus}, retained_cap_checked_on = #{conn.quote(today.to_s)} WHERE id = #{user.id}")
+    end
+
+    RETAINED_ITEMS_CAP_BASE + bonus
+  end
 
   def items
     conn = ActiveRecord::Base.connection
@@ -43,7 +63,7 @@ class ShopController < ApplicationController
       FROM shop_items si WHERE si.id IN (#{ids.join(',')}) AND si.gachapon_only = false
     SQL
 
-    render_json({ cap: RETAINED_ITEMS_CAP, used: rows.length, items: hydrate_items(rows) })
+    render_json({ cap: self.class.retained_items_cap_for(current_user), used: rows.length, items: hydrate_items(rows) })
   end
 
   def retain_item
@@ -56,7 +76,7 @@ class ShopController < ApplicationController
     return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(target["gachapon_only"])
 
     count = conn.select_one("SELECT COUNT(*) AS cnt FROM shop_retained_items WHERE user_id = #{current_user.id}")["cnt"].to_i
-    return render_json({ error: "Your permanent shop is full" }, status: :unprocessable_entity) if count >= RETAINED_ITEMS_CAP
+    return render_json({ error: "Your permanent shop is full" }, status: :unprocessable_entity) if count >= self.class.retained_items_cap_for(current_user)
 
     already = conn.select_one("SELECT 1 FROM shop_retained_items WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
     return render_json({ error: "Already in your permanent shop" }, status: :unprocessable_entity) if already
