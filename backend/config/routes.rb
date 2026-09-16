@@ -169,6 +169,7 @@ Rails.application.routes.draw do
     delete "news/:id",                        to: "admin#delete_news"
 
     # Projects (admin actions)
+    get    "projects",                        to: "admin#projects_index"
     post   "projects/:id/sync-hours",         to: "admin#sync_hours"
     post   "projects/:id/unship",             to: "admin#unship_project"
     put    "projects/:id/notes",              to: "admin#update_project_notes"

@@ -1,7 +1,7 @@
 class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
-  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
+  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
   before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
@@ -172,6 +172,57 @@ class AdminController < ApplicationController
     updated = conn.select_one("UPDATE users SET internal_notes = #{conn.quote(notes)}, updated_at = NOW() WHERE id = #{params[:id].to_i} RETURNING id")
     return render_json({ error: "Not Found" }, status: :not_found) unless updated
     render_json({ success: true })
+  end
+
+  def projects_index
+    page = [params[:page].to_i, 1].max
+    limit = [[params[:limit].to_i.nonzero? || 20, 100].min, 1].max
+    offset = (page - 1) * limit
+    search = params[:search].to_s.strip
+    status = params[:status].to_s.strip
+
+    conn = ActiveRecord::Base.connection
+    conditions = ["(p.deleted = 0 OR p.deleted IS NULL)"]
+    if search.present?
+      if search.match?(/\A\d+\z/)
+        conditions << "(p.id = #{search.to_i} OR p.name ILIKE #{conn.quote('%' + search + '%')} OR u.username ILIKE #{conn.quote('%' + search + '%')})"
+      else
+        conditions << "(p.name ILIKE #{conn.quote('%' + search + '%')} OR u.username ILIKE #{conn.quote('%' + search + '%')})"
+      end
+    end
+    conditions << "p.status = #{conn.quote(status)}" if status.present?
+    where = conditions.join(" AND ")
+
+    rows = conn.select_all(<<~SQL).to_a
+      SELECT p.id, p.name, p.status, p.tier, p.tier_override, p.hours, p.hours_override,
+             p.scraps_awarded, p.views, p.created_at, p.updated_at, p.user_id,
+             u.username, u.avatar
+      FROM projects p
+      INNER JOIN users u ON u.id = p.user_id
+      WHERE #{where}
+      ORDER BY p.updated_at DESC
+      LIMIT #{limit} OFFSET #{offset}
+    SQL
+    total = conn.select_one("SELECT COUNT(*) AS cnt FROM projects p INNER JOIN users u ON u.id = p.user_id WHERE #{where}")["cnt"].to_i
+
+    data = rows.map do |p|
+      {
+        id: p["id"].to_i,
+        name: p["name"],
+        status: p["status"],
+        tier: (p["tier_override"] || p["tier"]).to_i,
+        hours: (p["hours_override"] || p["hours"]).to_f,
+        scraps_awarded: p["scraps_awarded"].to_i,
+        views: p["views"].to_i,
+        created_at: p["created_at"],
+        updated_at: p["updated_at"],
+        user_id: p["user_id"].to_i,
+        username: p["username"],
+        avatar: p["avatar"]
+      }
+    end
+
+    render_json({ data: data, pagination: { page: page, limit: limit, total: total, total_pages: (total.to_f / limit).ceil } })
   end
 
   def update_project_notes

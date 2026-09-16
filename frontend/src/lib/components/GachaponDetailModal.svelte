@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { fade, scale, slide } from 'svelte/transition';
-	import { X, Spool, ChevronDown } from '@lucide/svelte';
+	import { X, Spool, ChevronDown, HelpCircle } from '@lucide/svelte';
 
 	interface GachaItem {
 		id: number;
@@ -13,26 +13,24 @@
 		id: number;
 		name: string;
 		description: string | null;
+		image: string | null;
 		price: number;
 		items: GachaItem[];
 	}
 
 	let {
 		gachapon,
-		domeColor,
 		pulling = false,
 		onPull,
 		onClose
 	}: {
 		gachapon: Gachapon;
-		domeColor: string;
 		pulling?: boolean;
 		onPull: () => void;
 		onClose: () => void;
 	} = $props();
 
 	let inStock = $derived(gachapon.items.filter((i) => i.count !== 0));
-	let twitching = $state(false);
 	let expanded = $state(false);
 
 	function stockLabel(count: number): string {
@@ -41,29 +39,9 @@
 		return `${count} left`;
 	}
 
-	function scatter(id: number, i: number, n: number) {
-		const rnd = (k: number) => {
-			const x = Math.sin(id * (k + 1) * 12.9898 + i * 4.1414) * 43758.5453;
-			return x - Math.floor(x);
-		};
-		const slots = Math.max(n, 1);
-		const slice = 100 / slots;
-		const base = n <= 2 ? 104 : n <= 3 ? 90 : n <= 4 ? 78 : n <= 5 ? 68 : 58;
-		return {
-			left: Math.min(85, Math.max(15, (i + 0.5) * slice + (rnd(0) - 0.5) * slice * 0.6)),
-			top: 44 + (rnd(1) - 0.5) * 46,
-			rot: rnd(2) * 32 - 16,
-			size: base + Math.round(rnd(3) * 12)
-		};
-	}
-
 	function handlePull() {
-		if (pulling || twitching || inStock.length === 0) return;
-		twitching = true;
-		setTimeout(() => {
-			twitching = false;
-			onPull();
-		}, 380);
+		if (pulling || inStock.length === 0) return;
+		onPull();
 	}
 </script>
 
@@ -77,7 +55,6 @@
 >
 	<div
 		class="relative max-h-[90vh] w-full max-w-md overflow-hidden rounded-2xl border-4 border-black bg-white"
-		style="--dome:{domeColor}"
 		transition:scale={{ duration: 200, start: 0.94 }}
 	>
 		<button
@@ -88,29 +65,19 @@
 			<X size={16} />
 		</button>
 
-		<div class="gd-dome" class:twitch={twitching}>
-			{#each gachapon.items.slice(0, 7) as item, i (item.id)}
-				{@const s = scatter(item.id, i, Math.min(gachapon.items.length, 7))}
-				<div
-					class="gd-scatter {item.count === 0 ? 'opacity-30 grayscale' : ''}"
-					style="left:{s.left}%; top:{s.top}%; width:{s.size}px; height:{s.size}px; transform: translate(-50%, -50%) rotate({s.rot}deg)"
-					title={item.name}
-				>
-					{#if item.image}
-						<img src={item.image} alt={item.name} />
-					{:else}
-						<Spool size={s.size * 0.5} class="text-gray-400" />
-					{/if}
-				</div>
-			{/each}
+		<div class="flex h-40 items-center justify-center border-b-4 border-black bg-gray-50">
+			{#if gachapon.image}
+				<img
+					src={gachapon.image}
+					alt={gachapon.name}
+					class="h-full w-full object-contain p-4"
+				/>
+			{:else}
+				<HelpCircle size={64} strokeWidth={2.5} class="text-gray-400" />
+			{/if}
 		</div>
 
-		<div class="h-3 bg-black"></div>
-
-		<div
-			class="overflow-y-auto p-5"
-			style="max-height: calc(90vh - 12rem); background: color-mix(in srgb, var(--dome) 14%, #fff)"
-		>
+		<div class="overflow-y-auto p-5" style="max-height: calc(90vh - 10rem)">
 			<h2 class="text-2xl font-bold">{gachapon.name}</h2>
 			{#if gachapon.description}
 				<p class="mt-1 text-sm text-gray-600">{gachapon.description}</p>
@@ -137,19 +104,6 @@
 								? 'opacity-50'
 								: ''}"
 						>
-							{#if item.image}
-								<img
-									src={item.image}
-									alt={item.name}
-									class="h-10 w-10 shrink-0 rounded-lg border-2 border-black bg-white object-contain"
-								/>
-							{:else}
-								<div
-									class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-black bg-white"
-								>
-									<Spool size={16} class="text-gray-400" />
-								</div>
-							{/if}
 							<span class="flex-1 truncate text-sm font-bold">{item.name}</span>
 							<span class="text-xs text-gray-500">{stockLabel(item.count)}</span>
 							<span
@@ -164,69 +118,12 @@
 
 			<button
 				onclick={handlePull}
-				disabled={pulling || twitching || inStock.length === 0}
+				disabled={pulling || inStock.length === 0}
 				class="mt-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-black px-4 py-3 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
 			>
 				<Spool size={18} />
-				{inStock.length === 0
-					? 'sold out'
-					: pulling || twitching
-						? 'pulling…'
-						: `pull for ${gachapon.price}`}
+				{inStock.length === 0 ? 'sold out' : pulling ? 'pulling…' : `pull for ${gachapon.price}`}
 			</button>
 		</div>
 	</div>
 </div>
-
-<style>
-	.gd-dome {
-		position: relative;
-		height: 10rem;
-		border-bottom: 4px solid #000;
-		border-radius: 999px 999px 0 0 / 90% 90% 0 0;
-		background:
-			radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.92), transparent 46%),
-			color-mix(in srgb, var(--dome) 30%, #fff);
-		overflow: hidden;
-	}
-
-	.gd-scatter {
-		position: absolute;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-	}
-
-	.gd-scatter img {
-		width: 100%;
-		height: 100%;
-		object-fit: contain;
-		filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
-	}
-
-	.twitch {
-		animation: twitch 0.38s ease-in-out;
-	}
-
-	@keyframes twitch {
-		0%,
-		100% {
-			transform: translateX(0) rotate(0);
-		}
-		20% {
-			transform: translateX(-4px) rotate(-1.5deg);
-		}
-		45% {
-			transform: translateX(4px) rotate(1.5deg);
-		}
-		70% {
-			transform: translateX(-3px) rotate(-1deg);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.twitch {
-			animation-duration: 0.01ms;
-		}
-	}
-</style>

@@ -14,6 +14,7 @@
 		Shield,
 		ClipboardList,
 		Users,
+		FolderKanban,
 		ShoppingBag,
 		Newspaper,
 		PackageCheck,
@@ -255,6 +256,18 @@
 				>
 					<Users size={18} />
 					<span class="text-lg font-bold">{$t.nav.users}</span>
+				</a>
+
+				<a
+					href="/admin/projects"
+					class="flex cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 {currentPath.startsWith(
+						'/admin/projects'
+					)
+						? 'border-black bg-black text-white'
+						: 'border-black hover:border-dashed'}"
+				>
+					<FolderKanban size={18} />
+					<span class="text-lg font-bold">{$t.nav.projects}</span>
 				</a>
 
 				{#if isAdminOnly}
@@ -683,6 +696,19 @@
 					>
 						<Users size={20} />
 						<span class="text-lg font-bold">{$t.nav.users}</span>
+					</a>
+
+					<a
+						href="/admin/projects"
+						onclick={handleMobileNavClick}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath.startsWith(
+							'/admin/projects'
+						)
+							? 'border-black bg-black text-white'
+							: 'border-black hover:border-dashed'}"
+					>
+						<FolderKanban size={20} />
+						<span class="text-lg font-bold">{$t.nav.projects}</span>
 					</a>
 
 					{#if isAdminOnly}

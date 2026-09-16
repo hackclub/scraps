@@ -18,6 +18,7 @@
 		id: number;
 		name: string;
 		description: string | null;
+		image: string | null;
 		price: number;
 		items: GachaItem[];
 	}
@@ -221,7 +222,6 @@
 {#if detailGachapon && !reveal}
 	<GachaponDetailModal
 		gachapon={detailGachapon}
-		domeColor={domeFor(detailGachapon)}
 		onPull={() => detailGachapon && doPull(detailGachapon)}
 		onClose={() => (detailGachapon = null)}
 	/>

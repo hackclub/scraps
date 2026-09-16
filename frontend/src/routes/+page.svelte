@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Origami } from '@lucide/svelte';
+	import { Origami, Pause, Play } from '@lucide/svelte';
 	import Superscript from '$lib/components/Superscript.svelte';
 	import { login, getUser, captureReferralCode } from '$lib/auth-client';
-	import { API_URL } from '$lib/config';
+	import { API_URL, serverConfig } from '$lib/config';
+	import { formatHours } from '$lib/utils';
 	import { t } from '$lib/i18n';
+
+	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
 
 	let email = $state('');
 	let emailError = $state('');
@@ -69,6 +72,7 @@
 	let row2ScrollPos = $state(0);
 	let isManualScrolling = $state(false);
 	let manualScrollTimeout: ReturnType<typeof setTimeout>;
+	let isPaused = $state(false);
 
 	const SCROLL_SPEED = 0.5;
 	const ITEM_WIDTH = 280;
@@ -118,7 +122,7 @@
 		let animationId: number;
 
 		function animate() {
-			if (!isManualScrolling && totalSetWidth > 0) {
+			if (!isPaused && !isManualScrolling && totalSetWidth > 0) {
 				row1ScrollPos += SCROLL_SPEED;
 				row2ScrollPos += SCROLL_SPEED;
 
@@ -214,7 +218,21 @@
 <div id="scraps" class="flex min-h-dvh flex-col overflow-hidden">
 	<div class="px-6 pt-24 pb-8 md:px-12">
 		<div class="mx-auto max-w-3xl">
-			<h2 class="mb-2 text-4xl font-bold md:text-6xl">{$t.nav.scraps}</h2>
+			<div class="flex items-center gap-3">
+				<h2 class="mb-2 text-4xl font-bold md:text-6xl">{$t.nav.scraps}</h2>
+				<button
+					onclick={() => (isPaused = !isPaused)}
+					aria-label={isPaused ? 'resume item scroll' : 'pause item scroll'}
+					title={isPaused ? 'resume' : 'pause'}
+					class="mb-2 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-black transition-all hover:border-dashed"
+				>
+					{#if isPaused}
+						<Play size={18} />
+					{:else}
+						<Pause size={18} />
+					{/if}
+				</button>
+			</div>
 			<p class="text-lg text-gray-600 md:text-xl">{$t.landing.itemsUpForGrabs}</p>
 		</div>
 	</div>
@@ -238,7 +256,9 @@
 					>
 						<img src={item.image} alt={item.title} class="mb-3 h-32 w-full object-contain" />
 						<h3 class="text-lg font-bold">{item.title}</h3>
-						<p class="text-sm text-gray-600">{item.price} scraps</p>
+						<p class="text-sm text-gray-600">
+							~{formatHours(item.price / SCRAPS_PER_HOUR)} {$t.leaderboard.hours}
+						</p>
 						{#if item.description}
 							<p class="mt-1 text-sm">{item.description}</p>
 						{/if}
@@ -265,7 +285,9 @@
 					>
 						<img src={item.image} alt={item.title} class="mb-3 h-32 w-full object-contain" />
 						<h3 class="text-lg font-bold">{item.title}</h3>
-						<p class="text-sm text-gray-600">{item.price} scraps</p>
+						<p class="text-sm text-gray-600">
+							~{formatHours(item.price / SCRAPS_PER_HOUR)} {$t.leaderboard.hours}
+						</p>
 						{#if item.description}
 							<p class="mt-1 text-sm">{item.description}</p>
 						{/if}
@@ -404,6 +426,25 @@
 					{$t.about.similarPrizes}
 				</p>
 			</div>
+		</div>
+
+		<div class="mt-8 flex flex-wrap gap-3">
+			<a
+				href="https://forms.hackclub.com/bounty"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="cursor-pointer rounded-full border-4 border-black px-6 py-3 font-bold transition-all hover:border-dashed"
+			>
+				fulfillment bounty
+			</a>
+			<a
+				href="https://hackclub.com/privacy-and-terms"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="cursor-pointer rounded-full border-4 border-black px-6 py-3 font-bold transition-all hover:border-dashed"
+			>
+				privacy & terms
+			</a>
 		</div>
 	</div>
 </div>
