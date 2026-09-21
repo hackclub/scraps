@@ -65,7 +65,7 @@ export async function getUser(forceRefresh = false): Promise<User | null> {
 			}
 			const data = await response.json();
 			if (data.banned) {
-				window.location.href = 'https://fraud.land';
+				window.location.href = 'https://fraud.hackclub.com';
 				cachedUser = null;
 				return null;
 			}

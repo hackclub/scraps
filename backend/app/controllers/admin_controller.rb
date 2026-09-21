@@ -119,6 +119,15 @@ class AdminController < ApplicationController
       total_hours: projects.sum { |p| (p["hours_override"] || p["hours"]).to_f }
     }
 
+    retained_cap_bonus = conn.select_value("SELECT retained_cap_bonus FROM users WHERE id = #{target_id}").to_i
+    retained_ids = conn.select_all("SELECT shop_item_id FROM shop_retained_items WHERE user_id = #{target_id}").map { |r| r["shop_item_id"].to_i }
+    retained_items = retained_ids.any? ? conn.select_all("SELECT id, name, image, count FROM shop_items WHERE id IN (#{retained_ids.join(',')})").to_a : []
+    retained_shop = {
+      cap: ShopController::RETAINED_ITEMS_CAP_BASE + retained_cap_bonus,
+      used: retained_items.length,
+      items: retained_items.map { |i| { id: i["id"].to_i, name: i["name"], image: i["image"], count: i["count"].to_i } }
+    }
+
     balance = ScrapsService.get_user_scraps_balance(target_id)
     ht_suspected = false
     ht_banned = false
@@ -149,7 +158,8 @@ class AdminController < ApplicationController
       hackatime_suspected: ht_suspected,
       hackatime_banned: ht_banned,
       projects: projects,
-      stats: stats
+      stats: stats,
+      retained_shop: retained_shop
     })
   end
 
@@ -781,6 +791,7 @@ class AdminController < ApplicationController
       set_parts << "size_variants = #{conn.quote(size_variants.to_json)}"
     end
     set_parts << "gachapon_only = #{ActiveModel::Type::Boolean.new.cast(params[:gachaponOnly]) ? true : false}" if params.key?(:gachaponOnly)
+    set_parts << "hidden = #{ActiveModel::Type::Boolean.new.cast(params[:hidden]) ? true : false}" if params.key?(:hidden)
 
     updated = conn.select_one("UPDATE shop_items SET #{set_parts.join(', ')} WHERE id = #{params[:id].to_i} RETURNING id")
     return render_json({ error: "Not found" }, status: :not_found) unless updated

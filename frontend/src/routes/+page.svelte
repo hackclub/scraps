@@ -182,11 +182,11 @@
 		</h1>
 		<p class="mb-1 text-lg md:text-xl">
 			<strong>{$t.landing.youShip}</strong>
-			{$t.landing.anyProject}<Superscript number={1} tooltip={$t.landing.sillyTooltip} />
+			{$t.landing.anyProject}
 		</p>
 		<p class="mb-6 text-lg md:text-xl">
 			<strong>{$t.landing.weShip}</strong>
-			{$t.landing.chanceToWin}<Superscript number={2} tooltip={$t.landing.rareStickersTooltip} />
+			{$t.landing.chanceToWin}
 		</p>
 
 		<!-- Auth Section -->
@@ -308,20 +308,34 @@
 		<p class="mb-2">
 			<strong>{$t.landing.youShip}</strong>
 			{$t.landing.anyProject}
-			<Superscript number={3} tooltip={$t.landing.optionallySillyTooltip} />
+			<Superscript number={1} tooltip={$t.landing.optionallySillyTooltip} />
 		</p>
 
 		<p class="mb-6">
 			<strong>{$t.landing.weShip}</strong>
-			{$t.landing.weShipRandomItems}<Superscript number={4} tooltip={$t.landing.stickersTooltip} />
+			{$t.landing.weShipRandomItems}<Superscript number={2} tooltip={$t.landing.stickersTooltip} />
 			{$t.landing.moreHoursMoreStuff}
 		</p>
 
 		<p class="mb-6">
-			{$t.landing.coldAndWintery}<Superscript number={5} tooltip={$t.landing.vermontTooltip} />
-			{$t.landing.atHackClubHQ}<Superscript number={6} tooltip={$t.landing.hardwareTooltip} />{$t
+			{$t.landing.coldAndWintery}<Superscript number={3} tooltip={$t.landing.vermontTooltip} />
+			{$t.landing.atHackClubHQIntro}
+			<a
+				href="https://flavortown.hackclub.com/"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="cursor-pointer underline hover:no-underline">{$t.landing.flavortown}</a
+			>
+			{$t.landing.and}
+			<a
+				href="https://stardance.hackclub.com/"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="cursor-pointer underline hover:no-underline">{$t.landing.stardance}</a
+			>!
+			{$t.landing.atHackClubHQOutro}<Superscript number={4} tooltip={$t.landing.hardwareTooltip} />{$t
 				.landing.postcardsAndMore}<Superscript
-				number={7}
+				number={5}
 				tooltip={$t.landing.limitedEditionTooltip}
 			/>!
 		</p>
@@ -330,14 +344,21 @@
 
 		<p class="mb-6">
 			{$t.landing.simpleExplanation}<Superscript
-				number={8}
+				number={6}
 				tooltip={$t.landing.anyProjectTooltip}
 			/>{$t.landing.earnScraps}
 			<a
-				href="https://hackatime.hackclub.com"
+				href="https://hackatime.hackclub.com/"
 				target="_blank"
 				rel="noopener noreferrer"
 				class="cursor-pointer underline hover:no-underline">{$t.landing.hackatime}</a
+			>
+			{$t.landing.or}
+			<a
+				href="http://lapse.hackclub.com/"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="cursor-pointer underline hover:no-underline">{$t.landing.lapse}</a
 			>
 			{$t.landing.watchScrapsRollIn}
 		</p>
@@ -346,7 +367,7 @@
 
 		<p class="mb-6">
 			{$t.landing.currentlyRandomAssortment}<Superscript
-				number={9}
+				number={7}
 				tooltip={$t.landing.fudgeTooltip}
 			/>{$t.landing.moreItemsPlanned}
 			<strong>{$t.landing.stickers}</strong>
@@ -362,7 +383,7 @@
 			>
 				stickers.hackclub.com</a
 			>{$t.landing.hereIsYourChance}<Superscript
-				number={10}
+				number={8}
 				tooltip={$t.landing.collectionTooltip}
 			/>{$t.landing.rarestStickers}
 		</p>
@@ -428,7 +449,7 @@
 			</div>
 		</div>
 
-		<div class="mt-8 flex flex-wrap gap-3">
+		<div class="mt-8 flex flex-wrap justify-center gap-3">
 			<a
 				href="https://forms.hackclub.com/bounty"
 				target="_blank"

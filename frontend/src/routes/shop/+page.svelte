@@ -505,8 +505,8 @@
 		<PackageOpen size={22} /> gachapons
 	</h2>
 	<p class="mb-4 text-sm text-gray-600">
-		guaranteed to get one item from the pool: costs a bit more than buying it straight, since
-		there's no risk.
+		you're guaranteed to get one item from a gachapon! it might be a bit pricier, but you won't
+		lose any chances here.
 	</p>
 	{#if gachaponsLoading}
 		<div class="py-8 text-center text-gray-500">loading…</div>

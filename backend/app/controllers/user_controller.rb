@@ -33,6 +33,8 @@ class UserController < ApplicationController
     render_json({ success: true })
   end
 
+  TUTORIAL_GACHAPON_REWARDS = [1, 5, 10, 50].freeze
+
   def complete_tutorial
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
@@ -40,10 +42,15 @@ class UserController < ApplicationController
       return render_json({ success: true, already_completed: true })
     end
 
-    result = ActiveRecord::Base.transaction do
-      ActiveRecord::Base.connection.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
+    reward = params[:gachaponReward].to_i
+    reward = 5 unless TUTORIAL_GACHAPON_REWARDS.include?(reward)
+    picked_ids = Array(params[:pickedItemIds]).map(&:to_i).uniq.first(2)
 
-      fresh = ActiveRecord::Base.connection.select_one(
+    result = ActiveRecord::Base.transaction do
+      conn = ActiveRecord::Base.connection
+      conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
+
+      fresh = conn.select_one(
         "SELECT tutorial_completed FROM users WHERE id = #{current_user.id}"
       )
       if fresh && (fresh["tutorial_completed"] == true || fresh["tutorial_completed"] == "t" || fresh["tutorial_completed"] == 1)
@@ -52,18 +59,29 @@ class UserController < ApplicationController
 
       existing_bonus = UserBonus.find_by(user_id: current_user.id, reason: "tutorial_completion")
       if existing_bonus
-        ActiveRecord::Base.connection.execute(
+        conn.execute(
           "UPDATE users SET tutorial_completed = true, updated_at = NOW() WHERE id = #{current_user.id}"
         )
         next { already_completed: true }
       end
 
-      ActiveRecord::Base.connection.execute(
-        "UPDATE users SET tutorial_completed = true, updated_at = NOW() WHERE id = #{current_user.id}"
+      conn.execute(
+        "UPDATE users SET tutorial_completed = true, retained_cap_bonus = retained_cap_bonus + 1, updated_at = NOW() WHERE id = #{current_user.id}"
       )
-      UserBonus.create!(user_id: current_user.id, reason: "tutorial_completion", amount: 5)
+      UserBonus.create!(user_id: current_user.id, reason: "tutorial_completion", amount: reward)
 
-      { bonus_awarded: 5 }
+      retained_item_ids = picked_ids.any? ? conn.select_all(
+        "SELECT id FROM shop_items WHERE id IN (#{picked_ids.join(',')}) AND gachapon_only = false AND hidden = false"
+      ).map { |r| r["id"].to_i } : []
+      retained_item_ids.each do |item_id|
+        conn.execute(<<~SQL)
+          INSERT INTO shop_retained_items (user_id, shop_item_id, created_at)
+          VALUES (#{current_user.id}, #{item_id}, NOW())
+          ON CONFLICT DO NOTHING
+        SQL
+      end
+
+      { bonus_awarded: reward, retained_item_ids: retained_item_ids }
     end
 
     if result[:already_completed]

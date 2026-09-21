@@ -13,7 +13,9 @@
 		RotateCcw,
 		Upload,
 		Dices,
-		PackageOpen
+		PackageOpen,
+		Eye,
+		EyeOff
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
@@ -36,6 +38,7 @@
 		fulfillmentCost?: number | null;
 		sizeVariants?: { name: string; count: number }[];
 		gachaponOnly?: boolean;
+		hidden?: boolean;
 		createdAt: string;
 		updatedAt: string;
 	}
@@ -850,6 +853,26 @@
 		}
 	}
 
+	async function toggleHidden(item: ShopItem) {
+		try {
+			const response = await fetch(`${API_URL}/admin/shop/items/${item.id}`, {
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ hidden: !item.hidden })
+			});
+			if (response.ok) {
+				await fetchItems();
+			} else {
+				const data = await response.json();
+				errorModal = data.error || 'Failed to update item';
+			}
+		} catch (e) {
+			console.error('Failed to toggle visibility:', e);
+			errorModal = 'Failed to update item';
+		}
+	}
+
 	function requestDelete(id: number) {
 		deleteConfirmId = id;
 	}
@@ -962,6 +985,11 @@
 										>gachapon only</span
 									>
 								{/if}
+								{#if item.hidden}
+									<span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-bold text-gray-700"
+										>private</span
+									>
+								{/if}
 							</h3>
 							<p class="text-sm wrap-break-word text-gray-600">{item.description}</p>
 							<div class="mt-1 flex flex-wrap items-center gap-2 text-sm">
@@ -990,6 +1018,19 @@
 							</div>
 						</div>
 						<div class="flex shrink-0 gap-2">
+							<button
+								onclick={() => toggleHidden(item)}
+								title={item.hidden ? 'private - click to make public' : 'public - click to make private'}
+								class="cursor-pointer rounded-lg border-4 p-2 transition-all duration-200 hover:border-dashed {item.hidden
+									? 'border-gray-400 text-gray-400'
+									: 'border-black'}"
+							>
+								{#if item.hidden}
+									<EyeOff size={18} />
+								{:else}
+									<Eye size={18} />
+								{/if}
+							</button>
 							<button
 								onclick={() => openEditModal(item)}
 								class="cursor-pointer rounded-lg border-4 border-black p-2 transition-all duration-200 hover:border-dashed"

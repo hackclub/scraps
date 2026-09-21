@@ -20,7 +20,9 @@
 		try {
 			await fetch(`${API_URL}/user/complete-tutorial`, {
 				method: 'POST',
-				credentials: 'include'
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ gachaponReward, pickedItemIds })
 			});
 			await refreshUserScraps();
 		} catch {

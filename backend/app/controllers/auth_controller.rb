@@ -75,14 +75,14 @@ class AuthController < ApplicationController
     SlackChannelJoinJob.perform_later(user.id) if @new_user && user.slack_id.present?
 
     if user.role == "banned"
-      return redirect_to "https://fraud.land", allow_other_host: true
+      return redirect_to "https://fraud.hackclub.com", allow_other_host: true
     end
 
     # Check Hackatime ban
     begin
       ht_user = HackatimeService.get_user(identity["primary_email"], identity["slack_id"])
       if ht_user && ht_user[:banned]
-        return redirect_to "https://fraud.land", allow_other_host: true
+        return redirect_to "https://fraud.hackclub.com", allow_other_host: true
       end
     rescue StandardError => e
       Rails.logger.error("[AUTH] Failed to check Hackatime ban: #{e.message}")

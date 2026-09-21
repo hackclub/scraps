@@ -438,7 +438,7 @@
 					<div>
 						<p class="font-bold text-red-800">hackatime banned</p>
 						<p class="text-sm text-red-700">
-							this user is banned on hackatime. they will be redirected to fraud.land on login.
+							this user is banned on hackatime. they will be redirected to fraud.hackclub.com on login.
 						</p>
 					</div>
 				</div>

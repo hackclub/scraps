@@ -3,10 +3,7 @@
 	import { goto } from '$app/navigation';
 	import {
 		ArrowLeft,
-		Package,
 		Clock,
-		CheckCircle,
-		XCircle,
 		AlertTriangle,
 		Plus,
 		Gift,
@@ -75,11 +72,18 @@
 		createdAt: string;
 	}
 
+	interface RetainedShop {
+		cap: number;
+		used: number;
+		items: { id: number; name: string; image: string | null; count: number }[];
+	}
+
 	let currentUser = $state<CurrentUser | null>(null);
 	let targetUser = $state<TargetUser | null>(null);
 	let projects = $state<Project[]>([]);
 	let stats = $state<UserStats | null>(null);
 	let bonuses = $state<Bonus[]>([]);
+	let retainedShop = $state<RetainedShop | null>(null);
 	let hackatimeSuspected = $state(false);
 	let hackatimeBanned = $state(false);
 	let loading = $state(true);
@@ -192,6 +196,7 @@
 				targetUser = result.user;
 				projects = result.projects || [];
 				stats = result.stats;
+				retainedShop = result.retainedShop || null;
 				hackatimeSuspected = result.hackatimeSuspected || false;
 				hackatimeBanned = result.hackatimeBanned || false;
 				editingNotes = result.user?.internalNotes || '';
@@ -471,35 +476,6 @@
 		}
 	}
 
-	function getStatusIcon(status: string) {
-		switch (status) {
-			case 'shipped':
-				return CheckCircle;
-			case 'waiting_for_review':
-				return Clock;
-			case 'in_progress':
-				return AlertTriangle;
-			case 'permanently_rejected':
-				return XCircle;
-			default:
-				return Package;
-		}
-	}
-
-	function getStatusColor(status: string) {
-		switch (status) {
-			case 'shipped':
-				return 'text-green-600';
-			case 'waiting_for_review':
-			case 'in_progress':
-				return 'text-yellow-600';
-			case 'permanently_rejected':
-				return 'text-red-600';
-			default:
-				return 'text-gray-600';
-		}
-	}
-
 	function getStatusTag(status: string) {
 		switch (status) {
 			case 'shipped':
@@ -611,7 +587,7 @@
 					<div>
 						<p class="font-bold text-red-800">hackatime banned</p>
 						<p class="text-sm text-red-700">
-							this user is banned on hackatime. they will be redirected to fraud.land on login.
+							this user is banned on hackatime. they will be redirected to fraud.hackclub.com on login.
 						</p>
 					</div>
 				</div>
@@ -674,7 +650,7 @@
 						{#if editingRole === 'banned'}
 							<p class="mt-1 flex items-center gap-1 text-xs text-red-600">
 								<AlertTriangle size={12} />
-								banning will redirect this user to fraud.land on login
+								banning will redirect this user to fraud.hackclub.com on login
 							</p>
 						{/if}
 					</div>
@@ -718,63 +694,62 @@
 			{#if projects.length === 0}
 				<p class="text-gray-500">{$t.profile.noProjectsFound}</p>
 			{:else}
-				<div class="space-y-3">
+				<ul class="divide-y divide-gray-200">
 					{#each projects as project}
-						{@const StatusIcon = getStatusIcon(project.status)}
 						{@const statusTag = getStatusTag(project.status)}
-						<a
-							href="/admin/reviews/{project.id}"
-							class="flex cursor-pointer items-center justify-between rounded-lg border-2 border-black p-4 transition-all duration-200 hover:border-dashed {project.deleted
-								? 'opacity-50'
-								: ''}"
-						>
-							<div class="flex items-center gap-3">
-								<StatusIcon size={20} class={getStatusColor(project.status)} />
-								<div>
-									<p class="font-bold">
-										{project.name}
-										{#if project.deleted}
-											<span class="ml-2 text-xs font-normal text-red-500">(deleted)</span>
-										{/if}
-									</p>
-									<p class="text-xs text-gray-500">
-										{formatHours(project.hoursOverride ?? project.hours)}h
-									</p>
-								</div>
-							</div>
-							<div class="flex items-center gap-3">
-								{#if project.deleted}
-									<span
-										class="rounded-full border border-red-500 bg-red-100 px-2 py-1 text-xs font-bold text-red-700"
-									>
-										deleted
-									</span>
-								{:else}
-									<span
-										class="rounded-full border px-2 py-1 text-xs font-bold {statusTag.bg} {statusTag.text} {statusTag.border}"
-									>
-										{statusTag.label}
-									</span>
-								{/if}
-								{#if project.status === 'shipped' && (currentUser?.role === 'admin' || currentUser?.role === 'creator')}
-									<button
-										onclick={(e) => {
-											e.preventDefault();
-											e.stopPropagation();
-											showUnshipConfirm = project.id;
-										}}
-										class="cursor-pointer rounded-full border-2 border-red-600 px-2 py-1 text-xs font-bold text-red-600 transition-all duration-200 hover:border-dashed"
-									>
-										unship
-									</button>
-								{/if}
-								<span class="text-xs text-gray-500">
-									{new Date(project.updatedAt).toLocaleDateString()}
+						<li>
+							<a
+								href="/admin/reviews/{project.id}"
+								class="flex cursor-pointer items-center justify-between gap-3 py-2 text-sm hover:underline {project.deleted
+									? 'opacity-50'
+									: ''}"
+							>
+								<span class="truncate">
+									{project.name}
+									{#if project.deleted}<span class="text-red-500">(deleted)</span>{/if}
 								</span>
-							</div>
-						</a>
+								<span class="flex shrink-0 items-center gap-3 text-gray-500">
+									<span>{formatHours(project.hoursOverride ?? project.hours)}h</span>
+									<span>{project.deleted ? 'deleted' : statusTag.label}</span>
+									{#if project.status === 'shipped' && (currentUser?.role === 'admin' || currentUser?.role === 'creator')}
+										<button
+											onclick={(e) => {
+												e.preventDefault();
+												e.stopPropagation();
+												showUnshipConfirm = project.id;
+											}}
+											class="cursor-pointer rounded-full border-2 border-red-600 px-2 py-0.5 text-xs font-bold text-red-600 transition-all duration-200 hover:border-dashed"
+										>
+											unship
+										</button>
+									{/if}
+									<span>{new Date(project.updatedAt).toLocaleDateString()}</span>
+								</span>
+							</a>
+						</li>
 					{/each}
-				</div>
+				</ul>
+			{/if}
+		</div>
+
+		<!-- Shop slots -->
+		<div class="mt-6 rounded-2xl border-4 border-black p-6">
+			<h2 class="mb-4 text-xl font-bold">
+				shop slots ({retainedShop?.used ?? 0}/{retainedShop?.cap ?? 0})
+			</h2>
+			{#if !retainedShop || retainedShop.items.length === 0}
+				<p class="text-gray-500">no items retained</p>
+			{:else}
+				<ul class="divide-y divide-gray-200">
+					{#each retainedShop.items as item}
+						<li class="flex items-center gap-3 py-2 text-sm">
+							{#if item.image}
+								<img src={item.image} alt="" class="h-8 w-8 rounded object-cover" />
+							{/if}
+							<span class="truncate">{item.name}</span>
+						</li>
+					{/each}
+				</ul>
 			{/if}
 		</div>
 

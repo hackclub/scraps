@@ -33,9 +33,7 @@ export default {
 		itemsUpForGrabs: '(items up for grabs)',
 		tldr: 'tl;dr',
 		aboutScraps: 'about scraps',
-		sillyTooltip: 'silly, nonsensical, or fun',
-		rareStickersTooltip: '(including rare stickers)',
-		optionallySillyTooltip: 'optionally silly, nonsensical, or fun',
+		optionallySillyTooltip: 'can be silly, nonsensical, or fun!',
 		stickersTooltip: '(including stickers)',
 		vermontTooltip: 'in vermont',
 		hardwareTooltip: 'sensors, esp32s, arduinos, breadboards, and a singular resistor',
@@ -46,19 +44,26 @@ export default {
 			'soon to be made collection.hackclub.com to keep track of your sticker collection',
 		weShipRandomItems: 'random items from hq',
 		moreHoursMoreStuff: '(more hours, more stuff)',
-		coldAndWintery: "it's cold and wintery here",
-		atHackClubHQ:
-			'at hack club hq. after prototype, overglade, milkyway, and other hackathons, there are boxes and boxes of items, "scraps," if you will. now, dear hack clubber, this ysws is your chance to win the cool leftovers, including random hardware',
+		coldAndWintery: "it's starting to get a bit chilly here at",
+		atHackClubHQIntro:
+			'at hack club hq. After rummaging through the aftermath of the recent move, there are boxes and boxes of items, "scraps," if you will, from',
+		flavortown: 'flavortown',
+		stardance: 'stardance',
+		and: 'and',
+		atHackClubHQOutro:
+			'Now, dear hack clubber, this ysws is your chance to win the cool leftovers, including random hardware',
 		postcardsAndMore: ', postcards, fudge, and maybe a secret surprise',
 		butHow: 'but how, you may ask?',
 		simpleExplanation:
-			"well, it's simple: you just ship any projects that are slightly silly, nonsensical, or fun",
-		earnScraps: ', and you will earn scraps for the time you put in! track your time with',
+			"well, it's simple: you just ship any sort of project(with an emphasis on ones slightly silly, nonsensical, or fun)",
+		earnScraps: ', and you will earn scraps for the time you put in! Track your time with',
 		hackatime: 'hackatime',
+		or: 'or',
+		lapse: 'lapse',
 		watchScrapsRollIn: 'and watch the scraps roll in.',
 		whatCanYouWin: 'what can you win?',
 		currentlyRandomAssortment:
-			'currently, there is a random assortment of hardware left over from prototype, postcards, the famous vermont fudge',
+			'currently, there is a random assortment of hardware left over, postcards, the famous vermont fudge',
 		moreItemsPlanned: ', and more items planned as events wrap up. oh, and the best part,',
 		stickers: 'stickers!',
 		wonderedHowToGet: 'if you have ever wondered how to get the cool stickers from',
@@ -87,9 +92,9 @@ export default {
 			howDoesShopWork: 'how does the shop work?',
 			howDoesShopWorkAnswer:
 				'spend scraps to roll for prizes. each item has a probability of winning - boost your odds in the refinery!',
-			whatIsHackatime: 'what is hackatime?',
+			whatIsHackatime: 'what is hackatime/lapse?',
 			whatIsHackatimeAnswer:
-				"is hack club's time tracking tool that automatically logs your coding hours.",
+				"are hack club's time tracking tools that automatically log your coding hours.",
 			whatIsRefinery: 'what is the refinery?',
 			whatIsRefineryAnswer:
 				'spend scraps to increase your probability of winning an item. each upgrade boosts your chances!',
@@ -129,7 +134,7 @@ export default {
 		previousBuy: 'previous buy',
 		leaderboard: 'leaderboard',
 		wishlist: 'wishlist',
-		buyers: 'buyers',
+		buyers: 'winners',
 		noOneHasBoostedYet: 'no one has boosted yet',
 		peopleWantThisItem: 'people want this item',
 		includingYou: 'including you!',
@@ -446,7 +451,8 @@ export default {
 		howDoIGetStartedAnswer:
 			'sign in with your hack club account, connect <a href="https://hackatime.hackclub.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">hackatime</a>, and start building! when you\'re ready, submit your project for review. once approved, you\'ll receive scraps based on your hours.',
 		stillHaveQuestions: 'still have questions?',
-		reachOutOnSlack: 'reach out to us on the hack club slack in the #scraps channel',
+		reachOutOnSlack: 'reach out to us on the hack club slack in the',
+		scrapsHelpChannel: '#scraps-help',
 		joinSlack: 'join hack club slack'
 	},
 	profile: {
@@ -618,10 +624,10 @@ export default {
 	about: {
 		whoIsEligible: 'who is eligible?',
 		whoIsEligibleAnswer:
-			'scraps is for high schoolers! you need to be 13-18 years old to participate.',
+			'scraps is for high schoolers! Anybody from 13 to 18 years old can participate.',
 		howMuchDoesItCost: 'how much does it cost?',
 		howMuchDoesItCostAnswer:
-			'100% free - all the prizes are donated to us or paid for by hack club!',
+			'It\'s 100% free - all the prizes are donated to us or paid for by hack club!',
 		whatTypesOfProjects: 'what types of projects count?',
 		whatTypesOfProjectsAnswer:
 			"all kinds of technical projects as long as it's open-source on github!",

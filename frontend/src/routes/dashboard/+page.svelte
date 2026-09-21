@@ -113,24 +113,31 @@
 			<div
 				class="rounded-2xl border-4 border-black bg-white p-6 transition-all hover:border-dashed"
 			>
-				<p class="mb-2 text-lg font-bold">{$t.dashboard.faqQuestions.howDoesShopWork}</p>
+				<p class="mb-2 text-lg font-bold">{$t.dashboard.faqQuestions.whatIsHackatime}</p>
 				<p class="text-gray-600">
-					{$t.dashboard.faqQuestions.howDoesShopWorkAnswer}
+					<a
+						href="https://hackatime.hackclub.com/"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="underline hover:no-underline">hackatime</a
+					>
+					{$t.landing.and}
+					<a
+						href="http://lapse.hackclub.com/"
+						target="_blank"
+						rel="noopener noreferrer"
+						class="underline hover:no-underline">lapse</a
+					>
+					{$t.dashboard.faqQuestions.whatIsHackatimeAnswer}
 				</p>
 			</div>
 
 			<div
 				class="rounded-2xl border-4 border-black bg-white p-6 transition-all hover:border-dashed"
 			>
-				<p class="mb-2 text-lg font-bold">{$t.dashboard.faqQuestions.whatIsHackatime}</p>
+				<p class="mb-2 text-lg font-bold">{$t.dashboard.faqQuestions.howDoesShopWork}</p>
 				<p class="text-gray-600">
-					<a
-						href="https://hackatime.hackclub.com"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="underline hover:no-underline">hackatime</a
-					>
-					{$t.dashboard.faqQuestions.whatIsHackatimeAnswer}
+					{$t.dashboard.faqQuestions.howDoesShopWorkAnswer}
 				</p>
 			</div>
 

@@ -65,7 +65,7 @@
 			<X size={16} />
 		</button>
 
-		<div class="flex h-40 items-center justify-center border-b-4 border-black bg-gray-50">
+		<div class="flex h-48 items-center justify-center border-b-4 border-black bg-gray-50">
 			{#if gachapon.image}
 				<img
 					src={gachapon.image}
@@ -77,7 +77,7 @@
 			{/if}
 		</div>
 
-		<div class="overflow-y-auto p-5" style="max-height: calc(90vh - 10rem)">
+		<div class="overflow-y-auto p-5" style="max-height: calc(90vh - 12rem)">
 			<h2 class="text-2xl font-bold">{gachapon.name}</h2>
 			{#if gachapon.description}
 				<p class="mt-1 text-sm text-gray-600">{gachapon.description}</p>

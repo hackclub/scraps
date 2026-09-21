@@ -89,6 +89,13 @@
 		<h2 class="mb-4 text-2xl font-bold">{$t.faq.stillHaveQuestions}</h2>
 		<p class="mb-6 text-gray-600">
 			{$t.faq.reachOutOnSlack}
+			<a
+				href="https://hackclub.enterprise.slack.com/archives/C0ACV8C3MPH"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="underline hover:no-underline">{$t.faq.scrapsHelpChannel}</a
+			>
+			channel
 		</p>
 		<a
 			href="https://slack.hackclub.com/"

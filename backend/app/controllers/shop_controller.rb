@@ -30,7 +30,7 @@ class ShopController < ApplicationController
         SELECT si.*,
           (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
         FROM shop_items si
-        WHERE si.gachapon_only = false
+        WHERE si.gachapon_only = false AND si.hidden = false
       SQL
     end
 
@@ -40,7 +40,7 @@ class ShopController < ApplicationController
   def daily_picks
     conn = ActiveRecord::Base.connection
     ids = Rails.cache.fetch("shop:daily:v2:#{Date.current}", expires_in: 1.hour) do
-      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false").map { |r| r["id"].to_i }
+      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false AND hidden = false").map { |r| r["id"].to_i }
       seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
       pool.shuffle(random: Random.new(seed)).first(5)
     end
@@ -94,9 +94,21 @@ class ShopController < ApplicationController
     render_json({ success: true })
   end
 
+  ACTIVE_GACHAPONS_PER_WEEK = 3
+
   def gachapons
     conn = ActiveRecord::Base.connection
-    gachapons = conn.select_all("SELECT * FROM shop_gachapons ORDER BY created_at ASC").to_a
+    all_gachapons = conn.select_all("SELECT * FROM shop_gachapons ORDER BY created_at ASC").to_a
+    return render_json([]) if all_gachapons.empty?
+
+    week_start = Date.current.beginning_of_week
+    active_ids = Rails.cache.fetch("shop:gachapons:weekly:#{week_start}", expires_in: 1.week) do
+      ids = all_gachapons.map { |g| g["id"].to_i }
+      seed = Digest::MD5.hexdigest(week_start.to_s).to_i(16) % (2**31)
+      ids.shuffle(random: Random.new(seed)).first(ACTIVE_GACHAPONS_PER_WEEK)
+    end
+
+    gachapons = all_gachapons.select { |g| active_ids.include?(g["id"].to_i) }
     return render_json([]) if gachapons.empty?
 
     gachapon_ids = gachapons.map { |g| g["id"].to_i }
