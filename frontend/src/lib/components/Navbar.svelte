@@ -174,7 +174,7 @@
 	class="fixed top-0 right-0 left-0 z-50 hidden items-center justify-between bg-white/90 px-6 py-4 backdrop-blur-sm md:flex md:px-8 lg:px-12 xl:px-24 2xl:px-64"
 >
 	<a href={isLoggedIn ? '/dashboard' : '/'} class="shrink-0">
-		<img src="/flag-standalone-bw.png" alt="Hack Club" class="h-8 md:h-10" />
+		<img src="/images/scraps_logo.png" alt="scraps" class="h-8 md:h-10" />
 	</a>
 
 	{#if isHomePage}
@@ -571,7 +571,7 @@
 	class="fixed top-0 right-0 left-0 z-50 flex items-center justify-between bg-white/90 px-4 py-3 backdrop-blur-sm md:hidden"
 >
 	<a href={isLoggedIn ? '/dashboard' : '/'} class="shrink-0">
-		<img src="/flag-standalone-bw.png" alt="Hack Club" class="h-8" />
+		<img src="/images/scraps_logo.png" alt="scraps" class="h-8" />
 	</a>
 
 	<button

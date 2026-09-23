@@ -44,6 +44,7 @@ export interface ShopItem {
 	displayRollCost?: number;
 	sizeVariants?: { name: string; count: number }[];
 	gachaponOnly?: boolean;
+	consolationPrize?: boolean;
 }
 
 export interface LeaderboardEntry {

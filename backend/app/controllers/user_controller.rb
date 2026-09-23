@@ -66,12 +66,12 @@ class UserController < ApplicationController
       end
 
       conn.execute(
-        "UPDATE users SET tutorial_completed = true, retained_cap_bonus = retained_cap_bonus + 1, updated_at = NOW() WHERE id = #{current_user.id}"
+        "UPDATE users SET tutorial_completed = true, retained_cap_bonus = retained_cap_bonus + 1, retained_cap_checked_on = #{conn.quote(Date.current.to_s)}, updated_at = NOW() WHERE id = #{current_user.id}"
       )
       UserBonus.create!(user_id: current_user.id, reason: "tutorial_completion", amount: reward)
 
       retained_item_ids = picked_ids.any? ? conn.select_all(
-        "SELECT id FROM shop_items WHERE id IN (#{picked_ids.join(',')}) AND gachapon_only = false AND hidden = false"
+        "SELECT id FROM shop_items WHERE id IN (#{picked_ids.join(',')}) AND gachapon_only = false AND consolation_prize = false AND hidden = false"
       ).map { |r| r["id"].to_i } : []
       retained_item_ids.each do |item_id|
         conn.execute(<<~SQL)

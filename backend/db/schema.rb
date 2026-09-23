@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_16_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -232,6 +232,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_120000) do
     t.integer "base_upgrade_cost"
     t.float "boost_amount", default: 5.0, null: false
     t.text "category", default: "", null: false
+    t.boolean "consolation_prize", default: false, null: false
     t.float "cost_multiplier"
     t.integer "count", default: 0, null: false
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
@@ -240,6 +241,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_16_120000) do
     t.boolean "gachapon_only", default: false, null: false
     t.boolean "hidden", default: false, null: false
     t.text "image", default: "", null: false
+    t.text "internal_shop_link"
     t.text "name", null: false
     t.float "per_roll_multiplier", default: 0.05, null: false
     t.integer "price", default: 0, null: false

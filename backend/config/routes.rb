@@ -62,6 +62,8 @@ Rails.application.routes.draw do
     delete "retained/:id",                 to: "shop#unretain_item"
     get    "gachapons",                    to: "shop#gachapons"
     post   "gachapons/:id/purchase",       to: "shop#purchase_gachapon"
+    get    "consolation",                  to: "shop#consolation_credits"
+    post   "consolation/:id/claim",        to: "shop#claim_consolation"
   end
 
   # Referrals

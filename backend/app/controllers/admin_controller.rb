@@ -514,6 +514,7 @@ class AdminController < ApplicationController
       #{where}
       ORDER BY so.created_at DESC
     SQL
+    rows = rows.reject { |r| r["status"] == "unclaimed" } unless status_filter == "unclaimed"
 
     emails = rows.map { |r| r["user_email"] }.compact.uniq
     ban_map = {}
@@ -583,7 +584,9 @@ class AdminController < ApplicationController
     current_order = conn.select_one("SELECT id, status, order_type, shop_item_id, quantity FROM shop_orders WHERE id = #{order_id}")
     return render_json({ error: "Not found" }, status: :not_found) unless current_order
 
-    if order_status && %w[purchase luck_win].include?(current_order["order_type"])
+    restocks = %w[purchase luck_win].include?(current_order["order_type"]) ||
+      (current_order["order_type"] == "consolation" && current_order["status"] != "unclaimed")
+    if order_status && restocks
       was_inactive = %w[cancelled deleted].include?(current_order["status"])
       will_be_inactive = %w[cancelled deleted].include?(order_status)
       qty = current_order["quantity"].to_i
@@ -759,15 +762,17 @@ class AdminController < ApplicationController
     return render_json({ error: "Invalid price" }, status: :bad_request) if price < 0
 
     fulfillment_cost = params[:fulfillmentCost].to_s.strip.presence
+    internal_shop_link = params[:internalShopLink].to_s.strip.presence
     size_variants = (params[:sizeVariants] || []).map { |v| { name: v[:name].to_s.strip, count: v[:count].to_i } }.select { |v| v[:name].present? }
     gachapon_only = ActiveModel::Type::Boolean.new.cast(params[:gachaponOnly]) ? true : false
+    consolation_prize = !gachapon_only && ActiveModel::Type::Boolean.new.cast(params[:consolationPrize]) ? true : false
 
     pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, base_prob)
 
     conn = ActiveRecord::Base.connection
     conn.execute(<<~SQL)
-      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, size_variants, gachapon_only, created_at, updated_at)
-      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, #{conn.quote(size_variants.to_json)}, #{gachapon_only}, NOW(), NOW())
+      INSERT INTO shop_items (name, image, description, price, category, count, base_probability, base_upgrade_cost, boost_amount, roll_cost_override, per_roll_multiplier, fulfillment_cost, internal_shop_link, size_variants, gachapon_only, consolation_prize, created_at, updated_at)
+      VALUES (#{conn.quote(name)}, #{conn.quote(image)}, #{conn.quote(description)}, #{price}, #{conn.quote(category)}, #{count}, #{pricing[:base_probability]}, #{pricing[:base_upgrade_cost]}, #{pricing[:boost_amount]}, #{conn.quote(roll_cost_override)}, #{per_roll_mult}, #{conn.quote(fulfillment_cost)}, #{conn.quote(internal_shop_link)}, #{conn.quote(size_variants.to_json)}, #{gachapon_only}, #{consolation_prize}, NOW(), NOW())
     SQL
     render_json({ success: true }, status: :created)
   end
@@ -786,11 +791,13 @@ class AdminController < ApplicationController
     set_parts << "boost_amount = #{params[:boostAmount].to_f}" if params.key?(:boostAmount)
     set_parts << "roll_cost_override = #{conn.quote(params[:rollCostOverride])}" if params.key?(:rollCostOverride)
     set_parts << "fulfillment_cost = #{conn.quote(params[:fulfillmentCost].to_s.strip.presence)}" if params.key?(:fulfillmentCost)
+    set_parts << "internal_shop_link = #{conn.quote(params[:internalShopLink].to_s.strip.presence)}" if params.key?(:internalShopLink)
     if params.key?(:sizeVariants)
       size_variants = (params[:sizeVariants] || []).map { |v| { name: v[:name].to_s.strip, count: v[:count].to_i } }.select { |v| v[:name].present? }
       set_parts << "size_variants = #{conn.quote(size_variants.to_json)}"
     end
     set_parts << "gachapon_only = #{ActiveModel::Type::Boolean.new.cast(params[:gachaponOnly]) ? true : false}" if params.key?(:gachaponOnly)
+    set_parts << "consolation_prize = #{ActiveModel::Type::Boolean.new.cast(params[:consolationPrize]) ? true : false}" if params.key?(:consolationPrize)
     set_parts << "hidden = #{ActiveModel::Type::Boolean.new.cast(params[:hidden]) ? true : false}" if params.key?(:hidden)
 
     updated = conn.select_one("UPDATE shop_items SET #{set_parts.join(', ')} WHERE id = #{params[:id].to_i} RETURNING id")

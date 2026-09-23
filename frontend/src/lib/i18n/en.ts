@@ -103,7 +103,7 @@ export default {
 				"project reviews typically take a few days. you'll be notified when your project is approved!",
 			whatIfILoseRoll: 'what happens if i lose a roll?',
 			whatIfILoseRollAnswer:
-				'you receive consolation paper from hq. your refinery upgrades are kept, so try again!',
+				'you get a consolation roll for a guaranteed consolation prize. your refinery upgrades are kept, so try again!',
 			moreQuestions: 'more questions?'
 		}
 	},
@@ -123,11 +123,17 @@ export default {
 		chance: 'chance',
 		myOrders: 'my orders',
 		clear: 'clear',
-		consolationScrapPaper: 'consolation scrap paper',
+		consolationRollTitle: 'consolation roll',
+		oneConsolationWaiting: 'you have a consolation roll waiting',
+		manyConsolationsWaiting: 'you have {count} consolation rolls waiting',
+		consolationWaitingHint: 'roll it for a guaranteed consolation prize.',
+		rollConsolation: 'roll consolation prize',
+		rollingConsolation: 'rolling...',
+		rollConsolationLater: 'save it for later',
 		betterLuckNextTime: 'better luck next time!',
 		youRolledButNeeded: 'you rolled {rolled} but needed {needed} or less.',
 		consolationMessage:
-			"as a consolation, we'll send you a random scrap of paper from hack club hq! just tell us where to ship it.",
+			'as a consolation, you get a roll for a guaranteed consolation prize. roll it now or save it for later.',
 		yourChance: 'your chance',
 		base: 'base',
 		yourBoost: 'your boost',
@@ -431,7 +437,7 @@ export default {
 			'<a href="https://hackatime.hackclub.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">hackatime</a> is hack club\'s time tracking tool that automatically logs your coding hours. connect it to your projects so we can see how much time you\'ve spent building. visit <a href="https://hackatime.hackclub.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">hackatime.hackclub.com</a> to get started.',
 		howDoesShopWork: 'how does the shop work?',
 		howDoesShopWorkAnswer:
-			"in the shop, you spend scraps to roll for prizes. each item has a base probability of winning. if you don't win, you get consolation scrap paper. the cost to roll depends on the item's rarity.",
+			"in the shop, you spend scraps to roll for prizes. each item has a base probability of winning. if you don't win, you get a consolation roll for a guaranteed consolation prize. the cost to roll depends on the item's rarity.",
 		whatIsRefinery: 'what is the refinery?',
 		whatIsRefineryAnswer:
 			"the refinery lets you spend scraps to increase your probability of winning an item. each upgrade boosts your chances, but costs increase with each upgrade. it's a way to improve your odds before rolling.",
@@ -443,7 +449,7 @@ export default {
 			"project reviews typically take a few days. our team reviews each submission to verify the work and assign an appropriate tier. you'll be notified when your project is approved.",
 		whatIfILoseRoll: 'what happens if i lose a roll?',
 		whatIfILoseRollAnswer:
-			'if you lose a roll, you receive consolation paper from hq as a small prize. your refinery upgrades are kept, so you can try again with improved odds. keep building projects to earn more scraps!',
+			'if you lose a roll, you get a consolation roll that always lands on a consolation prize. your refinery upgrades are kept, so you can try again with improved odds. keep building projects to earn more scraps!',
 		canISubmitAnyProject: 'can i submit any project?',
 		canISubmitAnyProjectAnswer:
 			'projects should be original work you\'ve built. they need a github repo, description, and tracked hours via <a href="https://hackatime.hackclub.com" target="_blank" rel="noopener noreferrer" class="underline hover:no-underline">hackatime</a>. both new projects and improvements to existing ones count!',

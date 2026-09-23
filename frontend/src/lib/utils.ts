@@ -10,6 +10,14 @@ export function stockLabel(count: number): string {
 	return isInfiniteStock(count) ? '∞' : String(count);
 }
 
+// Must match backend ScrapsService.compute_roll_threshold exactly: the real
+// roll number 1..threshold wins, not 1..effectiveProbability (the number
+// shown to the user as "your chance" is intentionally softer than the actual
+// cutoff — see the try_luck comment in shop_controller.rb about display_rolled).
+export function computeRollThreshold(probability: number): number {
+	return Math.max(1, Math.floor((probability * 17) / 20));
+}
+
 export function reviewerScoreMultiplier(
 	score: number,
 	floorMult: number,

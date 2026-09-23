@@ -3,9 +3,10 @@
 	import { API_URL } from '$lib/config';
 	import { refreshUserScraps, userScrapsStore } from '$lib/auth-client';
 	import HeartButton from './HeartButton.svelte';
+	import RollStrip from './RollStrip.svelte';
 	import { type ShopItem, updateShopItemHeart } from '$lib/stores';
 	import { t } from '$lib/i18n';
-	import { isInfiniteStock, stockLabel } from '$lib/utils';
+	import { isInfiniteStock, stockLabel, computeRollThreshold } from '$lib/utils';
 
 	interface LeaderboardUser {
 		userId: string;
@@ -77,6 +78,7 @@
 	let canAffordFull = $derived($userScrapsStore >= item.price);
 	let alertMessage = $state<string | null>(null);
 	let alertType = $state<'error' | 'info'>('info');
+	let rollReveal = $state<{ finalNumber: number; won: boolean; finish: () => void } | null>(null);
 
 	function getProbabilityColor(prob: number): string {
 		if (prob >= 70) return 'text-green-600';
@@ -177,9 +179,14 @@
 
 			await refreshUserScraps();
 			if (data.won) {
-				onTryLuck(data.orderId);
+				rollReveal = { finalNumber: data.rolled, won: true, finish: () => onTryLuck(data.orderId) };
 			} else if (data.consolationOrderId) {
-				onConsolation(data.consolationOrderId, data.rolled, Math.floor(data.effectiveProbability));
+				rollReveal = {
+					finalNumber: data.rolled,
+					won: false,
+					finish: () =>
+						onConsolation(data.consolationOrderId, data.rolled, Math.floor(data.effectiveProbability))
+				};
 			} else {
 				alertType = 'error';
 				alertMessage = $t.shop.somethingWentWrong;
@@ -576,6 +583,20 @@
 		</div>
 	{/if}
 </div>
+
+{#if rollReveal}
+	<RollStrip
+		itemName={item.name}
+		finalNumber={rollReveal.finalNumber}
+		winThreshold={computeRollThreshold(item.effectiveProbability)}
+		won={rollReveal.won}
+		onDone={() => {
+			const finish = rollReveal?.finish;
+			rollReveal = null;
+			finish?.();
+		}}
+	/>
+{/if}
 
 <style>
 	@keyframes float {

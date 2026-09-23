@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { Check } from '@lucide/svelte';
 
 	import { getUser, refreshUserScraps, userScrapsStore } from '$lib/auth-client';
 	import { shopItemsStore, shopLoading, fetchShopItems, type ShopItem } from '$lib/stores';
@@ -14,6 +15,20 @@
 	let upgrading = $state<number | null>(null);
 	let undoing = $state<number | null>(null);
 	let alertMessage = $state<string | null>(null);
+
+	// A small rising-and-fading checkmark over the button that was just
+	// upgraded. Tokened so a second upgrade (on this item or another) can't
+	// have its own timeout clear a newer checkmark out from under it.
+	let checkToken = 0;
+	let activeCheck = $state<{ itemId: number; token: number } | null>(null);
+
+	function flashUpgradeCheck(itemId: number) {
+		const token = ++checkToken;
+		activeCheck = { itemId, token };
+		setTimeout(() => {
+			if (activeCheck?.token === token) activeCheck = null;
+		}, 900);
+	}
 
 	async function fetchMyShopIds() {
 		shopSelectionLoading = true;
@@ -70,6 +85,7 @@
 				)
 			);
 			await refreshUserScraps();
+			flashUpgradeCheck(item.id);
 		} catch (_e) {
 			alertMessage = $t.refinery.failedToUpgrade;
 		} finally {
@@ -222,7 +238,12 @@
 								</div>
 							</div>
 						</div>
-						<div class="flex items-center gap-2 sm:text-right">
+						<div class="relative flex items-center gap-2 sm:text-right">
+							{#if activeCheck?.itemId === item.id}
+								<span class="upgrade-check" aria-hidden="true">
+									<Check size={16} strokeWidth={3} />
+								</span>
+							{/if}
 							{#if soldOut}
 								{#if item.userBoostPercent > 0}
 									<button
@@ -294,3 +315,48 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.upgrade-check {
+		position: absolute;
+		top: -6px;
+		right: 0;
+		z-index: 10;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		border-radius: 999px;
+		border: 2px solid #000;
+		background: #000;
+		color: #fff;
+		pointer-events: none;
+		animation: upgrade-check-rise 900ms ease-out forwards;
+	}
+
+	@keyframes upgrade-check-rise {
+		0% {
+			transform: translateY(4px) scale(0.6);
+			opacity: 0;
+		}
+		20% {
+			transform: translateY(0) scale(1.05);
+			opacity: 1;
+		}
+		35% {
+			transform: translateY(0) scale(1);
+			opacity: 1;
+		}
+		100% {
+			transform: translateY(-26px) scale(1);
+			opacity: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.upgrade-check {
+			animation-duration: 0.01ms;
+		}
+	}
+</style>

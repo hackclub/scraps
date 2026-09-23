@@ -42,9 +42,77 @@
 	let winningItemName = $state<string | null>(null);
 	let pendingOrders = $state<{ orderId: number; itemName: string }[]>([]);
 
-	let consolationOrderId = $state<number | null>(null);
+	interface ConsolationCredit {
+		id: number;
+		itemName: string;
+		itemImage: string | null;
+		createdAt: string;
+	}
+
+	let consolationCredits = $state<ConsolationCredit[]>([]);
+	let consolationPromptId = $state<number | null>(null);
 	let consolationRolled = $state<number | null>(null);
 	let consolationNeeded = $state<number | null>(null);
+	let claimingConsolation = $state(false);
+	let consolationReveal = $state<{
+		orderId: number;
+		itemName: string;
+		itemImage: string | null;
+	} | null>(null);
+
+	async function fetchConsolationCredits() {
+		try {
+			const res = await fetch(`${API_URL}/shop/consolation`, { credentials: 'include' });
+			if (res.ok) {
+				const data = await res.json();
+				consolationCredits = Array.isArray(data) ? data : [];
+			}
+		} catch (e) {
+			console.error('Failed to load consolation rolls:', e);
+		}
+	}
+
+	async function claimConsolation(id: number) {
+		claimingConsolation = true;
+		try {
+			const res = await fetch(`${API_URL}/shop/consolation/${id}/claim`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			const data = await res.json();
+			if (res.ok && data.success) {
+				consolationPromptId = null;
+				consolationRolled = null;
+				consolationNeeded = null;
+				consolationReveal = {
+					orderId: data.order.id,
+					itemName: data.order.itemName,
+					itemImage: data.order.itemImage ?? null
+				};
+			} else {
+				showToast(data.error || 'could not use that consolation roll', 'error');
+			}
+		} catch (e) {
+			console.error('Failed to claim consolation roll:', e);
+			showToast('could not use that consolation roll', 'error');
+		} finally {
+			claimingConsolation = false;
+			fetchConsolationCredits();
+		}
+	}
+
+	function dismissConsolationPrompt() {
+		consolationPromptId = null;
+		consolationRolled = null;
+		consolationNeeded = null;
+	}
+
+	function finishConsolationReveal() {
+		if (!consolationReveal) return;
+		winningItemName = consolationReveal.itemName;
+		winningOrderId = consolationReveal.orderId;
+		consolationReveal = null;
+	}
 
 	interface Gachapon {
 		id: number;
@@ -299,10 +367,11 @@
 	}
 
 	function handleConsolation(orderId: number, rolled: number, needed: number) {
-		consolationOrderId = orderId;
+		consolationPromptId = orderId;
 		consolationRolled = rolled;
 		consolationNeeded = needed;
 		selectedItem = null;
+		fetchConsolationCredits();
 	}
 
 	function handleAddressComplete() {
@@ -321,6 +390,7 @@
 		fetchDaily();
 		fetchRetained();
 		fetchGachapons();
+		fetchConsolationCredits();
 		refreshPendingAddress();
 	});
 </script>
@@ -332,6 +402,28 @@
 <div class="mx-auto max-w-6xl px-6 pt-24 pb-24 md:px-12">
 	<h1 class="mb-2 text-4xl font-bold md:text-5xl">{$t.nav.shop}</h1>
 	<p class="mb-8 text-lg text-gray-600">{$t.shop.itemsUpForGrabs}</p>
+
+	{#if consolationCredits.length > 0 && consolationPromptId === null}
+		<div
+			class="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-4 border-yellow-500 bg-yellow-50 p-4"
+		>
+			<div>
+				<p class="font-bold text-yellow-800">
+					{consolationCredits.length === 1
+						? $t.shop.oneConsolationWaiting
+						: $t.shop.manyConsolationsWaiting.replace('{count}', String(consolationCredits.length))}
+				</p>
+				<p class="text-sm text-yellow-700">{$t.shop.consolationWaitingHint}</p>
+			</div>
+			<button
+				onclick={() => claimConsolation(consolationCredits[0].id)}
+				disabled={claimingConsolation}
+				class="cursor-pointer rounded-full border-4 border-black bg-black px-5 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
+			>
+				{claimingConsolation ? $t.shop.rollingConsolation : $t.shop.rollConsolation}
+			</button>
+		</div>
+	{/if}
 
 	<!-- New items of the day -->
 	{#if dailyLoading}
@@ -578,7 +670,7 @@
 	/>
 {/if}
 
-{#if winningOrderId && winningItemName && !pullReveal}
+{#if winningOrderId && winningItemName && !pullReveal && !consolationReveal}
 	<AddressSelectModal
 		orderId={winningOrderId}
 		itemName={winningItemName}
@@ -591,22 +683,15 @@
 	/>
 {/if}
 
-{#if consolationOrderId}
-	<AddressSelectModal
-		orderId={consolationOrderId}
-		itemName={$t.shop.consolationScrapPaper}
-		onClose={() => {
-			consolationOrderId = null;
-			consolationRolled = null;
-			consolationNeeded = null;
-		}}
-		onComplete={() => {
-			consolationOrderId = null;
-			consolationRolled = null;
-			consolationNeeded = null;
-		}}
+{#if consolationPromptId}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={(e) => e.target === e.currentTarget && dismissConsolationPrompt()}
+		onkeydown={(e) => e.key === 'Escape' && dismissConsolationPrompt()}
+		role="dialog"
+		tabindex="-1"
 	>
-		{#snippet header()}
+		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6 text-center">
 			<div class="mb-4 rounded-xl border-2 border-yellow-400 bg-yellow-50 p-4">
 				<p class="font-bold text-yellow-800">{$t.shop.betterLuckNextTime}</p>
 				<p class="mt-1 text-sm text-yellow-700">
@@ -614,12 +699,35 @@
 						.replace('{rolled}', String(consolationRolled))
 						.replace('{needed}', String(consolationNeeded))}
 				</p>
-				<p class="mt-2 text-sm text-yellow-700">
-					{$t.shop.consolationMessage}
-				</p>
+				<p class="mt-2 text-sm text-yellow-700">{$t.shop.consolationMessage}</p>
 			</div>
-		{/snippet}
-	</AddressSelectModal>
+			<div class="flex flex-col gap-2">
+				<button
+					onclick={() => consolationPromptId && claimConsolation(consolationPromptId)}
+					disabled={claimingConsolation}
+					class="cursor-pointer rounded-full border-4 border-black bg-black px-6 py-3 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
+				>
+					{claimingConsolation ? $t.shop.rollingConsolation : $t.shop.rollConsolation}
+				</button>
+				<button
+					onclick={dismissConsolationPrompt}
+					disabled={claimingConsolation}
+					class="cursor-pointer rounded-full border-4 border-black px-6 py-2 font-bold transition-all hover:border-dashed disabled:opacity-50"
+				>
+					{$t.shop.rollConsolationLater}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if consolationReveal}
+	<GachaponPull
+		itemName={consolationReveal.itemName}
+		itemImage={consolationReveal.itemImage}
+		gachaponName={$t.shop.consolationRollTitle}
+		onDone={finishConsolationReveal}
+	/>
 {/if}
 
 <a

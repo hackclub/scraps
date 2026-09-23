@@ -1,4 +1,6 @@
 class ShopController < ApplicationController
+  class ShopError < StandardError; end
+
   RETAINED_ITEMS_CAP_BASE = 2
 
   def self.retained_items_cap_for(user)
@@ -30,7 +32,7 @@ class ShopController < ApplicationController
         SELECT si.*,
           (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
         FROM shop_items si
-        WHERE si.gachapon_only = false AND si.hidden = false
+        WHERE si.gachapon_only = false AND si.consolation_prize = false AND si.hidden = false
       SQL
     end
 
@@ -40,7 +42,7 @@ class ShopController < ApplicationController
   def daily_picks
     conn = ActiveRecord::Base.connection
     ids = Rails.cache.fetch("shop:daily:v2:#{Date.current}", expires_in: 1.hour) do
-      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false AND hidden = false").map { |r| r["id"].to_i }
+      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false AND consolation_prize = false AND hidden = false").map { |r| r["id"].to_i }
       seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
       pool.shuffle(random: Random.new(seed)).first(5)
     end
@@ -60,7 +62,7 @@ class ShopController < ApplicationController
     ids = conn.select_all("SELECT shop_item_id FROM shop_retained_items WHERE user_id = #{current_user.id} ORDER BY created_at ASC").map { |r| r["shop_item_id"].to_i }
     rows = ids.any? ? conn.select_all(<<~SQL).to_a : []
       SELECT si.*, (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
-      FROM shop_items si WHERE si.id IN (#{ids.join(',')}) AND si.gachapon_only = false
+      FROM shop_items si WHERE si.id IN (#{ids.join(',')}) AND si.gachapon_only = false AND si.consolation_prize = false
     SQL
 
     render_json({ cap: self.class.retained_items_cap_for(current_user), used: rows.length, items: hydrate_items(rows) })
@@ -71,9 +73,10 @@ class ShopController < ApplicationController
 
     item_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
-    target = conn.select_one("SELECT gachapon_only FROM shop_items WHERE id = #{item_id}")
+    target = conn.select_one("SELECT gachapon_only, consolation_prize FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless target
-    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(target["gachapon_only"])
+    reason = off_shelf_reason(target)
+    return render_json({ error: reason }, status: :unprocessable_entity) if reason
 
     count = conn.select_one("SELECT COUNT(*) AS cnt FROM shop_retained_items WHERE user_id = #{current_user.id}")["cnt"].to_i
     return render_json({ error: "Your permanent shop is full" }, status: :unprocessable_entity) if count >= self.class.retained_items_cap_for(current_user)
@@ -161,16 +164,13 @@ class ShopController < ApplicationController
         conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
 
         affordable = ScrapsService.can_afford?(current_user.id, price)
-        unless affordable
-          bal = ScrapsService.get_user_scraps_balance(current_user.id)[:balance]
-          raise({ type: "insufficient_funds", balance: bal }.to_s)
-        end
+        raise ShopError, "insufficient_funds" unless affordable
 
         item_ids = conn.select_all("SELECT shop_item_id FROM shop_gachapon_items WHERE gachapon_id = #{gachapon_id}").map { |r| r["shop_item_id"].to_i }
-        raise({ type: "empty_gachapon" }.to_s) if item_ids.empty?
+        raise ShopError, "empty_gachapon" if item_ids.empty?
 
         available = conn.select_all("SELECT * FROM shop_items WHERE id IN (#{item_ids.join(',')}) AND count != 0 FOR UPDATE").to_a
-        raise({ type: "out_of_stock" }.to_s) if available.empty?
+        raise ShopError, "out_of_stock" if available.empty?
 
         won_item = weighted_sample(available) { |row| gachapon_pull_weight(row["price"]) }
         won_item_id = won_item["id"].to_i
@@ -206,11 +206,10 @@ class ShopController < ApplicationController
           status: order_row[:order]["status"]
         }
       })
-    rescue ActiveRecord::StatementInvalid => e
-      msg = e.message
-      return render_json({ error: "Insufficient scraps", required: price }, status: :unprocessable_entity) if msg.include?("insufficient_funds")
-      return render_json({ error: "This gachapon has no items in it" }, status: :unprocessable_entity) if msg.include?("empty_gachapon")
-      return render_json({ error: "All items in this gachapon are sold out" }, status: :unprocessable_entity) if msg.include?("out_of_stock")
+    rescue ShopError => e
+      return render_json({ error: "Insufficient scraps", required: price }, status: :unprocessable_entity) if e.message == "insufficient_funds"
+      return render_json({ error: "This gachapon has no items in it" }, status: :unprocessable_entity) if e.message == "empty_gachapon"
+      return render_json({ error: "All items in this gachapon are sold out" }, status: :unprocessable_entity) if e.message == "out_of_stock"
       raise
     end
   end
@@ -293,7 +292,8 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
-    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(item["gachapon_only"])
+    reason = off_shelf_reason(item)
+    return render_json({ error: reason }, status: :unprocessable_entity) if reason
     infinite = infinite_stock?(item["count"])
 
     if !infinite && item["count"].to_i < quantity
@@ -308,16 +308,11 @@ class ShopController < ApplicationController
         conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
 
         affordable = ScrapsService.can_afford?(current_user.id, total_price)
-        unless affordable
-          bal = ScrapsService.get_user_scraps_balance(current_user.id)[:balance]
-          raise({ type: "insufficient_funds", balance: bal }.to_s)
-        end
+        raise ShopError, "insufficient_funds" unless affordable
 
         unless infinite
           locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
-          unless locked && locked["count"].to_i >= quantity
-            raise({ type: "out_of_stock" }.to_s)
-          end
+          raise ShopError, "out_of_stock" unless locked && locked["count"].to_i >= quantity
 
           conn.execute("UPDATE shop_items SET count = count - #{quantity}, updated_at = NOW() WHERE id = #{item_id}")
         end
@@ -356,14 +351,9 @@ class ShopController < ApplicationController
           status: order_row["status"]
         }
       })
-    rescue ActiveRecord::StatementInvalid => e
-      msg = e.message
-      if msg.include?("insufficient_funds")
-        return render_json({ error: "Insufficient scraps", required: total_price }, status: :unprocessable_entity)
-      end
-      if msg.include?("out_of_stock")
-        return render_json({ error: "Not enough stock" }, status: :unprocessable_entity)
-      end
+    rescue ShopError => e
+      return render_json({ error: "Insufficient scraps", required: total_price }, status: :unprocessable_entity) if e.message == "insufficient_funds"
+      return render_json({ error: "Not enough stock" }, status: :unprocessable_entity) if e.message == "out_of_stock"
       raise
     end
   end
@@ -375,7 +365,8 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
-    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(item["gachapon_only"])
+    reason = off_shelf_reason(item)
+    return render_json({ error: reason }, status: :unprocessable_entity) if reason
     infinite = infinite_stock?(item["count"])
     return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
@@ -387,7 +378,7 @@ class ShopController < ApplicationController
 
         unless infinite
           locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
-          raise({ type: "out_of_stock" }.to_s) unless locked && locked["count"].to_i >= 1
+          raise ShopError, "out_of_stock" unless locked && locked["count"].to_i >= 1
         end
 
         boost_row = conn.select_one("SELECT COALESCE(SUM(boost_amount),0) AS bp FROM refinery_orders WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
@@ -413,9 +404,7 @@ class ShopController < ApplicationController
         roll_cost = (base_roll_cost * (1 + per_roll_mult * prev_rolls)).round
 
         balance = ScrapsService.get_user_scraps_balance(current_user.id)[:balance]
-        unless balance >= roll_cost
-          raise({ type: "insufficient_funds", balance: balance, cost: roll_cost }.to_s)
-        end
+        raise ShopError, "insufficient_funds" unless balance >= roll_cost
 
         rolled = rand(1..100)
         threshold = ScrapsService.compute_roll_threshold(effective_prob)
@@ -451,7 +440,7 @@ class ShopController < ApplicationController
         else
           consolation_row = conn.select_one(<<~SQL)
             INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, notes, created_at, updated_at)
-            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'pending', 'consolation', #{conn.quote("Consolation scrap paper - rolled #{display_rolled}, needed #{effective_prob.to_i} or less")}, NOW(), NOW())
+            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'unclaimed', 'consolation', #{conn.quote("Lost roll - rolled #{display_rolled}, needed #{effective_prob.to_i} or less")}, NOW(), NOW())
             RETURNING id
           SQL
 
@@ -479,12 +468,63 @@ class ShopController < ApplicationController
       else
         render_json({ success: true, won: false, consolation_order_id: roll_result[:consolation_order_id], effective_probability: roll_result[:effective_probability], rolled: roll_result[:rolled], roll_cost: roll_result[:roll_cost] })
       end
-    rescue ActiveRecord::StatementInvalid => e
-      msg = e.message
-      return render_json({ error: "Insufficient scraps" }, status: :unprocessable_entity) if msg.include?("insufficient_funds")
-      return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if msg.include?("out_of_stock")
+    rescue ShopError => e
+      return render_json({ error: "Insufficient scraps" }, status: :unprocessable_entity) if e.message == "insufficient_funds"
+      return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if e.message == "out_of_stock"
       raise
     end
+  end
+
+  def consolation_credits
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
+      SELECT so.id, so.created_at, si.name AS item_name, si.image AS item_image
+      FROM shop_orders so
+      INNER JOIN shop_items si ON si.id = so.shop_item_id
+      WHERE so.user_id = #{current_user.id} AND so.order_type = 'consolation' AND so.status = 'unclaimed'
+      ORDER BY so.created_at ASC
+    SQL
+
+    render_json(rows.map { |r| { id: r["id"].to_i, created_at: r["created_at"], item_name: r["item_name"], item_image: r["item_image"] } })
+  end
+
+  def claim_consolation
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    order_id = params[:id].to_i
+    conn = ActiveRecord::Base.connection
+
+    outcome = ActiveRecord::Base.transaction do
+      conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
+
+      credit = conn.select_one(<<~SQL)
+        SELECT id FROM shop_orders
+        WHERE id = #{order_id} AND user_id = #{current_user.id} AND order_type = 'consolation' AND status = 'unclaimed'
+        FOR UPDATE
+      SQL
+      next { error: "Consolation roll not found or already used", status: :not_found } unless credit
+
+      pool = conn.select_all("SELECT * FROM shop_items WHERE consolation_prize = true AND count != 0 FOR UPDATE").to_a
+      next { error: "No consolation prizes are in stock right now, your roll is saved so try again later", status: :unprocessable_entity } if pool.empty?
+
+      won = pool.sample
+      conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{won['id'].to_i}") unless infinite_stock?(won["count"])
+      conn.execute("UPDATE shop_orders SET shop_item_id = #{won['id'].to_i}, status = 'pending', updated_at = NOW() WHERE id = #{order_id}")
+
+      { prize: won }
+    end
+
+    return render_json({ error: outcome[:error] }, status: outcome[:status]) if outcome[:error]
+
+    render_json({
+      success: true,
+      order: {
+        id: order_id,
+        item_name: outcome[:prize]["name"],
+        item_image: outcome[:prize]["image"].to_s.presence
+      }
+    })
   end
 
   def upgrade_probability
@@ -494,7 +534,8 @@ class ShopController < ApplicationController
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT * FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless item
-    return render_json({ error: "This item is only available from a gachapon" }, status: :unprocessable_entity) if truthy?(item["gachapon_only"])
+    reason = off_shelf_reason(item)
+    return render_json({ error: reason }, status: :unprocessable_entity) if reason
     infinite = infinite_stock?(item["count"])
     return render_json({ error: "Item is out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
@@ -504,7 +545,7 @@ class ShopController < ApplicationController
 
         unless infinite
           stock = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
-          raise({ type: "out_of_stock" }.to_s) unless stock && stock["count"].to_i >= 1
+          raise ShopError, "out_of_stock" unless stock && stock["count"].to_i >= 1
         end
 
         boost_row = conn.select_one("SELECT COALESCE(SUM(boost_amount),0) AS bp FROM refinery_orders WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
@@ -516,7 +557,7 @@ class ShopController < ApplicationController
         adj_base = (item["base_probability"].to_f * penalty_mult / 100.0).floor
         max_boost = 100 - adj_base
 
-        raise({ type: "max_probability" }.to_s) if current_boost >= max_boost
+        raise ShopError, "max_probability" if current_boost >= max_boost
 
         upgrade_count_row = conn.select_one("SELECT COUNT(*) AS cnt FROM refinery_orders WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
         upgrade_count = upgrade_count_row["cnt"].to_i
@@ -525,13 +566,10 @@ class ShopController < ApplicationController
         actual_spent = spent_row["total"].to_f
 
         cost = ScrapsService.get_upgrade_cost(item["price"].to_i, upgrade_count, actual_spent, item["base_upgrade_cost"]&.to_i)
-        raise({ type: "max_upgrades" }.to_s) if cost.nil?
+        raise ShopError, "max_upgrades" if cost.nil?
 
         affordable = ScrapsService.can_afford?(current_user.id, cost)
-        unless affordable
-          bal = ScrapsService.get_user_scraps_balance(current_user.id)[:balance]
-          raise({ type: "insufficient_funds", balance: bal, cost: cost }.to_s)
-        end
+        raise ShopError, "insufficient_funds" unless affordable
 
         boost_amount = item["boost_amount"].to_f
         new_boost = current_boost + boost_amount
@@ -546,11 +584,10 @@ class ShopController < ApplicationController
       end
 
       render_json(result)
-    rescue ActiveRecord::StatementInvalid => e
-      msg = e.message
-      return render_json({ error: "Already at maximum probability" }, status: :unprocessable_entity) if msg.include?("max_probability")
-      return render_json({ error: "Upgrade budget exhausted" }, status: :unprocessable_entity) if msg.include?("max_upgrades")
-      return render_json({ error: "Insufficient scraps" }, status: :unprocessable_entity) if msg.include?("insufficient_funds")
+    rescue ShopError => e
+      return render_json({ error: "Already at maximum probability" }, status: :unprocessable_entity) if e.message == "max_probability"
+      return render_json({ error: "Upgrade budget exhausted" }, status: :unprocessable_entity) if e.message == "max_upgrades"
+      return render_json({ error: "Insufficient scraps" }, status: :unprocessable_entity) if e.message == "insufficient_funds"
       raise
     end
   end
@@ -658,10 +695,10 @@ class ShopController < ApplicationController
     rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
              so.shipping_address, so.tracking_number, so.is_fulfilled, so.created_at,
-             si.id AS item_id, si.name AS item_name, si.image AS item_image
+             si.id AS item_id, si.name AS item_name, si.image AS item_image, si.consolation_prize AS item_is_consolation_prize
       FROM shop_orders so
       INNER JOIN shop_items si ON si.id = so.shop_item_id
-      WHERE so.user_id = #{current_user.id}
+      WHERE so.user_id = #{current_user.id} AND so.status != 'unclaimed'
       ORDER BY so.created_at DESC
     SQL
 
@@ -679,7 +716,8 @@ class ShopController < ApplicationController
         created_at: r["created_at"],
         item_id: r["item_id"].to_i,
         item_name: r["item_name"],
-        item_image: r["item_image"]
+        item_image: r["item_image"],
+        item_is_consolation_prize: truthy?(r["item_is_consolation_prize"])
       }
     })
   end
@@ -692,7 +730,7 @@ class ShopController < ApplicationController
              si.id AS item_id, si.name AS item_name, si.image AS item_image
       FROM shop_orders so
       INNER JOIN shop_items si ON si.id = so.shop_item_id
-      WHERE so.user_id = #{current_user.id} AND so.shipping_address IS NULL
+      WHERE so.user_id = #{current_user.id} AND so.shipping_address IS NULL AND so.status != 'unclaimed'
       ORDER BY so.created_at DESC
     SQL
 
@@ -852,6 +890,12 @@ class ShopController < ApplicationController
     val == true || val == "t" || val == 1 || val == "1"
   end
 
+  def off_shelf_reason(item)
+    return "This item is only available from a gachapon" if truthy?(item["gachapon_only"])
+    return "This item is only available as a consolation prize" if truthy?(item["consolation_prize"])
+    nil
+  end
+
   def weighted_sample(rows)
     weights = rows.map { |row| yield(row).to_f }
     total = weights.sum
@@ -922,6 +966,7 @@ class ShopController < ApplicationController
       per_roll_multiplier: (item["per_roll_multiplier"] || 0.05).to_f,
       heart_count: item["heart_count"].to_i,
       gachapon_only: truthy?(item["gachapon_only"]),
+      consolation_prize: truthy?(item["consolation_prize"]),
       size_variants: parse_size_variants(item["size_variants"]).select { |v| v["count"].to_i > 0 },
       created_at: item["created_at"],
       updated_at: item["updated_at"]

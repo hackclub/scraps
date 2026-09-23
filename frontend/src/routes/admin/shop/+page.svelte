@@ -15,12 +15,13 @@
 		Dices,
 		PackageOpen,
 		Eye,
-		EyeOff
+		EyeOff,
+		Link
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { t } from '$lib/i18n';
-	import { isInfiniteStock, stockLabel } from '$lib/utils';
+	import { isInfiniteStock, stockLabel, computeRollThreshold } from '$lib/utils';
 
 	interface ShopItem {
 		id: number;
@@ -36,8 +37,10 @@
 		rollCostOverride: number | null;
 		perRollMultiplier?: number | null;
 		fulfillmentCost?: number | null;
+		internalShopLink?: string | null;
 		sizeVariants?: { name: string; count: number }[];
 		gachaponOnly?: boolean;
+		consolationPrize?: boolean;
 		hidden?: boolean;
 		createdAt: string;
 		updatedAt: string;
@@ -148,7 +151,19 @@
 	let formCount = $state(0);
 	let formInfiniteStock = $derived(formCount < 0);
 	let formSizeVariants = $state<{ name: string; count: number }[]>([]);
-	let formGachaponOnly = $state(false);
+	type ItemClass = 'regular' | 'gachapon' | 'consolation';
+	let formItemClass = $state<ItemClass>('regular');
+
+	function itemClassOf(item: ShopItem): ItemClass {
+		if (item.consolationPrize) return 'consolation';
+		if (item.gachaponOnly) return 'gachapon';
+		return 'regular';
+	}
+
+	function selectItemClass(next: ItemClass) {
+		formItemClass = next;
+		if (next === 'consolation' && !formCategory.trim()) formCategory = 'consolation';
+	}
 	let formIsApparel = $derived(
 		formCategory
 			.toLowerCase()
@@ -174,7 +189,17 @@
 	}
 
 	async function randomizeOdds() {
-		formBaseProbability = randomInt(5, 80);
+		formBaseProbability = randomInt(1, 99);
+		formRollCostOverride = null;
+		await recalculatePricing();
+	}
+
+	// Dragging the slider updates the live EV preview instantly (client-side,
+	// via formEV below); this only re-syncs boost/upgrade-cost/roll-cost from
+	// the server once the drag ends, so it matches backend pricing exactly
+	// without spamming compute-pricing on every pixel of drag.
+	async function updateBaseProbability(value: number) {
+		formBaseProbability = value;
 		formRollCostOverride = null;
 		await recalculatePricing();
 	}
@@ -193,6 +218,7 @@
 	let formBoostAmount = $state(1);
 	let formRollCostOverride = $state<number | null>(null);
 	let formFulfillmentCost = $state<number | null>(null);
+	let formInternalShopLink = $state('');
 	let formMonetaryValue = $state(0);
 	let formError = $state<string | null>(null);
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in template
@@ -213,11 +239,6 @@
 		}
 		const baseProb = baseProbability ?? effectiveProbability;
 		return Math.max(1, Math.round(basePrice * (baseProb / 100)));
-	}
-
-	// Must match backend computeRollThreshold exactly
-	function computeRollThreshold(probability: number): number {
-		return Math.max(1, Math.floor((probability * 17) / 20));
 	}
 
 	// Must match backend calculateShopItemPricing exactly
@@ -555,7 +576,10 @@
 
 	let gachaLinkableItems = $derived(
 		items.filter(
-			(i) => !i.gachaponOnly && !gachaRows.some((r) => r.kind === 'existing' && r.itemId === i.id)
+			(i) =>
+				!i.gachaponOnly &&
+				!i.consolationPrize &&
+				!gachaRows.some((r) => r.kind === 'existing' && r.itemId === i.id)
 		)
 	);
 
@@ -764,8 +788,9 @@
 		formBoostAmount = 1;
 		formRollCostOverride = null;
 		formFulfillmentCost = null;
+		formInternalShopLink = '';
 		formSizeVariants = [];
-		formGachaponOnly = false;
+		formItemClass = 'regular';
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
@@ -790,8 +815,9 @@
 		formBoostAmount = item.boostAmount ?? 1;
 		formRollCostOverride = item.rollCostOverride ?? null;
 		formFulfillmentCost = item.fulfillmentCost ?? null;
+		formInternalShopLink = item.internalShopLink ?? '';
 		formSizeVariants = item.sizeVariants ? item.sizeVariants.map((v) => ({ ...v })) : [];
-		formGachaponOnly = item.gachaponOnly ?? false;
+		formItemClass = itemClassOf(item);
 		formError = null;
 		showDetailedEV = false;
 		showModal = true;
@@ -834,7 +860,9 @@
 					boostAmount: formBoostAmount,
 					rollCostOverride: formRollCostOverride,
 					fulfillmentCost: formFulfillmentCost,
-					gachaponOnly: formGachaponOnly,
+					internalShopLink: formInternalShopLink.trim(),
+					gachaponOnly: formItemClass === 'gachapon',
+					consolationPrize: formItemClass === 'consolation',
 					sizeVariants: formIsApparel ? formSizeVariants.filter((v) => v.name.trim()) : []
 				})
 			});
@@ -985,6 +1013,12 @@
 										>gachapon only</span
 									>
 								{/if}
+								{#if item.consolationPrize}
+									<span
+										class="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-700"
+										>consolation prize</span
+									>
+								{/if}
 								{#if item.hidden}
 									<span class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-bold text-gray-700"
 										>private</span
@@ -1016,6 +1050,23 @@
 									>~{(item.price / SCRAPS_PER_HOUR).toFixed(1)} hrs to earn</span
 								>
 							</div>
+							{#if item.internalShopLink}
+								<p class="mt-2 flex items-center gap-1 text-xs text-gray-500">
+									<Link size={12} class="shrink-0" />
+									{#if /^https?:\/\//.test(item.internalShopLink)}
+										<a
+											href={item.internalShopLink}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="truncate underline hover:text-black"
+										>
+											{item.internalShopLink}
+										</a>
+									{:else}
+										<span class="truncate">{item.internalShopLink}</span>
+									{/if}
+								</p>
+							{/if}
 						</div>
 						<div class="flex shrink-0 gap-2">
 							<button
@@ -1326,6 +1377,18 @@
 					<p class="mt-1 text-xs text-gray-500">manual: not derived from value</p>
 				</div>
 
+				<div>
+					<label for="internalShopLink" class="mb-1 block text-sm font-bold">internal shop</label>
+					<input
+						id="internalShopLink"
+						type="text"
+						bind:value={formInternalShopLink}
+						placeholder="link or note for where you fulfill this from"
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
+					<p class="mt-1 text-xs text-gray-500">admin only: never shown to users</p>
+				</div>
+
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<label for="count" class="mb-1 block text-sm font-bold">stock count</label>
@@ -1427,16 +1490,56 @@
 					</div>
 				{/if}
 
-				<label class="flex cursor-pointer items-start gap-2 rounded-xl border-2 border-black p-3">
-					<input type="checkbox" bind:checked={formGachaponOnly} class="mt-0.5 cursor-pointer" />
-					<span class="text-sm">
-						<span class="font-bold">gachapon only</span>
-						<span class="block text-xs text-gray-500">
-							hide from the normal shop (daily picks, rolls, keep-forever): only winnable from a
-							gachapon it's added to
-						</span>
-					</span>
-				</label>
+				<div class="rounded-xl border-2 border-black p-3">
+					<p class="mb-2 text-sm font-bold">item class</p>
+					<div class="flex flex-col gap-2">
+						<label class="flex cursor-pointer items-start gap-2">
+							<input
+								type="radio"
+								name="itemClass"
+								checked={formItemClass === 'regular'}
+								onchange={() => selectItemClass('regular')}
+								class="mt-0.5 cursor-pointer"
+							/>
+							<span class="text-sm">
+								<span class="font-bold">regular</span>
+								<span class="block text-xs text-gray-500">
+									sold in the shop: buyable, rollable, upgradeable
+								</span>
+							</span>
+						</label>
+						<label class="flex cursor-pointer items-start gap-2">
+							<input
+								type="radio"
+								name="itemClass"
+								checked={formItemClass === 'gachapon'}
+								onchange={() => selectItemClass('gachapon')}
+								class="mt-0.5 cursor-pointer"
+							/>
+							<span class="text-sm">
+								<span class="font-bold">gachapon only</span>
+								<span class="block text-xs text-gray-500">
+									hide from the normal shop (daily picks, rolls, keep-forever): only winnable from a gachapon it's added to
+								</span>
+							</span>
+						</label>
+						<label class="flex cursor-pointer items-start gap-2">
+							<input
+								type="radio"
+								name="itemClass"
+								checked={formItemClass === 'consolation'}
+								onchange={() => selectItemClass('consolation')}
+								class="mt-0.5 cursor-pointer"
+							/>
+							<span class="text-sm">
+								<span class="font-bold">consolation prize</span>
+								<span class="block text-xs text-gray-500">
+									hide from the shop: when someone loses a roll they get a consolation roll that lands on a random in-stock item of this class (set stock per item, -1 = unlimited)
+								</span>
+							</span>
+						</label>
+					</div>
+				</div>
 
 				{#if formMonetaryValue > 0}
 					<div
@@ -1487,33 +1590,40 @@
 					<Dices size={16} /> randomize odds (stays within optimal pricing)
 				</button>
 
-				<div class="grid grid-cols-2 gap-4">
-					<div>
-						<label for="baseProbability" class="mb-1 block text-sm font-bold"
-							>base probability (%)</label
-						>
-						<input
-							id="baseProbability"
-							type="number"
-							bind:value={formBaseProbability}
-							min="1"
-							max="100"
-							step="1"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						/>
+				<div>
+					<div class="mb-1 flex items-baseline justify-between">
+						<label for="baseProbability" class="text-sm font-bold">initial probability</label>
+						<span class="text-lg font-bold">{formBaseProbability}%</span>
 					</div>
-					<div>
-						<label for="boostAmount" class="mb-1 block text-sm font-bold"
-							>boost per upgrade (%)</label
-						>
-						<input
-							id="boostAmount"
-							type="number"
-							bind:value={formBoostAmount}
-							min="0"
-							class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						/>
+					<input
+						id="baseProbability"
+						type="range"
+						min="1"
+						max="99"
+						step="1"
+						bind:value={formBaseProbability}
+						onchange={() => updateBaseProbability(formBaseProbability)}
+						class="w-full cursor-pointer"
+					/>
+					<div class="flex justify-between text-xs text-gray-500">
+						<span>1% · rare</span>
+						<span>99% · common</span>
 					</div>
+					<p class="mt-1 text-xs text-gray-500">
+						drag to set the starting odds; boost per upgrade, upgrade cost, and roll cost are
+						recomputed to match once you let go
+					</p>
+				</div>
+
+				<div>
+					<label for="boostAmount" class="mb-1 block text-sm font-bold">boost per upgrade (%)</label>
+					<input
+						id="boostAmount"
+						type="number"
+						bind:value={formBoostAmount}
+						min="0"
+						class="w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+					/>
 				</div>
 
 				<div>

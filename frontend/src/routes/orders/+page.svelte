@@ -30,6 +30,7 @@
 		itemId: number;
 		itemName: string;
 		itemImage: string;
+		itemIsConsolationPrize: boolean;
 	}
 
 	let orders = $state<Order[]>([]);
@@ -225,7 +226,7 @@
 		<div class="space-y-4">
 			{#each orders as order}
 				{@const StatusIcon = getStatusIcon(order.status, order.isFulfilled)}
-				{@const isConsolation = order.orderType === 'consolation'}
+				{@const isConsolation = order.orderType === 'consolation' && !order.itemIsConsolationPrize}
 				{@const needsAddress = !order.shippingAddress && !order.isFulfilled}
 				<div
 					class="rounded-2xl border-4 p-6 transition-all duration-200 hover:border-dashed {needsAddress
@@ -316,7 +317,7 @@
 {#if addressOrder}
 	<AddressSelectModal
 		orderId={addressOrder.id}
-		itemName={addressOrder.orderType === 'consolation'
+		itemName={addressOrder.orderType === 'consolation' && !addressOrder.itemIsConsolationPrize
 			? $t.orders.paperScraps
 			: addressOrder.itemName}
 		onClose={() => (addressOrder = null)}
