@@ -90,4 +90,16 @@ module SlackService
 
     post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] }) rescue nil
   end
+
+  def self.notify_order_undone(token:, user_slack_id:, item_name:, refund:, message: nil)
+    return false unless token.present? && user_slack_id.present?
+
+    text = ":leftwards_arrow_with_hook: *Your order for #{item_name} was undone.* #{refund} scraps have been returned to your balance."
+    text += "\nHere's a note from the team: #{message}" if message.present?
+
+    resp = post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] })
+    resp.parsed_response.is_a?(Hash) && resp.parsed_response["ok"] == true
+  rescue StandardError
+    false
+  end
 end

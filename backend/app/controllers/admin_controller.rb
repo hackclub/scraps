@@ -2,7 +2,7 @@ class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
   before_action :authenticate_reviewer, only: %i[stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def stats
@@ -675,6 +675,88 @@ class AdminController < ApplicationController
     render_json({ error: "Failed to delete order: #{e.message}" }, status: :internal_server_error)
   end
 
+  def undo_order_preview
+    conn = ActiveRecord::Base.connection
+    order = conn.select_one("SELECT * FROM shop_orders WHERE id = #{params[:id].to_i}")
+    return render_json({ error: "Order not found" }, status: :not_found) unless order
+
+    plan = undo_order_plan(conn, order)
+    return render_json({ error: plan[:error] }, status: :unprocessable_entity) if plan[:error]
+
+    render_json({ roll_refund: plan[:roll_refund], upgrade_refund: plan[:upgrade_refund], total_refund: plan[:roll_refund] + plan[:upgrade_refund], restock: plan[:restock] })
+  end
+
+  def undo_order
+    order_id = params[:id].to_i
+    message = params[:message].to_s.strip.presence
+    conn = ActiveRecord::Base.connection
+
+    result = nil
+    ActiveRecord::Base.transaction do
+      order = conn.select_one("SELECT so.*, si.name AS item_name, u.slack_id FROM shop_orders so INNER JOIN shop_items si ON si.id = so.shop_item_id INNER JOIN users u ON u.id = so.user_id WHERE so.id = #{order_id} FOR UPDATE OF so")
+      raise ActiveRecord::RecordNotFound unless order
+
+      plan = undo_order_plan(conn, order)
+      if plan[:error]
+        result = { error: plan[:error] }
+        raise ActiveRecord::Rollback
+      end
+
+      uid = order["user_id"].to_i
+      iid = order["shop_item_id"].to_i
+      total_refund = plan[:roll_refund] + plan[:upgrade_refund]
+      note = "[#{Time.now.utc.strftime('%Y-%m-%d')}] purchase undone by @#{current_user.username}: refunded #{total_refund} scraps"
+      note += " (#{plan[:upgrade_refund]} from upgrades)" if plan[:upgrade_refund] > 0
+      note += ". Message: #{message}" if message
+
+      conn.execute(<<~SQL)
+        UPDATE shop_orders
+        SET status = 'cancelled',
+            internal_notes = CONCAT_WS(E'\\n', NULLIF(internal_notes, ''), #{conn.quote(note)}),
+            updated_at = NOW()
+        WHERE id = #{order_id}
+      SQL
+
+      conn.execute("UPDATE shop_items SET count = count + #{plan[:restock]}, updated_at = NOW() WHERE id = #{iid}") if plan[:restock] > 0
+
+      if order["order_type"] == "luck_win"
+        conn.execute("DELETE FROM shop_rolls WHERE id = #{plan[:roll_id].to_i}") if plan[:roll_id]
+        conn.execute("DELETE FROM refinery_spending_history WHERE id IN (#{plan[:history_ids].join(',')})") if plan[:history_ids].any?
+
+        penalty = conn.select_one("SELECT probability_multiplier FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id = #{iid}")
+        if penalty
+          restored = [100, penalty["probability_multiplier"].to_f * 2].min
+          if restored >= 100
+            conn.execute("DELETE FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id = #{iid}")
+          else
+            conn.execute("UPDATE shop_penalties SET probability_multiplier = #{restored}, updated_at = NOW() WHERE user_id = #{uid} AND shop_item_id = #{iid}")
+          end
+        end
+      end
+
+      result = { success: true, total_refund: total_refund, slack_id: order["slack_id"], item_name: order["item_name"] }
+    end
+
+    return render_json({ error: result[:error] }, status: :unprocessable_entity) if result[:error]
+
+    dm_sent = false
+    if result[:slack_id].present? && ENV["SLACK_BOT_TOKEN"].present?
+      dm_sent = SlackService.notify_order_undone(
+        token: ENV["SLACK_BOT_TOKEN"],
+        user_slack_id: result[:slack_id],
+        item_name: result[:item_name],
+        refund: result[:total_refund],
+        message: message
+      )
+    end
+
+    render_json({ success: true, total_refund: result[:total_refund], dm_sent: dm_sent })
+  rescue ActiveRecord::RecordNotFound
+    render_json({ error: "Order not found" }, status: :not_found)
+  rescue StandardError => e
+    render_json({ error: "Failed to undo order: #{e.message}" }, status: :internal_server_error)
+  end
+
   def restore_order
     original_order_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
@@ -1310,6 +1392,38 @@ class AdminController < ApplicationController
   end
 
   private
+
+  def undo_order_plan(conn, order)
+    return { error: "Only purchases and won items can be undone" } unless %w[purchase luck_win].include?(order["order_type"])
+    return { error: "Order is already cancelled" } if %w[cancelled deleted].include?(order["status"])
+
+    uid = order["user_id"].to_i
+    iid = order["shop_item_id"].to_i
+    stock = conn.select_value("SELECT count FROM shop_items WHERE id = #{iid}").to_i
+    plan = { roll_refund: order["total_price"].to_i, upgrade_refund: 0, restock: stock < 0 ? 0 : order["quantity"].to_i, roll_id: nil, history_ids: [] }
+    return plan unless order["order_type"] == "luck_win"
+
+    created = conn.quote(order["created_at"])
+    plan[:roll_id] = conn.select_value(<<~SQL)
+      SELECT id FROM shop_rolls
+      WHERE user_id = #{uid} AND shop_item_id = #{iid} AND won = true AND created_at <= #{created}
+      ORDER BY created_at DESC LIMIT 1
+    SQL
+
+    prev_win_at = conn.select_value(<<~SQL)
+      SELECT created_at FROM shop_orders
+      WHERE user_id = #{uid} AND shop_item_id = #{iid} AND order_type = 'luck_win' AND created_at < #{created}
+      ORDER BY created_at DESC LIMIT 1
+    SQL
+    after = prev_win_at ? "AND created_at > #{conn.quote(prev_win_at)}" : ""
+    history = conn.select_all(<<~SQL).to_a
+      SELECT id, cost FROM refinery_spending_history
+      WHERE user_id = #{uid} AND shop_item_id = #{iid} AND created_at <= #{created} #{after}
+    SQL
+    plan[:history_ids] = history.map { |h| h["id"].to_i }
+    plan[:upgrade_refund] = history.sum { |h| h["cost"].to_i }
+    plan
+  end
 
   def authenticate_reviewer
     return if %w[reviewer admin creator].include?(current_user&.role)

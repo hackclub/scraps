@@ -153,6 +153,8 @@ Rails.application.routes.draw do
     get    "orders/:id",                      to: "admin#show_order"
     patch  "orders/:id",                      to: "admin#update_order"
     patch  "orders/:id/notes",                to: "admin#update_order_notes"
+    get    "orders/:id/undo-preview",         to: "admin#undo_order_preview"
+    post   "orders/:id/undo",                 to: "admin#undo_order"
     delete "orders/:id",                      to: "admin#delete_order"
     post   "orders/:id/restore",              to: "admin#restore_order"
 

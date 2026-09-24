@@ -26,10 +26,10 @@
 		onDone: () => void;
 	} = $props();
 
-	const TILE_W = 60;
-	const GAP = 10;
+	const TILE_W = 76;
+	const GAP = 12;
 	const STEP = TILE_W + GAP;
-	const PAD = 10;
+	const PAD = 12;
 	const CYCLES = 7;
 	const LANDING_CYCLE = 5;
 
@@ -50,7 +50,7 @@
 			typeof window !== 'undefined' &&
 			window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
-		const pointerX = (windowEl?.clientWidth ?? 350) / 2;
+		const pointerX = (windowEl?.clientWidth ?? 460) / 2;
 		const tileCenterX = targetIndex * STEP + TILE_W / 2 + PAD;
 		const target = pointerX - tileCenterX;
 
@@ -85,35 +85,35 @@
 	class="fixed inset-0 z-60 flex flex-col items-center justify-center bg-black/70 px-6"
 	transition:fade={{ duration: 150 }}
 >
-	<p class="mb-1 text-xs font-bold tracking-wide text-white/60 uppercase">rolling for</p>
-	<p class="mb-6 max-w-full truncate text-xl font-bold text-white">{itemName}</p>
+	<p class="mb-1 text-sm font-bold text-white/60">rolling for</p>
+	<p class="mb-6 max-w-full truncate text-2xl font-bold text-white">{itemName}</p>
 
 	<div
 		bind:this={windowEl}
-		class="relative h-16 w-full max-w-[360px] overflow-hidden rounded-2xl border-4 border-black bg-gray-50"
+		class="relative h-20 w-full max-w-[460px] overflow-hidden rounded-2xl border-4 border-black bg-white"
 	>
 		<div class="pointer-events-none absolute inset-y-0 left-1/2 z-10 w-0 -translate-x-1/2">
 			<div
-				class="absolute top-0 left-1/2 h-2.5 w-5 -translate-x-1/2 rounded-b-full border-2 border-t-0 border-black bg-yellow-400"
+				class="absolute top-0 left-1/2 h-0 w-0 -translate-x-1/2 border-x-[9px] border-t-[11px] border-x-transparent border-t-black"
 			></div>
 			<div
-				class="absolute bottom-0 left-1/2 h-2.5 w-5 -translate-x-1/2 rounded-t-full border-2 border-b-0 border-black bg-yellow-400"
+				class="absolute bottom-0 left-1/2 h-0 w-0 -translate-x-1/2 border-x-[9px] border-b-[11px] border-x-transparent border-b-black"
 			></div>
 		</div>
 
 		<div
-			class="flex h-full items-center gap-[10px] px-[10px]"
+			class="flex h-full items-center gap-[12px] px-[12px]"
 			style="transform: translateX({translateX}px)"
 		>
 			{#each tiles as n, i (i)}
 				{@const isLanded = phase === 'settled' && i === targetIndex}
 				<div
-					class="flex h-[46px] w-[60px] shrink-0 items-center justify-center rounded-xl border-2 border-black font-bold transition-all duration-300 {isLanded
+					class="flex h-[58px] w-[76px] shrink-0 items-center justify-center rounded-xl border-2 border-black text-lg font-bold transition-colors duration-200 {isLanded
 						? won
-							? 'scale-110 border-green-600 bg-green-500 text-white ring-4 ring-yellow-400'
-							: 'scale-110 border-red-600 bg-red-500 text-white ring-4 ring-yellow-400'
+							? 'bg-green-600 text-white'
+							: 'bg-red-600 text-white'
 						: n <= winThreshold
-							? 'bg-green-50'
+							? 'bg-green-100'
 							: 'bg-white'}"
 				>
 					{n}
@@ -122,7 +122,7 @@
 		</div>
 	</div>
 
-	<p class="mt-6 text-sm font-bold text-white/70">
+	<p class="mt-6 text-lg font-bold text-white">
 		{#if phase === 'settled'}
 			{won ? 'you won!' : 'so close!'}
 		{:else}

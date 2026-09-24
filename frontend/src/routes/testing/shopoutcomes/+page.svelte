@@ -4,14 +4,11 @@
 	import { shopItemsStore, fetchShopItems, type ShopItem } from '$lib/stores';
 	import { t } from '$lib/i18n';
 	import GachaponPull from '$lib/components/GachaponPull.svelte';
-	import GachaponPullAnime from '$lib/components/GachaponPullAnime.svelte';
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
 	import RollStrip from '$lib/components/RollStrip.svelte';
-	import RollStripAnime from '$lib/components/RollStripAnime.svelte';
 	import UpgradeCheckmark from '$lib/components/UpgradeCheckmark.svelte';
-	import UpgradeCheckmarkAnime from '$lib/components/UpgradeCheckmarkAnime.svelte';
 	import { computeRollThreshold } from '$lib/utils';
-	import { Trophy, Frown, Wrench, Truck, Dices, Sparkles, RotateCcw, Split } from '@lucide/svelte';
+	import { Trophy, Frown, Wrench, Truck, Dices, Sparkles, RotateCcw } from '@lucide/svelte';
 
 	// SANDBOX PAGE: /testing/shopoutcomes
 	// Every reveal/animation/modal that plays after a shop action, on demand:
@@ -155,62 +152,20 @@
 		openFulfillment(name);
 	}
 
-	// ---- gachapon reveal comparison: original (CSS keyframes) vs animejs ----
-	let gachaponCompare = $state<{
-		variant: 'original' | 'animejs';
-		itemName: string;
-		itemImage: string | null;
-	} | null>(null);
-
-	function pullCompare(variant: 'original' | 'animejs') {
-		if (gachaponCompare) return;
-		const item = randomItem();
-		gachaponCompare = {
-			variant,
-			itemName: item?.name ?? 'Capsule Prize',
-			itemImage: item?.image ?? null
-		};
-	}
-
-	function finishCompareGachapon() {
-		if (!gachaponCompare) return;
-		log(`[${gachaponCompare.variant}] gachapon reveal: ${gachaponCompare.itemName}`);
-		gachaponCompare = null;
-	}
-
-	// ---- upgrade checkmark comparison: original (CSS keyframe) vs animejs ----
-	let checkCompare = $state<'original' | 'animejs' | null>(null);
-
-	function flashCompare(variant: 'original' | 'animejs') {
-		if (checkCompare) return;
-		checkCompare = variant;
-	}
-
-	function finishCompareCheck() {
-		const variant = checkCompare;
-		checkCompare = null;
-		if (variant) log(`[${variant}] upgrade checkmark played`);
-	}
-
-	// ---- roll strip comparison: original (manual RAF) vs animejs ----
-	// Not a real scenario, just a direct A/B of the two spin implementations
-	// with the same random parameters, no fulfillment step tacked on.
-	let rollCompare = $state<{
-		variant: 'original' | 'animejs';
+	let rollPreview = $state<{
 		itemName: string;
 		finalNumber: number;
 		winThreshold: number;
 		won: boolean;
 	} | null>(null);
 
-	function spinCompare(variant: 'original' | 'animejs') {
-		if (rollCompare) return;
+	function spinPreview() {
+		if (rollPreview) return;
 		const item = randomItem();
 		const effectiveProbability = Math.floor(Math.random() * 60) + 10;
 		const winThreshold = computeRollThreshold(effectiveProbability);
 		const finalNumber = Math.floor(Math.random() * 100) + 1;
-		rollCompare = {
-			variant,
+		rollPreview = {
 			itemName: item?.name ?? 'Test Item',
 			finalNumber,
 			winThreshold,
@@ -218,12 +173,12 @@
 		};
 	}
 
-	function finishCompareSpin() {
-		if (!rollCompare) return;
+	function finishSpinPreview() {
+		if (!rollPreview) return;
 		log(
-			`[${rollCompare.variant}] rolled ${rollCompare.finalNumber} (win ≤ ${rollCompare.winThreshold}) → ${rollCompare.won ? 'won' : 'lost'}`
+			`rolled ${rollPreview.finalNumber} (win ≤ ${rollPreview.winThreshold}) → ${rollPreview.won ? 'won' : 'lost'}`
 		);
-		rollCompare = null;
+		rollPreview = null;
 	}
 
 	// ---- refinery upgrade (no modal in prod: button label + numbers change) ----
@@ -233,12 +188,15 @@
 	let refineryUpgrading = $state(false);
 	let refineryMaxed = $derived(refineryBoost >= REFINERY_MAX_BOOST);
 
+	let refineryCheck = $state(false);
+
 	function simulateUpgrade() {
 		if (refineryUpgrading || refineryMaxed) return;
 		refineryUpgrading = true;
 		setTimeout(() => {
 			refineryBoost = Math.min(REFINERY_MAX_BOOST, refineryBoost + REFINERY_BOOST_STEP);
 			refineryUpgrading = false;
+			refineryCheck = true;
 			log(`refinery upgrade: +${REFINERY_BOOST_STEP}% (now +${refineryBoost}%)`);
 		}, 500);
 	}
@@ -297,30 +255,18 @@
 
 		<div class="rounded-2xl border-4 border-black p-4 sm:col-span-2">
 			<h2 class="mb-1 flex items-center gap-2 text-lg font-bold">
-				<Split size={20} /> roll strip: original vs animejs
+				<Dices size={20} /> roll strip alone
 			</h2>
 			<p class="mb-3 text-sm text-gray-600">
-				Same tiles/layout/math, same random roll each click — only the animation engine driving the
-				spin differs. Original is a hand-rolled requestAnimationFrame + manual cubic ease
-				(RollStrip.svelte); the other uses anime.js's animate() (RollStripAnime.svelte,
-				comparison-only, not wired into any real flow).
+				Random roll and threshold each click, no fulfillment step after.
 			</p>
-			<div class="flex gap-2">
-				<button
-					onclick={() => spinCompare('original')}
-					disabled={!!rollCompare}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
-				>
-					spin: original
-				</button>
-				<button
-					onclick={() => spinCompare('animejs')}
-					disabled={!!rollCompare}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all hover:border-dashed disabled:opacity-50"
-				>
-					spin: animejs
-				</button>
-			</div>
+			<button
+				onclick={spinPreview}
+				disabled={!!rollPreview}
+				class="w-full cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50 sm:w-auto"
+			>
+				spin
+			</button>
 		</div>
 
 		<div class="rounded-2xl border-4 border-black p-4">
@@ -355,34 +301,6 @@
 			</button>
 		</div>
 
-		<div class="rounded-2xl border-4 border-black p-4 sm:col-span-2">
-			<h2 class="mb-1 flex items-center gap-2 text-lg font-bold">
-				<Split size={20} /> gachapon reveal: original vs animejs
-			</h2>
-			<p class="mb-3 text-sm text-gray-600">
-				Same rise → shake → crack → prize-pop sequence. Original is CSS @keyframes + class-toggle
-				transitions (GachaponPull.svelte); the other sequences the same steps with anime.js's
-				createTimeline() driving bound elements directly (GachaponPullAnime.svelte,
-				comparison-only).
-			</p>
-			<div class="flex gap-2">
-				<button
-					onclick={() => pullCompare('original')}
-					disabled={!!gachaponCompare}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
-				>
-					pull: original
-				</button>
-				<button
-					onclick={() => pullCompare('animejs')}
-					disabled={!!gachaponCompare}
-					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all hover:border-dashed disabled:opacity-50"
-				>
-					pull: animejs
-				</button>
-			</div>
-		</div>
-
 		<div class="rounded-2xl border-4 border-black p-4">
 			<h2 class="mb-1 flex items-center gap-2 text-lg font-bold">
 				<Wrench size={20} /> refinery upgrade
@@ -398,53 +316,21 @@
 					</button>
 				{/if}
 			</div>
-			<button
-				onclick={simulateUpgrade}
-				disabled={refineryUpgrading || refineryMaxed}
-				class="w-full cursor-pointer rounded-full bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
-			>
-				{refineryMaxed
-					? $t.refinery.maxed
-					: refineryUpgrading
-						? $t.refinery.upgrading
-						: `+${REFINERY_BOOST_STEP}% upgrade`}
-			</button>
-		</div>
-
-		<div class="rounded-2xl border-4 border-black p-4">
-			<h2 class="mb-1 flex items-center gap-2 text-lg font-bold">
-				<Split size={20} /> upgrade checkmark: original vs animejs
-			</h2>
-			<p class="mb-3 text-sm text-gray-600">
-				Same rise-and-fade checkmark. Original is one CSS @keyframes rule (UpgradeCheckmark.svelte,
-				also what /refinery actually uses); the other drives the same three stops with anime.js's
-				animate() keyframes (UpgradeCheckmarkAnime.svelte, comparison-only).
-			</p>
-			<div class="flex gap-2">
-				<div class="relative flex-1">
-					<button
-						onclick={() => flashCompare('original')}
-						disabled={!!checkCompare}
-						class="w-full cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
-					>
-						flash: original
-					</button>
-					{#if checkCompare === 'original'}
-						<UpgradeCheckmark onDone={finishCompareCheck} />
-					{/if}
-				</div>
-				<div class="relative flex-1">
-					<button
-						onclick={() => flashCompare('animejs')}
-						disabled={!!checkCompare}
-						class="w-full cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all hover:border-dashed disabled:opacity-50"
-					>
-						flash: animejs
-					</button>
-					{#if checkCompare === 'animejs'}
-						<UpgradeCheckmarkAnime onDone={finishCompareCheck} />
-					{/if}
-				</div>
+			<div class="relative">
+				<button
+					onclick={simulateUpgrade}
+					disabled={refineryUpgrading || refineryMaxed}
+					class="w-full cursor-pointer rounded-full bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
+				>
+					{refineryMaxed
+						? $t.refinery.maxed
+						: refineryUpgrading
+							? $t.refinery.upgrading
+							: `+${REFINERY_BOOST_STEP}% upgrade`}
+				</button>
+				{#if refineryCheck}
+					<UpgradeCheckmark onDone={() => (refineryCheck = false)} />
+				{/if}
 			</div>
 		</div>
 
@@ -560,37 +446,13 @@
 	/>
 {/if}
 
-{#if gachaponCompare?.variant === 'original'}
-	<GachaponPull
-		itemName={gachaponCompare.itemName}
-		itemImage={gachaponCompare.itemImage}
-		gachaponName="Test Gachapon"
-		onDone={finishCompareGachapon}
-	/>
-{:else if gachaponCompare?.variant === 'animejs'}
-	<GachaponPullAnime
-		itemName={gachaponCompare.itemName}
-		itemImage={gachaponCompare.itemImage}
-		gachaponName="Test Gachapon"
-		onDone={finishCompareGachapon}
-	/>
-{/if}
-
-{#if rollCompare?.variant === 'original'}
+{#if rollPreview}
 	<RollStrip
-		itemName={rollCompare.itemName}
-		finalNumber={rollCompare.finalNumber}
-		winThreshold={rollCompare.winThreshold}
-		won={rollCompare.won}
-		onDone={finishCompareSpin}
-	/>
-{:else if rollCompare?.variant === 'animejs'}
-	<RollStripAnime
-		itemName={rollCompare.itemName}
-		finalNumber={rollCompare.finalNumber}
-		winThreshold={rollCompare.winThreshold}
-		won={rollCompare.won}
-		onDone={finishCompareSpin}
+		itemName={rollPreview.itemName}
+		finalNumber={rollPreview.finalNumber}
+		winThreshold={rollPreview.winThreshold}
+		won={rollPreview.won}
+		onDone={finishSpinPreview}
 	/>
 {/if}
 

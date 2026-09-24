@@ -48,7 +48,7 @@
 	class="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/70 px-6"
 	transition:fade={{ duration: 150 }}
 >
-	<p class="mb-2 text-sm font-bold tracking-wide text-white/70 uppercase">{gachaponName}</p>
+	<p class="mb-4 text-lg font-bold text-white/70">{gachaponName}</p>
 
 	<div class="capsule-stage">
 		<div
@@ -71,7 +71,7 @@
 				{#if itemImage}
 					<img src={itemImage} alt={itemName} />
 				{:else}
-					<div class="prize-fallback"><Spool size={40} /></div>
+					<div class="prize-fallback"><Spool size={56} /></div>
 				{/if}
 			</div>
 		{/if}
@@ -79,11 +79,11 @@
 
 	{#if phase === 'revealed'}
 		<div class="mt-6 text-center" in:fade={{ duration: 200, delay: 120 }}>
-			<p class="text-xs font-bold tracking-wide text-white/60 uppercase">you got</p>
-			<p class="text-2xl font-bold text-white">{itemName}</p>
+			<p class="text-sm font-bold text-white/60">you got</p>
+			<p class="text-3xl font-bold text-white">{itemName}</p>
 		</div>
 	{:else}
-		<p class="mt-6 text-sm font-bold text-white/70">
+		<p class="mt-6 text-lg font-bold text-white">
 			{phase === 'rising' ? 'loading capsule…' : 'cracking it open…'}
 		</p>
 	{/if}
@@ -92,8 +92,8 @@
 <style>
 	.capsule-stage {
 		position: relative;
-		width: 200px;
-		height: 200px;
+		width: 260px;
+		height: 260px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -102,15 +102,15 @@
 
 	.capsule {
 		position: relative;
-		width: 150px;
-		height: 150px;
+		width: 190px;
+		height: 190px;
 	}
 
 	.capsule-half {
 		position: absolute;
 		left: 0;
-		width: 150px;
-		height: 75px;
+		width: 190px;
+		height: 95px;
 		border: 4px solid #000;
 		box-sizing: border-box;
 		transition:
@@ -120,25 +120,25 @@
 
 	.capsule-top {
 		top: 0;
-		border-radius: 75px 75px 0 0;
+		border-radius: 95px 95px 0 0;
 		border-bottom: none;
-		background: linear-gradient(160deg, #f87171, #dc2626);
+		background: #dc2626;
 	}
 
 	.capsule-bottom {
 		bottom: 0;
-		border-radius: 0 0 75px 75px;
+		border-radius: 0 0 95px 95px;
 		border-top: none;
-		background: linear-gradient(160deg, #fde68a, #fbbf24);
+		background: #fff;
 	}
 
 	.capsule-seam {
 		position: absolute;
 		top: 50%;
-		left: -6px;
-		width: 162px;
-		height: 12px;
-		margin-top: -6px;
+		left: -7px;
+		width: 204px;
+		height: 14px;
+		margin-top: -7px;
 		border: 4px solid #000;
 		border-radius: 6px;
 		background: #fff;
@@ -154,12 +154,12 @@
 	}
 
 	.capsule.is-open .capsule-top {
-		transform: translate(-46px, -66px) rotate(-38deg);
+		transform: translate(-58px, -84px) rotate(-38deg);
 		opacity: 0;
 	}
 
 	.capsule.is-open .capsule-bottom {
-		transform: translate(46px, 66px) rotate(38deg);
+		transform: translate(58px, 84px) rotate(38deg);
 		opacity: 0;
 	}
 
@@ -169,8 +169,8 @@
 
 	.burst {
 		position: absolute;
-		width: 40px;
-		height: 40px;
+		width: 50px;
+		height: 50px;
 		border-radius: 999px;
 		background: #fff;
 		animation: burst 0.55s ease-out forwards;
@@ -178,8 +178,8 @@
 
 	.prize {
 		position: absolute;
-		width: 130px;
-		height: 130px;
+		width: 170px;
+		height: 170px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -190,7 +190,6 @@
 		max-width: 100%;
 		max-height: 100%;
 		object-fit: contain;
-		filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.4));
 	}
 
 	.prize-fallback {
@@ -200,7 +199,7 @@
 		align-items: center;
 		justify-content: center;
 		border: 4px solid #fff;
-		border-radius: 16px;
+		border-radius: 20px;
 		color: #fff;
 	}
 
@@ -219,16 +218,16 @@
 			transform: translateX(0) rotate(0);
 		}
 		20% {
-			transform: translateX(-6px) rotate(-4deg);
+			transform: translateX(-8px) rotate(-4deg);
 		}
 		40% {
-			transform: translateX(6px) rotate(4deg);
+			transform: translateX(8px) rotate(4deg);
 		}
 		60% {
-			transform: translateX(-4px) rotate(-3deg);
+			transform: translateX(-5px) rotate(-3deg);
 		}
 		80% {
-			transform: translateX(4px) rotate(3deg);
+			transform: translateX(5px) rotate(3deg);
 		}
 	}
 

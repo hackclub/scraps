@@ -13,7 +13,8 @@
 		Trash2,
 		ArrowLeft,
 		ShieldAlert,
-		Mail
+		Mail,
+		Undo2
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
@@ -93,6 +94,21 @@
 	let userNoteLoading = $state(false);
 	let confirmDelete = $state(false);
 	let confirmReason = $state('');
+	let confirmUndo = $state(false);
+	let undoMessage = $state('');
+	let undoPreview = $state<{
+		rollRefund: number;
+		upgradeRefund: number;
+		totalRefund: number;
+		restock: number;
+	} | null>(null);
+	let undoPreviewError = $state<string | null>(null);
+
+	let canUndo = $derived(
+		!!order &&
+			['purchase', 'luck_win'].includes(order.orderType) &&
+			!['cancelled', 'deleted'].includes(order.status)
+	);
 
 	onMount(async () => {
 		user = await getUser();
@@ -202,6 +218,56 @@
 			showToast('failed to save note', 'error');
 		} finally {
 			userNoteLoading = false;
+		}
+	}
+
+	async function openUndo() {
+		if (!order) return;
+		confirmUndo = true;
+		undoPreview = null;
+		undoPreviewError = null;
+		try {
+			const response = await fetch(`${API_URL}/admin/orders/${order.id}/undo-preview`, {
+				credentials: 'include'
+			});
+			const json = await response.json().catch(() => null);
+			if (response.ok) undoPreview = json;
+			else undoPreviewError = json?.error || 'failed to load refund';
+		} catch (_e) {
+			undoPreviewError = 'failed to load refund';
+		}
+	}
+
+	function closeUndo() {
+		confirmUndo = false;
+		undoMessage = '';
+	}
+
+	async function undoOrder() {
+		if (!order) return;
+		actionLoading = true;
+		try {
+			const response = await fetch(`${API_URL}/admin/orders/${order.id}/undo`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ message: undoMessage.trim() || undefined })
+			});
+			const json = await response.json().catch(() => null);
+			if (response.ok) {
+				showToast(
+					`refunded ${json.totalRefund} scraps${json.dmSent ? ', user notified on slack' : ''}`,
+					'success'
+				);
+				closeUndo();
+				await fetchOrder();
+			} else {
+				showToast(json?.error || 'failed to undo', 'error');
+			}
+		} catch (_e) {
+			showToast('failed to undo order', 'error');
+		} finally {
+			actionLoading = false;
 		}
 	}
 
@@ -544,6 +610,15 @@
 								{$t.admin.fulfill}
 							{/if}
 						</button>
+						{#if canUndo}
+							<button
+								onclick={openUndo}
+								class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-black px-3 py-2 font-bold transition-all duration-200 hover:border-dashed"
+							>
+								<Undo2 size={16} />
+								undo purchase
+							</button>
+						{/if}
 						<button
 							onclick={() => (confirmDelete = true)}
 							class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-red-600 px-3 py-2 font-bold text-red-600 transition-all duration-200 hover:border-dashed"
@@ -615,6 +690,94 @@
 					class="flex-1 cursor-pointer rounded-full border-4 border-red-600 bg-red-600 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{actionLoading ? '...' : 'delete permanently'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+{#if confirmUndo && order}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+		onclick={(e) => e.target === e.currentTarget && closeUndo()}
+		onkeydown={(e) => e.key === 'Escape' && closeUndo()}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6">
+			<h2 class="mb-4 text-2xl font-bold">undo purchase</h2>
+			<p class="mb-4 text-gray-600">
+				cancels <span class="font-bold">{order.itemName}</span> for
+				<span class="font-bold">@{order.username}</span> and refunds them.
+			</p>
+
+			{#if undoPreviewError}
+				<p class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm font-bold text-red-600">
+					{undoPreviewError}
+				</p>
+			{:else if !undoPreview}
+				<p class="mb-4 text-sm text-gray-500">loading refund…</p>
+			{:else}
+				<div class="mb-4 rounded-lg border-2 border-black p-3 text-sm">
+					<div class="flex justify-between">
+						<span>{order.orderType === 'luck_win' ? 'roll cost' : 'price paid'}</span>
+						<span class="font-bold">{undoPreview.rollRefund} scraps</span>
+					</div>
+					{#if undoPreview.upgradeRefund > 0}
+						<div class="flex justify-between">
+							<span>upgrades used on this win</span>
+							<span class="font-bold">{undoPreview.upgradeRefund} scraps</span>
+						</div>
+					{/if}
+					<div class="mt-2 flex justify-between border-t-2 border-black pt-2">
+						<span class="font-bold">total refund</span>
+						<span class="font-bold">{undoPreview.totalRefund} scraps</span>
+					</div>
+					<p class="mt-2 text-gray-500">
+						{undoPreview.restock > 0 ? `+${undoPreview.restock} back into stock` : 'stock is unlimited, not changed'}{order.orderType ===
+						'luck_win'
+							? ', roll price and odds reset to before this win'
+							: ''}
+					</p>
+				</div>
+			{/if}
+
+			{#if order.isFulfilled}
+				<p class="mb-4 text-sm font-bold text-red-600">
+					this order is already marked fulfilled. make sure it hasn't shipped.
+				</p>
+			{/if}
+
+			<label for="undo-message" class="mb-2 block text-sm font-bold text-gray-700"
+				>message to user (optional)</label
+			>
+			<textarea
+				id="undo-message"
+				bind:value={undoMessage}
+				class="mb-2 w-full rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+				rows="3"
+				placeholder="e.g. this item is out of stock with our supplier, sorry!"
+			></textarea>
+			<p class="mb-4 text-xs text-gray-500">
+				{order.slackId
+					? 'sent as a slack dm along with the refund amount.'
+					: 'this user has no slack id, so no dm will be sent.'}
+			</p>
+
+			<div class="flex gap-3">
+				<button
+					onclick={closeUndo}
+					disabled={actionLoading}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					{$t.common.cancel}
+				</button>
+				<button
+					onclick={undoOrder}
+					disabled={actionLoading || !undoPreview}
+					class="flex-1 cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					{actionLoading ? '...' : 'undo & refund'}
 				</button>
 			</div>
 		</div>

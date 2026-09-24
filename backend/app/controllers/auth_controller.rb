@@ -55,6 +55,7 @@ class AuthController < ApplicationController
       user = create_or_update_user(identity, tokens)
     rescue => e
       msg = e.message
+      Rails.logger.error("[AUTH] create_or_update_user failed: #{e.class}: #{msg}")
       if msg == "not-eligible"
         return redirect_to "#{frontend_url}/auth/error?reason=not-eligible", allow_other_host: true
       end
