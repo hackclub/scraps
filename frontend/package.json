@@ -42,6 +42,7 @@
 	"type": "module",
 	"dependencies": {
 		"@lucide/svelte": "^0.563.1",
+		"animejs": "^4.5.0",
 		"better-auth": "^1.4.18",
 		"marked": "^17.0.3"
 	}

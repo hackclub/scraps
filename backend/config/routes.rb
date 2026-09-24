@@ -120,6 +120,10 @@ Rails.application.routes.draw do
     # Referrals
     get    "referrals",                       to: "referrals#admin_list"
 
+    get    "signup-sources",                  to: "signup_sources#index"
+    post   "signup-sources",                  to: "signup_sources#create"
+    delete "signup-sources/:id",              to: "signup_sources#destroy"
+
     # Login allowlist
     get    "login-allowlist",                 to: "admin#login_allowlist"
     get    "login-allowlist/users",           to: "admin#login_allowlist_users"

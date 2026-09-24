@@ -593,6 +593,8 @@ class ShopController < ApplicationController
   end
 
   def item_leaderboard
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
     item_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
     item = conn.select_one("SELECT id, base_probability FROM shop_items WHERE id = #{item_id}")
@@ -622,6 +624,8 @@ class ShopController < ApplicationController
   end
 
   def item_buyers
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
     item_id = params[:id].to_i
     rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
       SELECT so.user_id, u.username, u.avatar, so.quantity, so.created_at AS purchased_at
@@ -640,6 +644,8 @@ class ShopController < ApplicationController
   end
 
   def item_hearts
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
     item_id = params[:id].to_i
     rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
       SELECT sh.user_id, u.username, u.avatar, sh.created_at

@@ -19,21 +19,30 @@ let fetchPromise: Promise<User | null> | null = null;
 
 export function login() {
 	let ref: string | null = null;
+	let source: string | null = null;
 	try {
-		ref =
-			new URLSearchParams(window.location.search).get('r') || localStorage.getItem('referralCode');
+		const params = new URLSearchParams(window.location.search);
+		ref = params.get('r') || localStorage.getItem('referralCode');
+		source = params.get('source') || localStorage.getItem('signupSource');
 	} catch {
 		ref = null;
+		source = null;
 	}
-	const qs = ref ? `?r=${encodeURIComponent(ref)}` : '';
-	window.location.href = `${API_URL}/auth/login${qs}`;
+	const qs = new URLSearchParams();
+	if (ref) qs.set('r', ref);
+	if (source) qs.set('s', source);
+	const query = qs.toString();
+	window.location.href = `${API_URL}/auth/login${query ? `?${query}` : ''}`;
 }
 
 // Call on any public page load so a ?r= code survives until the user logs in.
 export function captureReferralCode() {
 	try {
-		const code = new URLSearchParams(window.location.search).get('r');
+		const params = new URLSearchParams(window.location.search);
+		const code = params.get('r');
 		if (code) localStorage.setItem('referralCode', code);
+		const source = params.get('source');
+		if (source && !localStorage.getItem('signupSource')) localStorage.setItem('signupSource', source);
 	} catch {
 		/* ignore */
 	}

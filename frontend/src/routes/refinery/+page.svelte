@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Check } from '@lucide/svelte';
 
 	import { getUser, refreshUserScraps, userScrapsStore } from '$lib/auth-client';
 	import { shopItemsStore, shopLoading, fetchShopItems, type ShopItem } from '$lib/stores';
 	import { t } from '$lib/i18n';
 	import { API_URL } from '$lib/config';
+	import UpgradeCheckmark from '$lib/components/UpgradeCheckmark.svelte';
 
 	let myShopIds = $state<Set<number>>(new Set());
 	let shopSelectionLoading = $state(true);
@@ -23,11 +23,11 @@
 	let activeCheck = $state<{ itemId: number; token: number } | null>(null);
 
 	function flashUpgradeCheck(itemId: number) {
-		const token = ++checkToken;
-		activeCheck = { itemId, token };
-		setTimeout(() => {
-			if (activeCheck?.token === token) activeCheck = null;
-		}, 900);
+		activeCheck = { itemId, token: ++checkToken };
+	}
+
+	function clearCheckIfCurrent(token: number) {
+		if (activeCheck?.token === token) activeCheck = null;
 	}
 
 	async function fetchMyShopIds() {
@@ -240,9 +240,8 @@
 						</div>
 						<div class="relative flex items-center gap-2 sm:text-right">
 							{#if activeCheck?.itemId === item.id}
-								<span class="upgrade-check" aria-hidden="true">
-									<Check size={16} strokeWidth={3} />
-								</span>
+								{@const token = activeCheck.token}
+								<UpgradeCheckmark onDone={() => clearCheckIfCurrent(token)} />
 							{/if}
 							{#if soldOut}
 								{#if item.userBoostPercent > 0}
@@ -315,48 +314,3 @@
 		</div>
 	</div>
 {/if}
-
-<style>
-	.upgrade-check {
-		position: absolute;
-		top: -6px;
-		right: 0;
-		z-index: 10;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 26px;
-		height: 26px;
-		border-radius: 999px;
-		border: 2px solid #000;
-		background: #000;
-		color: #fff;
-		pointer-events: none;
-		animation: upgrade-check-rise 900ms ease-out forwards;
-	}
-
-	@keyframes upgrade-check-rise {
-		0% {
-			transform: translateY(4px) scale(0.6);
-			opacity: 0;
-		}
-		20% {
-			transform: translateY(0) scale(1.05);
-			opacity: 1;
-		}
-		35% {
-			transform: translateY(0) scale(1);
-			opacity: 1;
-		}
-		100% {
-			transform: translateY(-26px) scale(1);
-			opacity: 0;
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.upgrade-check {
-			animation-duration: 0.01ms;
-		}
-	}
-</style>

@@ -430,92 +430,93 @@
 		<div class="py-12 text-center">
 			<p class="text-gray-600">{$t.shop.loadingItems}</p>
 		</div>
-	{:else if !revealed}
-		<button
-			onclick={revealToday}
-			out:fade={{ duration: 400 }}
-			class="mb-12 flex w-full cursor-pointer flex-col items-center gap-3 rounded-3xl border-4 border-black bg-gradient-to-b from-indigo-50 to-white p-16 text-center transition-all hover:border-dashed"
-		>
-			<Sparkles size={36} />
-			<h2 class="text-2xl font-bold">new items of the day</h2>
-			<p class="text-gray-500">click to reveal today's 5 picks</p>
-		</button>
 	{:else}
-		<section
-			class="mb-12 rounded-2xl border border-gray-300 p-5 sm:p-6"
-			in:fade={{ duration: 400 }}
-		>
-			<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
-				<Sparkles size={22} /> today's picks
-			</h2>
-			<p class="mb-4 text-sm text-gray-600">
-				Drag one down into <strong>your shop</strong> to keep it forever, even after today | or drag one
-				back up here to let it go.
-			</p>
-			{#if visibleDailyItems.length === 0}
-				<p
+		<div class="relative mb-12">
+			<section class="rounded-2xl border border-gray-300 p-5 sm:p-6">
+				<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
+					<Sparkles size={22} /> today's picks
+				</h2>
+				<p class="mb-4 text-sm text-gray-600">
+					Drag one down into <strong>your shop</strong> to keep it forever, even after today | or drag
+					one back up here to let it go.
+				</p>
+				{#if visibleDailyItems.length === 0}
+					<p
+						ondragover={onDailyZoneDragOver}
+						ondragleave={onDailyZoneDragLeave}
+						ondrop={onDailyZoneDrop}
+						role="list"
+						class="mb-4 rounded-2xl border-4 border-dashed p-8 text-center transition-all {dailyDropHover
+							? 'border-black bg-indigo-50 text-gray-600'
+							: 'border-gray-300 text-gray-400'}"
+					>
+						you've already kept everything from today's picks
+					</p>
+				{/if}
+				<div
 					ondragover={onDailyZoneDragOver}
 					ondragleave={onDailyZoneDragLeave}
 					ondrop={onDailyZoneDrop}
 					role="list"
-					class="mb-4 rounded-2xl border-4 border-dashed p-8 text-center transition-all {dailyDropHover
-						? 'border-black bg-indigo-50 text-gray-600'
-						: 'border-gray-300 text-gray-400'}"
+					class="grid grid-cols-5 gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
+						? 'border-dashed border-black bg-indigo-50'
+						: 'border-transparent'}"
 				>
-					you've already kept everything from today's picks
-				</p>
-			{/if}
-			<div
-				ondragover={onDailyZoneDragOver}
-				ondragleave={onDailyZoneDragLeave}
-				ondrop={onDailyZoneDrop}
-				role="list"
-				class="grid grid-cols-5 gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
-					? 'border-dashed border-black bg-indigo-50'
-					: 'border-transparent'}"
-			>
-				{#each visibleDailyItems as item (item.id)}
-					<div
-						role="listitem"
-						draggable={true}
-						ondragstart={(e) => onDragStart(e, item)}
-						ondragend={onDragEnd}
-						class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-white transition-all active:cursor-grabbing {draggingId ===
-						item.id
-							? 'opacity-30'
-							: ''}"
-					>
-						<button
-							onclick={() => (selectedItem = item)}
-							class="w-full cursor-pointer p-2 text-left hover:opacity-90"
-						>
-							<div class="relative">
-								<img
-									src={item.image}
-									alt={item.name}
-									class="mb-1 h-14 w-full object-contain sm:h-20"
-								/>
-								<span
-									class="absolute top-0 right-0 rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold text-white"
-								>
-									{item.effectiveProbability.toFixed(0)}%
-								</span>
-							</div>
-							<h3 class="truncate text-xs font-bold sm:text-sm">{item.name}</h3>
-							<span class="flex items-center gap-1 text-xs font-bold sm:text-sm"
-								><Spool size={12} />{getItemRollCost(item)}</span
-							>
-						</button>
+					{#each visibleDailyItems as item (item.id)}
 						<div
-							class="flex items-center justify-center gap-1 border-t-2 border-black py-1 text-[10px] font-bold text-gray-500"
-							title="drag to keep forever"
+							role="listitem"
+							draggable={true}
+							ondragstart={(e) => onDragStart(e, item)}
+							ondragend={onDragEnd}
+							class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-white transition-all active:cursor-grabbing {draggingId ===
+							item.id
+								? 'opacity-30'
+								: ''}"
 						>
-							<GripVertical size={12} />
+							<button
+								onclick={() => (selectedItem = item)}
+								class="w-full cursor-pointer p-2 text-left hover:opacity-90"
+							>
+								<div class="relative">
+									<img
+										src={item.image}
+										alt={item.name}
+										class="mb-1 h-14 w-full object-contain sm:h-20"
+									/>
+									<span
+										class="absolute top-0 right-0 rounded-full bg-black px-1.5 py-0.5 text-[10px] font-bold text-white"
+									>
+										{item.effectiveProbability.toFixed(0)}%
+									</span>
+								</div>
+								<h3 class="truncate text-xs font-bold sm:text-sm">{item.name}</h3>
+								<span class="flex items-center gap-1 text-xs font-bold sm:text-sm"
+									><Spool size={12} />{getItemRollCost(item)}</span
+								>
+							</button>
+							<div
+								class="flex items-center justify-center gap-1 border-t-2 border-black py-1 text-[10px] font-bold text-gray-500"
+								title="drag to keep forever"
+							>
+								<GripVertical size={12} />
+							</div>
 						</div>
-					</div>
-				{/each}
-			</div>
-		</section>
+					{/each}
+				</div>
+			</section>
+
+			{#if !revealed}
+				<button
+					onclick={revealToday}
+					out:fade={{ duration: 400 }}
+					class="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-4 border-black bg-gradient-to-b from-indigo-50 to-white p-10 text-center transition-all hover:border-dashed"
+				>
+					<Sparkles size={36} />
+					<h2 class="text-2xl font-bold">new items of the day</h2>
+					<p class="text-gray-500">click to reveal today's 5 picks</p>
+				</button>
+			{/if}
+		</div>
 	{/if}
 
 	<!-- Your permanent shop: drop target -->
@@ -523,8 +524,8 @@
 		<Bookmark size={22} /> your shop
 	</h2>
 	<p class="mb-4 text-sm text-gray-600">
-		{retainedItems.length}/{retainedCap} slots used: items here stay yours forever, even after they
-		rotate out.
+		{retainedItems.length}/{retainedCap} slots used: items here stay yours forever, even after they rotate
+		out.
 	</p>
 	<div
 		ondragover={onDropZoneDragOver}
@@ -597,8 +598,8 @@
 		<PackageOpen size={22} /> gachapons
 	</h2>
 	<p class="mb-4 text-sm text-gray-600">
-		you're guaranteed to get one item from a gachapon! it might be a bit pricier, but you won't
-		lose any chances here.
+		you're guaranteed to get one item from a gachapon! it might be a bit pricier, but you won't lose
+		any chances here.
 	</p>
 	{#if gachaponsLoading}
 		<div class="py-8 text-center text-gray-500">loading…</div>
@@ -615,9 +616,7 @@
 						onclick={() => (detailGachapon = gachapon)}
 						class="w-full cursor-pointer p-4 text-left hover:opacity-90"
 					>
-						<div
-							class="mb-4 flex h-48 w-full items-center justify-center rounded-xl bg-gray-50"
-						>
+						<div class="mb-4 flex h-48 w-full items-center justify-center rounded-xl bg-gray-50">
 							{#if gachapon.image}
 								<img
 									src={gachapon.image}
@@ -747,4 +746,3 @@
 		</span>
 	{/if}
 </a>
-

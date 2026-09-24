@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_24_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -298,6 +298,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
     t.index ["user_id"], name: "index_shop_rolls_on_user_id"
   end
 
+  create_table "signup_sources", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "note"
+    t.text "slug", null: false
+    t.datetime "updated_at", null: false
+    t.index ["slug"], name: "index_signup_sources_on_slug", unique: true
+  end
+
   create_table "user_activity", id: :serial, force: :cascade do |t|
     t.text "action", null: false
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
@@ -344,6 +352,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
     t.integer "retained_cap_bonus", default: 0, null: false
     t.date "retained_cap_checked_on"
     t.text "role", default: "member", null: false
+    t.text "signup_source"
     t.text "slack_id"
     t.text "sub", null: false
     t.boolean "tutorial_completed", default: false, null: false
@@ -352,6 +361,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_22_120000) do
     t.text "verification_status"
     t.boolean "ysws_eligible"
     t.index ["referral_code"], name: "index_users_on_referral_code", unique: true
+    t.index ["signup_source"], name: "index_users_on_signup_source"
     t.unique_constraint ["sub"], name: "users_sub_key"
   end
 

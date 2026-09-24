@@ -1,5 +1,5 @@
 class ReferralsController < ApplicationController
-  before_action :require_auth, only: %i[me]
+  before_action :require_auth, only: %i[me leaderboard]
   before_action :require_reviewer, only: %i[admin_list]
 
   # GET /referrals/me: the signed-in user's own code, link and invitees.

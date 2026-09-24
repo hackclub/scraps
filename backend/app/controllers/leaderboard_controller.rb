@@ -1,5 +1,7 @@
 class LeaderboardController < ApplicationController
   def index
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
     sort_by = params[:sortBy].to_s.presence || "scraps"
     conn = ActiveRecord::Base.connection
 
@@ -63,6 +65,8 @@ class LeaderboardController < ApplicationController
   end
 
   def views
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(<<~SQL).to_a
       SELECT p.id, p.name, p.image, p.views, p.user_id,
@@ -101,6 +105,8 @@ class LeaderboardController < ApplicationController
   end
 
   def probability_leaders
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
     conn = ActiveRecord::Base.connection
 
     items = conn.select_all("SELECT id, name, image, base_probability FROM shop_items").to_a

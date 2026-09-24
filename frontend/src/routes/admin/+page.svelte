@@ -15,7 +15,8 @@
 		ShoppingCart,
 		DollarSign,
 		Calculator,
-		SearchCheck
+		SearchCheck,
+		Link
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
@@ -505,6 +506,22 @@
 				</a>
 			</div>
 		</div>
+
+		<a
+			href="/admin/sources"
+			class="mb-6 flex items-center justify-between rounded-2xl border-4 border-black p-6 transition-all hover:border-dashed"
+		>
+			<div>
+				<h3 class="flex items-center gap-2 text-lg font-bold">
+					<Link size={20} />
+					signup sources
+				</h3>
+				<p class="text-sm text-gray-500">
+					make ?source= links for announcements and see how many signups each one brought in
+				</p>
+			</div>
+			<span class="text-xl font-bold">→</span>
+		</a>
 
 		<!-- Sync to YSWS -->
 		<div class="mb-6 rounded-2xl border-4 border-black p-6">

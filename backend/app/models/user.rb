@@ -1,6 +1,8 @@
 class User < ApplicationRecord
   self.table_name = "users"
 
+  encrypts :access_token, :refresh_token, :id_token
+
   has_many :sessions, foreign_key: :user_id
   has_many :projects, foreign_key: :user_id
   has_many :user_bonuses, foreign_key: :user_id

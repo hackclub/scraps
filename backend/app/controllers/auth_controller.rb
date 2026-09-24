@@ -17,7 +17,7 @@ class AuthController < ApplicationController
   end
 
   def login
-    redirect_to authorization_url(params[:r]), allow_other_host: true
+    redirect_to authorization_url(params[:r], params[:s]), allow_other_host: true
   end
 
   def callback
@@ -63,11 +63,21 @@ class AuthController < ApplicationController
 
     UserActivity.create!(user_id: user.id, email: identity["primary_email"], action: "auth_completed")
 
-    if @new_user && params[:state].present?
+    referral_code, signup_source = params[:state].to_s.split(".", 2)
+
+    if @new_user && referral_code.present?
       begin
-        ReferralService.attach(user, params[:state])
+        ReferralService.attach(user, referral_code)
       rescue StandardError => e
         Rails.logger.error("[AUTH] referral attach failed: #{e.message}")
+      end
+    end
+
+    if @new_user && SignupSource.valid_slug?(signup_source)
+      begin
+        user.update_columns(signup_source: signup_source)
+      rescue StandardError => e
+        Rails.logger.error("[AUTH] signup source save failed: #{e.message}")
       end
     end
 
@@ -152,7 +162,7 @@ class AuthController < ApplicationController
 
   private
 
-  def authorization_url(referral_code = nil)
+  def authorization_url(referral_code = nil, signup_source = nil)
     query = {
       client_id: ENV["HCAUTH_CLIENT_ID"],
       redirect_uri: ENV.fetch("HCAUTH_REDIRECT_URI") { "http://localhost:3000/api/auth/callback/hackclub" },
@@ -161,7 +171,11 @@ class AuthController < ApplicationController
     }
     # HC Auth echoes `state` back to the callback unchanged: we use it to carry
     # the referral code through the redirect (the SPA has no server session).
-    query[:state] = referral_code.to_s.strip if referral_code.present?
+    code = referral_code.to_s.strip.delete(".")
+    source = signup_source.to_s.strip.downcase
+    source = nil unless SignupSource.valid_slug?(source)
+    state = source ? "#{code}.#{source}" : code
+    query[:state] = state if state.present?
     "#{HACKCLUB_AUTH_URL}/oauth/authorize?#{URI.encode_www_form(query)}"
   end
 
@@ -250,9 +264,6 @@ class AuthController < ApplicationController
           slack_id = #{conn.quote(identity['slack_id'])},
           first_name = COALESCE(#{conn.quote(identity['first_name'])}, first_name),
           avatar = COALESCE(#{conn.quote(avatar_url)}, avatar),
-          access_token = #{conn.quote(tokens['access_token'])},
-          refresh_token = #{conn.quote(tokens['refresh_token'])},
-          id_token = #{conn.quote(tokens['id_token'])},
           verification_status = #{conn.quote(identity['verification_status'])},
           ysws_eligible = #{conn.quote(identity['ysws_eligible'])},
           phone = COALESCE(#{conn.quote(identity['phone_number'])}, phone),
@@ -268,11 +279,11 @@ class AuthController < ApplicationController
           updated_at = NOW()
         WHERE sub = #{conn.quote(identity['id'])}
       SQL
-      User.find(existing["id"])
+      user = User.find(existing["id"])
     else
       conn.execute(<<~SQL)
         INSERT INTO users (
-          sub, slack_id, username, first_name, email, avatar, access_token, refresh_token, id_token,
+          sub, slack_id, username, first_name, email, avatar,
           verification_status, ysws_eligible, phone, birthday, legal_first_name, legal_last_name,
           address_line1, address_line2, address_city, address_state, address_postal_code, address_country,
           role, tutorial_completed, language, created_at, updated_at
@@ -284,9 +295,6 @@ class AuthController < ApplicationController
           #{conn.quote(identity['first_name'])},
           #{conn.quote(identity['primary_email'] || '')},
           #{conn.quote(avatar_url)},
-          #{conn.quote(tokens['access_token'])},
-          #{conn.quote(tokens['refresh_token'])},
-          #{conn.quote(tokens['id_token'])},
           #{conn.quote(identity['verification_status'])},
           #{conn.quote(identity['ysws_eligible'])},
           #{conn.quote(identity['phone_number'])},
@@ -302,8 +310,11 @@ class AuthController < ApplicationController
           'member', false, 'en', NOW(), NOW()
         )
       SQL
-      User.find_by!(sub: identity["id"])
+      user = User.find_by!(sub: identity["id"])
     end
+
+    user.update!(access_token: tokens["access_token"], refresh_token: tokens["refresh_token"], id_token: tokens["id_token"])
+    user
   end
 
   # Login allowlist gate. Open while the table is empty; once entries exist, only
