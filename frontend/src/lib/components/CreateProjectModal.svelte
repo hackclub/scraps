@@ -201,7 +201,7 @@
 
 			if (!response.ok) {
 				const data = await response.json().catch(() => ({}));
-				throw new Error(data.message || $t.createProject.failedToCreateProject);
+				throw new Error(data.error || data.message || $t.createProject.failedToCreateProject);
 			}
 
 			const newProject = await response.json();

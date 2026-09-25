@@ -176,7 +176,7 @@
 
 			if (!response.ok) {
 				const data = await response.json().catch(() => ({}));
-				throw new Error(data.message || 'Failed to save project');
+				throw new Error(data.error || data.message || 'Failed to save project');
 			}
 
 			const updatedProject = await response.json();

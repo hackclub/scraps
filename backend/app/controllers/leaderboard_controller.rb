@@ -1,7 +1,4 @@
 class LeaderboardController < ApplicationController
-  # Admin-gated for now: see routes.rb / Navbar.svelte for the matching frontend gate.
-  before_action :require_admin_role
-
   def index
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 

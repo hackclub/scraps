@@ -1,9 +1,5 @@
 class ProjectsController < ApplicationController
   ALLOWED_IMAGE_DOMAIN = "cdn.hackclub.com"
-  ALLOWED_SLACK_ID = "U0828FYS2UC"
-
-  # Admin-gated for now: see routes.rb / Navbar.svelte for the matching frontend gate.
-  before_action :require_admin_role, only: [:explore]
 
   def explore
     page = [params[:page].to_i, 1].max
@@ -244,10 +240,6 @@ class ProjectsController < ApplicationController
 
   def create
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
-
-    unless current_user.slack_id == ALLOWED_SLACK_ID
-      return render_json({ error: "Scraps has ended. Project creation is disabled." }, status: :forbidden)
-    end
 
     image = params[:image].to_s.presence
     unless valid_image_url?(image)
