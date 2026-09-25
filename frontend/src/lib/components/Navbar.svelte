@@ -6,7 +6,6 @@
 		Package,
 		Info,
 		LayoutDashboard,
-		Trophy,
 		Store,
 		Flame,
 		Spool,
@@ -18,16 +17,17 @@
 		ShoppingBag,
 		Newspaper,
 		PackageCheck,
-		Compass,
 		BarChart3,
 		Menu,
 		X,
-		ChevronDown
+		ChevronDown,
+		Settings
 	} from '@lucide/svelte';
 	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
 	import { API_URL } from '$lib/config';
 	import ScrapsHistoryModal from '$lib/components/ScrapsHistoryModal.svelte';
+	import SettingsModal from '$lib/components/SettingsModal.svelte';
 
 	interface User {
 		id: number;
@@ -43,6 +43,7 @@
 	let loading = $state(true);
 	let showProfileMenu = $state(false);
 	let showScrapsHistory = $state(false);
+	let showSettings = $state(false);
 	let showMobileMenu = $state(false);
 	let showMoreMenu = $state(false);
 	let activeSection = $state('home');
@@ -57,7 +58,9 @@
 	);
 	let isAdminOnly = $derived(user?.role === 'admin' || user?.role === 'creator');
 	let isInAdminSection = $derived(currentPath.startsWith('/admin'));
-	let dashboardMoreActive = $derived(currentPath === '/shop' || currentPath === '/refinery');
+	let dashboardMoreActive = $derived(
+		currentPath === '/shop' || currentPath === '/refinery' || currentPath === '/referrals'
+	);
 	let adminMoreActive = $derived(
 		currentPath.startsWith('/admin/shop') ||
 			currentPath.startsWith('/admin/news') ||
@@ -408,17 +411,6 @@
 				<span class="text-lg font-bold">{$t.nav.dashboard}</span>
 			</a>
 
-			<a
-				href="/explore"
-				class="flex cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 {currentPath ===
-				'/explore'
-					? 'border-black bg-black text-white'
-					: 'border-black hover:border-dashed'}"
-			>
-				<Compass size={18} />
-				<span class="text-lg font-bold">{$t.nav.explore}</span>
-			</a>
-
 			<!-- Visible on xl+ only -->
 			<a
 				href="/shop"
@@ -440,6 +432,17 @@
 			>
 				<Flame size={18} />
 				<span class="text-lg font-bold">{$t.nav.refinery}</span>
+			</a>
+
+			<a
+				href="/referrals"
+				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
+				'/referrals'
+					? 'border-black bg-black text-white'
+					: 'border-black hover:border-dashed'}"
+			>
+				<Users size={18} />
+				<span class="text-lg font-bold">{$t.nav.referrals}</span>
 			</a>
 
 			<!-- More dropdown for smaller screens -->
@@ -481,6 +484,17 @@
 						>
 							<Flame size={18} />
 							<span class="font-bold">{$t.nav.refinery}</span>
+						</a>
+						<a
+							href="/referrals"
+							onclick={closeMoreMenu}
+							class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-gray-100 {currentPath ===
+							'/referrals'
+								? 'bg-gray-100 font-bold'
+								: ''}"
+						>
+							<Users size={18} />
+							<span class="font-bold">{$t.nav.referrals}</span>
 						</a>
 					</div>
 				{/if}
@@ -538,22 +552,16 @@
 								<p class="truncate font-bold">{user.username || 'user'}</p>
 								<p class="truncate text-sm text-gray-500">{user.email}</p>
 							</div>
-							<a
-								href="/leaderboard"
-								onclick={closeProfileMenu}
-								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 transition-colors hover:bg-gray-100"
+							<button
+								onclick={() => {
+									showSettings = true;
+									closeProfileMenu();
+								}}
+								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100"
 							>
-								<Trophy size={18} />
-								<span class="font-bold">{$t.nav.leaderboard}</span>
-							</a>
-							<a
-								href="/referrals"
-								onclick={closeProfileMenu}
-								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 transition-colors hover:bg-gray-100"
-							>
-								<Users size={18} />
-								<span class="font-bold">{$t.nav.referrals}</span>
-							</a>
+								<Settings size={18} />
+								<span class="font-bold">{$t.nav.settings}</span>
+							</button>
 							<button
 								onclick={handleLogout}
 								class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-gray-100"
@@ -788,18 +796,6 @@
 				</a>
 
 				<a
-					href="/explore"
-					onclick={handleMobileNavClick}
-					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
-					'/explore'
-						? 'border-black bg-black text-white'
-						: 'border-black hover:border-dashed'}"
-				>
-					<Compass size={20} />
-					<span class="text-lg font-bold">{$t.nav.explore}</span>
-				</a>
-
-				<a
 					href="/shop"
 					onclick={handleMobileNavClick}
 					class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
@@ -867,17 +863,6 @@
 				</div>
 				<div class="mb-3 flex flex-col gap-2">
 					<a
-						href="/leaderboard"
-						onclick={handleMobileNavClick}
-						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
-						'/leaderboard'
-							? 'border-black bg-black text-white'
-							: 'border-black hover:border-dashed'}"
-					>
-						<Trophy size={20} />
-						<span class="text-lg font-bold">{$t.nav.leaderboard}</span>
-					</a>
-					<a
 						href="/referrals"
 						onclick={handleMobileNavClick}
 						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
@@ -888,6 +873,16 @@
 						<Users size={20} />
 						<span class="text-lg font-bold">{$t.nav.referrals}</span>
 					</a>
+					<button
+						onclick={() => {
+							showSettings = true;
+							closeMobileMenu();
+						}}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 border-black px-4 py-3 text-left transition-all duration-300 hover:border-dashed"
+					>
+						<Settings size={20} />
+						<span class="text-lg font-bold">{$t.nav.settings}</span>
+					</button>
 				</div>
 				<div class="flex items-center justify-between gap-2">
 					<div class="flex flex-col items-start gap-1">
@@ -926,3 +921,7 @@
 {/if}
 
 <ScrapsHistoryModal bind:open={showScrapsHistory} />
+
+{#if showSettings}
+	<SettingsModal onClose={() => (showSettings = false)} />
+{/if}

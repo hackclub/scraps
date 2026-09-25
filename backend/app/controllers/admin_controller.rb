@@ -850,6 +850,8 @@ class AdminController < ApplicationController
     consolation_prize = !gachapon_only && ActiveModel::Type::Boolean.new.cast(params[:consolationPrize]) ? true : false
 
     pricing = ShopPricingService.compute_item_pricing(price.to_f / ScrapsService::SCRAPS_PER_DOLLAR, base_prob)
+    pricing[:base_upgrade_cost] = params[:baseUpgradeCost].to_i if params[:baseUpgradeCost].to_i > 0
+    pricing[:boost_amount] = params[:boostAmount].to_f if params[:boostAmount].to_f > 0
 
     conn = ActiveRecord::Base.connection
     conn.execute(<<~SQL)

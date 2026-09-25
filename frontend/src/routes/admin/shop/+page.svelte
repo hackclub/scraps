@@ -184,12 +184,8 @@
 		formSizeVariants = formSizeVariants.filter((_, i) => i !== index);
 	}
 
-	function randomInt(min: number, max: number) {
-		return Math.round(min + Math.random() * (max - min));
-	}
-
 	async function randomizeOdds() {
-		formBaseProbability = randomInt(1, 99);
+		formProbabilityPinned = false;
 		formRollCostOverride = null;
 		await recalculatePricing();
 	}
@@ -200,6 +196,7 @@
 	// without spamming compute-pricing on every pixel of drag.
 	async function updateBaseProbability(value: number) {
 		formBaseProbability = value;
+		formProbabilityPinned = true;
 		formRollCostOverride = null;
 		await recalculatePricing();
 	}
@@ -214,6 +211,7 @@
 		}
 	}
 	let formBaseProbability = $state(50);
+	let formProbabilityPinned = $state(false);
 	let formBaseUpgradeCost = $state(10);
 	let formBoostAmount = $state(1);
 	let formRollCostOverride = $state<number | null>(null);
@@ -225,7 +223,7 @@
 	let errorModal = $state<string | null>(null);
 
 	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
-	const DOLLARS_PER_HOUR = serverConfig.dollarsPerHour ?? 4;
+	const DOLLARS_PER_HOUR = serverConfig.dollarsPerHour ?? 5;
 	const SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 
 	function calculateRollCost(
@@ -404,7 +402,7 @@
 		try {
 			const body = {
 				dollarCost: formMonetaryValue,
-				baseProbability: formBaseProbability,
+				baseProbability: formProbabilityPinned ? formBaseProbability : undefined,
 				stockCount: formCount
 			};
 			const res = await fetch(`${API_URL}/admin/shop/compute-pricing`, {
@@ -784,6 +782,7 @@
 		formCategory = '';
 		formCount = 0;
 		formBaseProbability = 50;
+		formProbabilityPinned = false;
 		formBaseUpgradeCost = 10;
 		formBoostAmount = 1;
 		formRollCostOverride = null;
@@ -811,6 +810,7 @@
 		formCategory = item.category;
 		formCount = item.count;
 		formBaseProbability = item.baseProbability;
+		formProbabilityPinned = true;
 		formBaseUpgradeCost = item.baseUpgradeCost;
 		formBoostAmount = item.boostAmount ?? 1;
 		formRollCostOverride = item.rollCostOverride ?? null;
@@ -1569,8 +1569,7 @@
 										formBaseUpgradeCost = optimalPricing.baseUpgradeCost;
 										formBoostAmount = optimalPricing.boostAmount;
 										formPriceOverride = false;
-										// ensure EV and server parity
-										await recalculatePricing();
+										formProbabilityPinned = true;
 									}}
 									class="flex cursor-pointer items-center gap-1 rounded-full border-2 border-yellow-600 px-3 py-1 text-xs font-bold text-yellow-700 transition-all duration-200 hover:border-dashed"
 								>
@@ -1587,7 +1586,7 @@
 					onclick={randomizeOdds}
 					class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-purple-50 px-4 py-2 text-sm font-bold transition-all hover:border-dashed hover:bg-purple-100"
 				>
-					<Dices size={16} /> randomize odds (stays within optimal pricing)
+					<Dices size={16} /> reroll pricing (chaotic, stays in budget)
 				</button>
 
 				<div>
@@ -1610,8 +1609,8 @@
 						<span>99% · common</span>
 					</div>
 					<p class="mt-1 text-xs text-gray-500">
-						drag to set the starting odds; boost per upgrade, upgrade cost, and roll cost are
-						recomputed to match once you let go
+						drag to set the starting odds; boost per upgrade and upgrade cost get rerolled once you
+						let go (always stays in budget)
 					</p>
 				</div>
 

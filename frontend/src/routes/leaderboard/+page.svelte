@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { getUser } from '$lib/auth-client';
 	import {
 		leaderboardStore,
@@ -27,7 +28,12 @@
 	}
 
 	onMount(async () => {
-		await getUser();
+		// Admin-gated for now: see leaderboard_controller.rb / Navbar.svelte for the matching backend gate.
+		const user = await getUser();
+		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
+			goto('/dashboard');
+			return;
+		}
 		fetchLeaderboardData('scraps');
 	});
 </script>

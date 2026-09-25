@@ -6,6 +6,7 @@ export default {
 		dashboard: 'dashboard',
 		leaderboard: 'leaderboard',
 		referrals: 'invite',
+		settings: 'settings',
 		shop: 'shop',
 		refinery: 'refinery',
 		explore: 'explore',
@@ -324,6 +325,23 @@ export default {
 		confirmShippingAddress: 'confirm shipping address',
 		failedToSaveAddress: 'Failed to save address'
 	},
+	settings: {
+		settings: 'settings',
+		preferredName: 'preferred name',
+		preferredNameHint: 'what we call you around here, leave blank to use your account name',
+		yourAddress: 'your address',
+		addressHint:
+			"used for shipping when you win something. this is separate from your hack club auth address, and won't get overwritten when you log back in.",
+		save: 'save changes',
+		saving: 'saving...',
+		saved: 'settings saved',
+		failedToSave: 'failed to save settings',
+		failedToLoad: 'failed to load settings',
+		redoOnboarding: 'redo onboarding',
+		redoOnboardingHint:
+			"walk through the site tour again in case you missed something. you won't get any scraps or items from doing this again.",
+		redoOnboardingButton: 'restart tour'
+	},
 	project: {
 		backToDashboard: 'back to dashboard',
 		backToProfile: "back to {username}'s profile",
@@ -633,7 +651,7 @@ export default {
 			'scraps is for high schoolers! Anybody from 13 to 18 years old can participate.',
 		howMuchDoesItCost: 'how much does it cost?',
 		howMuchDoesItCostAnswer:
-			'It\'s 100% free - all the prizes are donated to us or paid for by hack club!',
+			"It's 100% free - all the prizes are donated to us or paid for by hack club!",
 		whatTypesOfProjects: 'what types of projects count?',
 		whatTypesOfProjectsAnswer:
 			"all kinds of technical projects as long as it's open-source on github!",

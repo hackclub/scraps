@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Search, Eye, X } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
 	import { formatHours } from '$lib/utils';
+	import { getUser } from '$lib/auth-client';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 	import { t } from '$lib/i18n';
 
@@ -62,7 +64,13 @@
 		}
 	}
 
-	onMount(() => {
+	onMount(async () => {
+		// Admin-gated for now: see projects_controller.rb / Navbar.svelte for the matching backend gate.
+		const user = await getUser();
+		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
+			goto('/dashboard');
+			return;
+		}
 		fetchProjects();
 	});
 

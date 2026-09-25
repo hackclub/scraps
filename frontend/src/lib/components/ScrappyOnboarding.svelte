@@ -5,8 +5,13 @@
 	import { browser } from '$app/environment';
 	import OnboardingPayout from './OnboardingPayout.svelte';
 	import OnboardingGachapon from './OnboardingGachapon.svelte';
-	import CreateProjectModal from './CreateProjectModal.svelte';
-	import { addProject, fetchShopItems, shopItemsStore, type Project } from '$lib/stores';
+	import {
+		addProject,
+		fetchShopItems,
+		shopItemsStore,
+		tutorialProjectIdStore,
+		type Project
+	} from '$lib/stores';
 	import { API_URL } from '$lib/config';
 	import { refreshUserScraps } from '$lib/auth-client';
 
@@ -49,9 +54,10 @@
 			| 'payout-resolved'
 			| 'gachapon-pulled'
 			| 'shop-picked';
+		scrollable?: boolean;
 	}
 
-	let showCreateModal = $state(false);
+	let creatingProject = $state(false);
 	let createdProjectId = $state<number | null>(null);
 	let projectSubmitted = $state(false);
 	let finalRollMult = $state<number | null>(null);
@@ -62,19 +68,24 @@
 		{
 			emotion: 'normal',
 			text: "Hi! Welcome to Scraps. I'm Scrappy :D",
-			sub: '(yes, iamalive has terrible naming sense)'
+			sub: '(yes, ck has terrible naming sense)'
 		},
 		{
 			emotion: 'excited',
-			text: 'Scraps is a Hack Club YSWS program where you ship projects and %%gamble%% roll for a chance at cool items: some straight from past events!'
+			text: 'Scraps is a Hack Club You Ship We Ship program where you ship projects and %%gamble%% roll for a chance at cool items: some straight from past events!'
 		},
 		{ emotion: 'normal', text: 'Let me walk you through the site.' },
 
 		{
 			emotion: 'normal',
-			text: 'First up: projects. This is your dashboard, where they live. Hit **new project**: a name and a description is all you need to start.',
+			text: "First up, we have your dashboard! This page is where you'll be to create and submit your projects, and also check up on news!",
+			nav: '/dashboard'
+		},
+		{
+			emotion: 'excited',
+			text: "You'll press this button to create a new project. Try it!",
 			nav: '/dashboard',
-			highlight: 'button[data-tutorial="new-project"]',
+			highlight: '[data-tutorial="new-project"]',
 			waitFor: 'project-created'
 		},
 		{
@@ -85,12 +96,19 @@
 		{
 			emotion: 'normal',
 			text: "The glowing fields here are the ones still missing. Fill those in for real and hit submit, that's how you turn this into scraps.",
-			nav: () => (createdProjectId !== null ? `/projects/${createdProjectId}/submit` : null)
+			nav: () => (createdProjectId !== null ? `/projects/${createdProjectId}/submit` : null),
+			scrollable: true
 		},
 
 		{
+			emotion: 'normal',
+			text: "Let's head back to your dashboard for a sec.",
+			nav: '/dashboard'
+		},
+		{
 			emotion: 'happy',
-			text: "Once a reviewer approves it, you get scraps! Here's a real example: hit **check project** up top.",
+			text: "Once a reviewer approves it, you get scraps! Here's a real example on your example project that was created earlier.",
+			nav: () => (createdProjectId !== null ? `/projects/${createdProjectId}` : null),
 			panel: 'payout'
 		},
 		{
@@ -100,7 +118,7 @@
 		},
 		{
 			emotion: 'sus',
-			text: 'Then there\'s a bonus roll: **lock it in**, or **reroll once** (binding) for a shot at higher... or lower.',
+			text: "Then there's a bonus roll: **lock it in**, or **reroll once** (binding) for a shot at higher... or lower.",
 			panel: 'payout',
 			waitFor: 'payout-resolved'
 		},
@@ -122,7 +140,8 @@
 		},
 		{
 			emotion: 'excited',
-			text: "One-time thing, just for you: pick **any 2 items** from the whole shop so you can see everything that's up for grabs.",
+			text: "As a one-time thing, I'll let you decide which **two items** you want to keep out of everything in the shop!",
+			sub: '(so you can check out the whole shop)',
 			nav: '/shop',
 			panel: 'shop-pick',
 			waitFor: 'shop-picked'
@@ -168,6 +187,14 @@
 			text: 'WHOA. Jackpot energy right there!!',
 			when: () => gachaponReward === 50
 		},
+
+		{
+			emotion: 'excited',
+			text: 'For now, you can invite your friends with your custom invite link. People who invite a lot of people might get something special, like an eye emoji 👀 next to their name.',
+			nav: '/referrals',
+			highlight: 'a[href="/referrals"]'
+		},
+
 		{
 			emotion: 'happy',
 			text: "And that's it. Go build something silly. 👋",
@@ -263,10 +290,7 @@
 			typing = false;
 			return;
 		}
-		if (beat.waitFor === 'project-created') {
-			if (!showCreateModal) showCreateModal = true;
-			return;
-		}
+		if (beat.waitFor === 'project-created') return;
 		if (beat.waitFor === 'project-submitted' && !projectSubmitted) return;
 		if (beat.waitFor === 'payout-resolved' && finalRollMult === null) return;
 		if (beat.waitFor === 'gachapon-pulled' && gachaponReward === null) return;
@@ -293,8 +317,10 @@
 		else idx = nxt;
 	}
 
+	let firstTypingStarted = $state(false);
 	$effect(() => {
 		idx;
+		if (!firstTypingStarted) return;
 		untrack(() => startTyping());
 	});
 
@@ -334,8 +360,32 @@
 		};
 	});
 
+	async function createTutorialProject() {
+		if (creatingProject) return;
+		creatingProject = true;
+		try {
+			const response = await fetch(`${API_URL}/projects`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({
+					name: 'my first scrap',
+					description:
+						"this is my first project on scraps! i'm excited to start building and earning rewards."
+				})
+			});
+			if (!response.ok) return;
+			const newProject = await response.json();
+			tutorialProjectIdStore.set(newProject.id);
+			onProjectCreated(newProject);
+		} catch (e) {
+			console.error('Failed to auto-create tutorial project:', e);
+		} finally {
+			creatingProject = false;
+		}
+	}
+
 	function onProjectCreated(project: Project) {
-		showCreateModal = false;
 		addProject(project);
 		createdProjectId = project.id;
 		currentNav = `/projects/${project.id}`;
@@ -356,7 +406,10 @@
 
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
-		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+		if (
+			target &&
+			(target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+		) {
 			return;
 		}
 		if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowRight') {
@@ -365,196 +418,315 @@
 		}
 	}
 
+	$effect(() => {
+		document.body.style.overflow = beat.scrollable ? '' : 'hidden';
+	});
+
 	onMount(() => {
-		document.body.style.overflow = 'hidden';
 		window.addEventListener('tutorial:project-submitted', onProjectSubmitted);
 		fetchShopItems();
+
+		const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+		const TEXT_PHASE_AT = 1000;
+		const BOX_FADE_MS = 200;
+		introTimers.push(
+			setTimeout(() => (introPhase = 'pop'), reduce ? 10 : 400),
+			setTimeout(() => (introPhase = 'text'), reduce ? 20 : TEXT_PHASE_AT),
+			setTimeout(
+				() => {
+					firstTypingStarted = true;
+					startTyping();
+				},
+				reduce ? 30 : TEXT_PHASE_AT + BOX_FADE_MS
+			)
+		);
 	});
 	onDestroy(() => {
 		clearTimer();
+		introTimers.forEach(clearTimeout);
 		window.removeEventListener('tutorial:project-submitted', onProjectSubmitted);
 		if (typeof document !== 'undefined') document.body.style.overflow = '';
 	});
 
-	let estimate = $derived.by(() => {
-		let secs = 0;
-		for (const b of beats) {
-			secs += 1.4 + parse(b.text).reduce((n, r) => n + r.text.length, 0) / 28;
-			if (b.waitFor) secs += 6;
-			if (b.panel) secs += 2;
-		}
-		return Math.round(secs / 6) / 10;
-	});
-
 	let showPanel = $derived(beat.panel != null);
+
+	type IntroPhase = 'blank' | 'pop' | 'text' | 'falling' | 'done';
+	let introPhase = $state<IntroPhase>('blank');
+	let introTimers: ReturnType<typeof setTimeout>[] = [];
+	let prefersReducedMotion = $derived(
+		browser &&
+			typeof window !== 'undefined' &&
+			!!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+	);
+	let introTextShown = $derived(introPhase !== 'blank' && introPhase !== 'pop');
+	let introSettled = $derived(introPhase === 'falling' || introPhase === 'done');
+
+	$effect(() => {
+		if (idx >= 2 && introPhase !== 'falling' && introPhase !== 'done') {
+			introPhase = 'falling';
+			introTimers.push(setTimeout(() => (introPhase = 'done'), prefersReducedMotion ? 20 : 700));
+		}
+	});
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-<CreateProjectModal
-	open={showCreateModal}
-	onClose={() => (showCreateModal = false)}
-	onCreated={onProjectCreated}
-/>
+{#snippet dialogueContent()}
+	<p class="mb-1 text-sm font-bold text-gray-500">Scrappy</p>
+	<p class="min-h-[3.5rem] text-lg leading-snug">
+		{#each runs as r, ri (ri)}
+			{#if r.kind === 'b'}<strong>{runShown(ri)}</strong>{:else if r.kind === 'strike'}<span
+					class="line-through">{runShown(ri)}</span
+				>{:else if r.kind === 's'}<span class="strike" class:on={struck}>{runShown(ri)}</span
+				>{:else}{runShown(ri)}{/if}
+		{/each}<span class="caret" class:hidden={!typing}>▍</span>
+	</p>
+	{#if beat.sub && shown >= fullLen}
+		<p class="mt-1 text-xs text-gray-400" transition:fade={{ duration: 150 }}>{beat.sub}</p>
+	{/if}
+
+	{#if beat.waitFor === 'project-created' && shown >= fullLen}
+		<p class="mt-2 text-right text-xs font-bold text-yellow-600">
+			{creatingProject ? 'creating...' : 'click the highlighted button above to continue'}
+		</p>
+	{:else if beat.waitFor === 'project-submitted' && !projectSubmitted && shown >= fullLen}
+		<p class="mt-2 text-right text-xs font-bold text-yellow-600">
+			fill out the required fields and submit to continue
+		</p>
+	{:else if beat.waitFor === 'payout-resolved' && finalRollMult === null && shown >= fullLen}
+		<p class="mt-2 text-right text-xs font-bold text-yellow-600">roll it out above to continue</p>
+	{:else if beat.waitFor === 'gachapon-pulled' && gachaponReward === null && shown >= fullLen}
+		<p class="mt-2 text-right text-xs font-bold text-yellow-600">
+			pull the gachapon above to continue
+		</p>
+	{:else if beat.waitFor === 'shop-picked' && pickedItemIds.length < 2 && shown >= fullLen}
+		<p class="mt-2 text-right text-xs font-bold text-yellow-600">
+			pick {2 - pickedItemIds.length} more item{2 - pickedItemIds.length === 1 ? '' : 's'} above to continue
+		</p>
+	{:else}
+		<p class="mt-2 text-right text-xs text-gray-400">
+			{typing ? 'click to skip' : 'click or press enter ▶'}
+		</p>
+	{/if}
+{/snippet}
 
 <div
-	class="fixed inset-0 z-[90] {hlRect || beat.waitFor === 'project-submitted'
+	class="fixed inset-0 z-[90] {introSettled && (hlRect || beat.waitFor === 'project-submitted')
 		? 'pointer-events-none'
 		: ''}"
-	transition:fade={{ duration: 150 }}
 >
+	{#if introPhase !== 'done'}
+		<div
+			class="intro-curtain absolute inset-0 z-10 bg-white"
+			class:falling={introPhase === 'falling'}
+		></div>
+	{/if}
+
+	{#if introSettled}
+		<div class="absolute inset-0" transition:fade={{ duration: 250 }}>
+			{#if hlRect}
+				<div class="pointer-events-auto absolute inset-0">
+					<div
+						class="absolute top-0 right-0 left-0 bg-black/70"
+						style="height:{hlRect.top - 6}px"
+					></div>
+					<div
+						class="absolute right-0 bottom-0 left-0 bg-black/70"
+						style="top:{hlRect.top + hlRect.height + 6}px"
+					></div>
+					<div
+						class="absolute bg-black/70"
+						style="top:{hlRect.top - 6}px; left:0; width:{hlRect.left -
+							6}px; height:{hlRect.height + 12}px"
+					></div>
+					<div
+						class="absolute bg-black/70"
+						style="top:{hlRect.top - 6}px; left:{hlRect.left +
+							hlRect.width +
+							6}px; right:0; height:{hlRect.height + 12}px"
+					></div>
+				</div>
+				<div
+					class="pointer-events-none absolute animate-pulse rounded-xl border-4 border-white"
+					style="top:{hlRect.top - 6}px; left:{hlRect.left - 6}px; width:{hlRect.width +
+						12}px; height:{hlRect.height + 12}px"
+				></div>
+				{#if beat.waitFor === 'project-created'}
+					<button
+						onclick={createTutorialProject}
+						disabled={creatingProject}
+						aria-label="Create a new project"
+						class="pointer-events-auto absolute cursor-pointer rounded-xl disabled:cursor-not-allowed"
+						style="top:{hlRect.top}px; left:{hlRect.left}px; width:{hlRect.width}px; height:{hlRect.height}px"
+					></button>
+				{/if}
+			{:else}
+				<div
+					class="absolute inset-0 {beat.nav || beat.waitFor === 'project-submitted'
+						? 'bg-black/35'
+						: 'bg-black/70'}"
+				></div>
+			{/if}
+
+			{#if showPanel}
+				<div class="pointer-events-auto absolute top-20 left-1/2 -translate-x-1/2">
+					{#if beat.panel === 'payout'}
+						<OnboardingPayout onFinal={onPayoutFinal} />
+					{:else if beat.panel === 'shop-pick'}
+						<div
+							class="w-[min(94vw,44rem)] rounded-2xl border-4 border-black bg-white p-5 shadow-xl"
+						>
+							<p class="mb-3 text-sm font-bold text-gray-500">
+								PICK ANY 2 · {pickedItemIds.length}/2 chosen
+							</p>
+							<div
+								class="scrollbar-black grid max-h-[26rem] grid-cols-3 gap-3 overflow-y-auto pr-2 sm:grid-cols-4"
+							>
+								{#each $shopItemsStore as item (item.id)}
+									{@const picked = pickedItemIds.includes(item.id)}
+									<button
+										onclick={() => {
+											if (picked) {
+												pickedItemIds = pickedItemIds.filter((id) => id !== item.id);
+												return;
+											}
+											if (pickedItemIds.length >= 2) return;
+											pickedItemIds = [...pickedItemIds, item.id];
+											if (pickedItemIds.length === 2) {
+												const nxt = nextVisibleFrom(idx + 1);
+												if (nxt === -1) completeTutorial();
+												else idx = nxt;
+											}
+										}}
+										class="flex flex-col items-center gap-1.5 rounded-xl border-4 p-3 transition-all {picked
+											? 'border-green-500 bg-green-50'
+											: 'border-black hover:border-dashed'}"
+									>
+										<img src={item.image} alt={item.name} class="h-20 w-20 object-contain" />
+										<span class="w-full truncate text-center text-sm font-bold">{item.name}</span>
+									</button>
+								{/each}
+							</div>
+						</div>
+					{:else if beat.panel === 'gachapon'}
+						<OnboardingGachapon onFinal={onGachaponFinal} />
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
+
 	<button
-		onclick={completeTutorial}
+		onclick={(e) => {
+			e.stopPropagation();
+			completeTutorial();
+		}}
 		class="pointer-events-auto absolute top-4 right-4 z-20 cursor-pointer rounded-full border-2 border-white/60 bg-black/40 px-3 py-1 text-xs font-bold text-white transition-all hover:bg-black/70"
 	>
 		skip
 	</button>
 
-	{#if hlRect}
-		<div class="pointer-events-auto absolute inset-0">
-			<div
-				class="absolute top-0 right-0 left-0 bg-black/70"
-				style="height:{hlRect.top - 6}px"
-			></div>
-			<div
-				class="absolute right-0 bottom-0 left-0 bg-black/70"
-				style="top:{hlRect.top + hlRect.height + 6}px"
-			></div>
-			<div
-				class="absolute bg-black/70"
-				style="top:{hlRect.top - 6}px; left:0; width:{hlRect.left - 6}px; height:{hlRect.height +
-					12}px"
-			></div>
-			<div
-				class="absolute bg-black/70"
-				style="top:{hlRect.top - 6}px; left:{hlRect.left +
-					hlRect.width +
-					6}px; right:0; height:{hlRect.height + 12}px"
-			></div>
-		</div>
+	{#if introPhase !== 'blank'}
 		<div
-			class="pointer-events-none absolute animate-pulse rounded-xl border-4 border-white"
-			style="top:{hlRect.top - 6}px; left:{hlRect.left - 6}px; width:{hlRect.width +
-				12}px; height:{hlRect.height + 12}px"
-		></div>
-	{:else}
-		<div
-			class="absolute inset-0 {beat.nav || beat.waitFor === 'project-submitted'
-				? 'bg-black/35'
-				: 'bg-black/70'}"
-		></div>
-	{/if}
-
-	{#if showPanel}
-		<div class="pointer-events-auto absolute top-20 left-1/2 -translate-x-1/2">
-			{#if beat.panel === 'payout'}
-				<OnboardingPayout onFinal={onPayoutFinal} />
-			{:else if beat.panel === 'shop-pick'}
-				<div class="w-[min(94vw,44rem)] rounded-2xl border-4 border-black bg-white p-5 shadow-xl">
-					<p class="mb-3 text-sm font-bold text-gray-500">
-						PICK ANY 2 · {pickedItemIds.length}/2 chosen
-					</p>
-					<div class="scrollbar-black grid max-h-[26rem] grid-cols-3 gap-3 overflow-y-auto pr-2 sm:grid-cols-4">
-						{#each $shopItemsStore as item (item.id)}
-							{@const picked = pickedItemIds.includes(item.id)}
-							<button
-								onclick={() => {
-									if (picked) pickedItemIds = pickedItemIds.filter((id) => id !== item.id);
-									else if (pickedItemIds.length < 2) pickedItemIds = [...pickedItemIds, item.id];
-								}}
-								class="flex flex-col items-center gap-1.5 rounded-xl border-4 p-3 transition-all {picked
-									? 'border-green-500 bg-green-50'
-									: 'border-black hover:border-dashed'}"
-							>
-								<img src={item.image} alt={item.name} class="h-20 w-20 object-contain" />
-								<span class="w-full truncate text-center text-sm font-bold">{item.name}</span>
-							</button>
-						{/each}
-					</div>
-				</div>
-			{:else if beat.panel === 'gachapon'}
-				<OnboardingGachapon onFinal={onGachaponFinal} />
-			{/if}
-		</div>
-	{/if}
-
-	<div
-		class="pointer-events-auto absolute inset-x-0 bottom-0 flex justify-center px-4 pb-6"
-		onclick={advance}
-		onkeydown={onKey}
-		role="button"
-		tabindex="-1"
-		aria-label="advance dialogue"
-	>
-		<div class="relative w-full max-w-2xl">
-			<div
-				class="pointer-events-none mx-auto mb-2 h-24 w-24 rounded-2xl border-4 border-black bg-white p-1 shadow-lg sm:hidden"
-			>
+			class="scrappy-wrap pointer-events-auto absolute z-10 h-40 w-40 cursor-pointer rounded-2xl border-4 border-black bg-white p-1 shadow-lg"
+			class:paired={introTextShown}
+			class:settled={introSettled}
+			onclick={advance}
+			onkeydown={onKey}
+			role="button"
+			tabindex="-1"
+			aria-label="advance dialogue"
+		>
+			<div class="scrappy-pop h-full w-full">
 				<img
 					src="/images/scrappy/{beat.emotion}.png"
 					alt="Scrappy"
 					class="h-full w-full object-contain"
 				/>
 			</div>
-			<div class="rounded-2xl border-4 border-black bg-white p-5 pt-4 shadow-2xl">
-				<p class="mb-1 text-sm font-bold text-gray-500">Scrappy</p>
-				<p class="min-h-[3.5rem] text-lg leading-snug">
-					{#each runs as r, ri (ri)}
-						{#if r.kind === 'b'}<strong>{runShown(ri)}</strong>{:else if r.kind === 'strike'}<span
-								class="line-through">{runShown(ri)}</span
-							>{:else if r.kind === 's'}<span class="strike" class:on={struck}>{runShown(ri)}</span
-							>{:else}{runShown(ri)}{/if}
-					{/each}<span class="caret" class:hidden={!typing}>▍</span>
-				</p>
-				{#if beat.sub && shown >= fullLen}
-					<p class="mt-1 text-xs text-gray-400" transition:fade={{ duration: 150 }}>{beat.sub}</p>
-				{/if}
-
-				{#if beat.waitFor === 'project-created' && shown >= fullLen}
-					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
-						{showCreateModal ? 'fill out the form to continue' : 'click or press enter to create a project'}
-					</p>
-				{:else if beat.waitFor === 'project-submitted' && !projectSubmitted && shown >= fullLen}
-					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
-						fill out the required fields and submit to continue
-					</p>
-				{:else if beat.waitFor === 'payout-resolved' && finalRollMult === null && shown >= fullLen}
-					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
-						roll it out above to continue
-					</p>
-				{:else if beat.waitFor === 'gachapon-pulled' && gachaponReward === null && shown >= fullLen}
-					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
-						pull the gachapon above to continue
-					</p>
-				{:else if beat.waitFor === 'shop-picked' && pickedItemIds.length < 2 && shown >= fullLen}
-					<p class="mt-2 text-right text-xs font-bold text-yellow-600">
-						pick {2 - pickedItemIds.length} more item{2 - pickedItemIds.length === 1 ? '' : 's'} above to continue
-					</p>
-				{:else}
-					<p class="mt-2 text-right text-xs text-gray-400">
-						{typing ? 'click to skip' : 'click or press enter ▶'}
-					</p>
-				{/if}
-			</div>
-
-			<div
-				class="pointer-events-none absolute right-full bottom-0 mr-3 hidden h-36 w-36 rounded-2xl border-4 border-black bg-white p-1 shadow-lg sm:block lg:h-48 lg:w-48"
-			>
-				<img
-					src="/images/scrappy/{beat.emotion}.png"
-					alt="Scrappy"
-					class="h-full w-full object-contain"
-				/>
-			</div>
-
-			<p class="mt-2 text-center text-[11px] text-gray-500">
-				dev note: ~{estimate} min · beat {visible.indexOf(beat) + 1}/{visible.length}
-			</p>
 		</div>
-	</div>
+	{/if}
+	{#if introTextShown}
+		<div
+			class="intro-textbox pointer-events-auto absolute z-10 cursor-pointer rounded-2xl border-4 border-black bg-white p-5 pt-4 text-left shadow-2xl"
+			class:settled={introSettled}
+			onclick={advance}
+			onkeydown={onKey}
+			role="button"
+			tabindex="-1"
+			aria-label="advance dialogue"
+			transition:fade={{ duration: 200 }}
+		>
+			{@render dialogueContent()}
+		</div>
+	{/if}
 </div>
 
 <style>
+	.intro-curtain {
+		transition: transform 650ms cubic-bezier(0.55, 0, 0.85, 0.35);
+	}
+	.intro-curtain.falling {
+		transform: translateY(100%);
+	}
+
+	.scrappy-wrap {
+		--sx: 0px;
+		--sy: 0px;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%) translate(var(--sx), var(--sy));
+		transition: transform 500ms ease;
+	}
+	.scrappy-wrap.paired {
+		--sx: -8rem;
+	}
+	.scrappy-wrap.settled {
+		--sy: calc(50vh - 130px);
+	}
+
+	.intro-textbox {
+		--ty: 0px;
+		top: 50%;
+		left: calc(50% - 1.5rem);
+		width: min(90vw, 24rem);
+		transform: translateY(-50%) translateY(var(--ty));
+		transition: transform 500ms ease;
+	}
+	.intro-textbox.settled {
+		--ty: calc(50vh - 130px);
+	}
+
+	@media (max-width: 480px) {
+		.scrappy-wrap.paired {
+			--sx: -5rem;
+		}
+		.intro-textbox {
+			left: calc(50% - 0.5rem);
+			width: min(94vw, 18rem);
+		}
+	}
+
+	.scrappy-pop {
+		animation: scrappy-pop 550ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+	}
+	@keyframes scrappy-pop {
+		0% {
+			transform: scale(0) rotate(-10deg);
+			opacity: 0;
+		}
+		60% {
+			transform: scale(1.15) rotate(4deg);
+			opacity: 1;
+		}
+		80% {
+			transform: scale(0.95) rotate(-2deg);
+		}
+		100% {
+			transform: scale(1) rotate(0deg);
+		}
+	}
+
 	.caret {
 		animation: blink 1s steps(1) infinite;
 	}
@@ -583,7 +755,11 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.caret,
-		.strike::after {
+		.strike::after,
+		.intro-curtain,
+		.scrappy-wrap,
+		.intro-textbox,
+		.scrappy-pop {
 			animation: none;
 			transition: none;
 		}

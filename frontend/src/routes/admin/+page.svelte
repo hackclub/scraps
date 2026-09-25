@@ -23,7 +23,7 @@
 	import { t } from '$lib/i18n';
 
 	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
-	const DOLLARS_PER_HOUR = serverConfig.dollarsPerHour ?? 4;
+	const DOLLARS_PER_HOUR = serverConfig.dollarsPerHour ?? 5;
 	const SCRAPS_PER_DOLLAR = SCRAPS_PER_HOUR / DOLLARS_PER_HOUR;
 
 	interface ShopStats {

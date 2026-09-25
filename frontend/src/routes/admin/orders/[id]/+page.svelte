@@ -484,7 +484,7 @@
 										<span class="font-bold text-gray-500">phone</span>
 										<span
 											class="cursor-pointer hover:underline"
-											onclick={() => copyField((order.phone || addr.phone)!)}
+											onclick={() => copyField((order?.phone || addr.phone)!)}
 											>{order.phone || addr.phone}</span
 										>
 									{/if}
@@ -492,7 +492,7 @@
 										<span class="font-bold text-gray-500">email</span>
 										<span
 											class="cursor-pointer hover:underline"
-											onclick={() => copyField(order.email!)}>{order.email}</span
+											onclick={() => copyField(order?.email!)}>{order.email}</span
 										>
 									{/if}
 								</div>
@@ -509,14 +509,14 @@
 										<span class="font-bold text-gray-500">phone</span>
 										<span
 											class="cursor-pointer hover:underline"
-											onclick={() => copyField(order.phone!)}>{order.phone}</span
+											onclick={() => copyField(order?.phone!)}>{order.phone}</span
 										>
 									{/if}
 									{#if order.email}
 										<span class="font-bold text-gray-500">email</span>
 										<span
 											class="cursor-pointer hover:underline"
-											onclick={() => copyField(order.email!)}>{order.email}</span
+											onclick={() => copyField(order?.email!)}>{order.email}</span
 										>
 									{/if}
 								</div>

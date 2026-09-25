@@ -20,7 +20,7 @@
 	let powerUpCostPct = $state(10);
 	const MAX_ATTEMPTS = 3;
 
-	let dollarsPerHour = $state(4);
+	let dollarsPerHour = $state(5);
 	const scrapsPerDollar = $derived(SCRAPS_PER_HOUR / dollarsPerHour);
 
 	const mockFeedback = 'this is testing. meaning this is a test. i am now goign to epxlldoe';

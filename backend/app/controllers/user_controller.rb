@@ -7,6 +7,7 @@ class UserController < ApplicationController
     render_json({
       id: current_user.id,
       username: current_user.username,
+      preferred_name: current_user.preferred_name,
       email: current_user.email,
       avatar: current_user.avatar,
       slack_id: current_user.slack_id,
@@ -16,6 +17,49 @@ class UserController < ApplicationController
       tutorial_completed: current_user.tutorial_completed,
       language: current_user.language
     })
+  end
+
+  def settings
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    conn = ActiveRecord::Base.connection
+    u = conn.select_one(<<~SQL)
+      SELECT preferred_name, username, phone,
+             address_line1, address_line2, address_city, address_state,
+             address_postal_code, address_country
+      FROM users WHERE id = #{current_user.id}
+    SQL
+    return render_json({ error: "User not found" }, status: :not_found) unless u
+
+    render_json({
+      preferred_name: u["preferred_name"],
+      username: u["username"],
+      phone: u["phone"],
+      address_line1: u["address_line1"],
+      address_line2: u["address_line2"],
+      address_city: u["address_city"],
+      address_state: u["address_state"],
+      address_postal_code: u["address_postal_code"],
+      address_country: u["address_country"]
+    })
+  end
+
+  def update_settings
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    conn = ActiveRecord::Base.connection
+    set_parts = ["updated_at = NOW()"]
+    set_parts << "preferred_name = #{conn.quote(params[:preferredName].to_s.strip.presence)}" if params.key?(:preferredName)
+    set_parts << "phone = #{conn.quote(params[:phone].to_s.strip.presence)}" if params.key?(:phone)
+    set_parts << "address_line1 = #{conn.quote(params[:addressLine1].to_s.strip.presence)}" if params.key?(:addressLine1)
+    set_parts << "address_line2 = #{conn.quote(params[:addressLine2].to_s.strip.presence)}" if params.key?(:addressLine2)
+    set_parts << "address_city = #{conn.quote(params[:addressCity].to_s.strip.presence)}" if params.key?(:addressCity)
+    set_parts << "address_state = #{conn.quote(params[:addressState].to_s.strip.presence)}" if params.key?(:addressState)
+    set_parts << "address_postal_code = #{conn.quote(params[:addressPostalCode].to_s.strip.presence)}" if params.key?(:addressPostalCode)
+    set_parts << "address_country = #{conn.quote(params[:addressCountry].to_s.strip.presence)}" if params.key?(:addressCountry)
+
+    conn.execute("UPDATE users SET #{set_parts.join(', ')} WHERE id = #{current_user.id}")
+    render_json({ success: true })
   end
 
   def update_language

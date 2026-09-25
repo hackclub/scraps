@@ -45,8 +45,7 @@
 </script>
 
 <div class="w-[min(92vw,26rem)] rounded-2xl border-4 border-black bg-white p-4 shadow-xl">
-	<p class="text-sm font-bold">you can win 1, 5, 10 or 50 scraps</p>
-	<p class="mb-2 text-xs font-bold text-gray-500">ONBOARDING GACHAPON</p>
+	<p class="mb-2 text-sm font-bold">Onboarding Gachapon</p>
 	<div class="flex items-center gap-3 text-sm">
 		<div
 			class="grid h-16 w-16 shrink-0 place-items-center rounded-full border-4 border-black bg-red-100 {phase ===

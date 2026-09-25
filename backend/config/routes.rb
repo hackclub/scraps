@@ -91,6 +91,8 @@ Rails.application.routes.draw do
     put    "language",          to: "user#update_language"
     post   "complete-tutorial", to: "user#complete_tutorial"
     get    "profile/:id",       to: "user#profile"
+    get    "settings",          to: "user#settings"
+    put    "settings",          to: "user#update_settings"
   end
 
   # Hackatime

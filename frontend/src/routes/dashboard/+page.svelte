@@ -58,14 +58,18 @@
 	<div class="mb-12">
 		<div class="scrollbar-black flex gap-6 overflow-x-auto pb-4">
 			{#if canCreateProject}
-				<button
-					onclick={() => (showCreateModal = true)}
+				<a
+					href="/dashboard"
+					onclick={(e) => {
+						e.preventDefault();
+						showCreateModal = true;
+					}}
 					data-tutorial="new-project"
 					class="flex h-64 w-80 shrink-0 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-4 border-black bg-white transition-all hover:border-dashed"
 				>
 					<Plus size={48} class="text-gray-400" />
 					<span class="text-lg font-bold text-gray-400">{$t.dashboard.newProject}</span>
-				</button>
+				</a>
 			{/if}
 			{#each $projectsStore as project (project.id)}
 				<a
