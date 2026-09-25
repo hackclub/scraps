@@ -1,6 +1,5 @@
 class ProjectsController < ApplicationController
   ALLOWED_IMAGE_DOMAIN = "cdn.hackclub.com"
-  ALLOWED_SLACK_ID = "U0828FYS2UC"
 
   # Admin-gated for now: see routes.rb / Navbar.svelte for the matching frontend gate.
   before_action :require_admin_role, only: [:explore]
@@ -245,13 +244,9 @@ class ProjectsController < ApplicationController
   def create
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
-    unless current_user.slack_id == ALLOWED_SLACK_ID
-      return render_json({ error: "Scraps has ended. Project creation is disabled." }, status: :forbidden)
-    end
-
     image = params[:image].to_s.presence
     unless valid_image_url?(image)
-      return render_json({ error: "Image must be from cdn.hackclub.com" }, status: :unprocessable_entity)
+      return render_json({ error: "Image must be uploaded through Scraps" }, status: :unprocessable_entity)
     end
 
     parsed_ht = parse_hackatime_projects(params[:hackatimeProject].to_s.presence)
@@ -302,7 +297,7 @@ class ProjectsController < ApplicationController
 
     image = params.key?(:image) ? params[:image].to_s.presence : :not_set
     if image != :not_set && !valid_image_url?(image)
-      return render_json({ error: "Image must be from cdn.hackclub.com" }, status: :unprocessable_entity)
+      return render_json({ error: "Image must be uploaded through Scraps" }, status: :unprocessable_entity)
     end
 
     playable_url = params.key?(:playableUrl) ? params[:playableUrl].to_s.presence : :not_set
@@ -477,8 +472,10 @@ class ProjectsController < ApplicationController
 
   def valid_image_url?(url)
     return true if url.blank?
-    uri = URI.parse(url)
-    uri.host == ALLOWED_IMAGE_DOMAIN
+    allowed_hosts = [ALLOWED_IMAGE_DOMAIN]
+    r2_host = URI.parse(ENV["R2_PUBLIC_URL"].to_s).host
+    allowed_hosts << r2_host if r2_host.present?
+    allowed_hosts.include?(URI.parse(url).host)
   rescue URI::InvalidURIError
     false
   end

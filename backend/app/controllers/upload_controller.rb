@@ -1,6 +1,4 @@
 class UploadController < ApplicationController
-  HCCDN_URL = "https://cdn.hackclub.com/api/v4/upload"
-
   EXT_MAP = {
     "image/jpeg" => "jpg",
     "image/jpg" => "jpg",
@@ -19,28 +17,11 @@ class UploadController < ApplicationController
     ext = EXT_MAP[content_type] || "png"
     filename = "scrap-#{Time.now.to_i * 1000}.#{ext}"
 
-    if r2_configured?
-      url = upload_to_r2(file, filename, content_type)
-      return render_json({ url: url })
-    end
-
-    unless ENV["HCCDN_KEY"].present?
+    unless r2_configured?
       return render_json({ error: "Upload service not configured" }, status: :service_unavailable)
     end
 
-    resp = HTTParty.post(
-      HCCDN_URL,
-      headers: { "Authorization" => "Bearer #{ENV['HCCDN_KEY']}" },
-      multipart: true,
-      body: { file: file.tempfile, filename: filename, content_type: content_type }
-    )
-
-    unless resp.success?
-      Rails.logger.error("[UPLOAD] CDN error: #{resp.code} #{resp.body}")
-      return render_json({ error: "Failed to upload image" }, status: :bad_gateway)
-    end
-
-    render_json({ url: resp.parsed_response["url"] })
+    render_json({ url: upload_to_r2(file, filename, content_type) })
   rescue StandardError => e
     Rails.logger.error("[UPLOAD] Error: #{e.message}")
     render_json({ error: "Failed to upload image" }, status: :internal_server_error)
