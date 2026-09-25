@@ -105,11 +105,6 @@ Rails.application.routes.draw do
     post "image", to: "upload#image"
   end
 
-  # Slack
-  scope :slack do
-    post "events", to: "slack#events"
-  end
-
   # Admin
   scope :admin do
     get    "stats",                           to: "admin#stats"
