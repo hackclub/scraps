@@ -25,6 +25,15 @@ module SlackService
     false
   end
 
+  def self.send_welcome_dm(token:, user_slack_id:, username: nil)
+    return unless token.present? && user_slack_id.present?
+
+    name = username.presence || "there"
+    text = "Hi #{name}! Welcome to Scraps. I'm Scrappy, and I've gone ahead and added you to all the relevant channels across the Slack related to Scraps. Have fun!!!"
+
+    post(token, "chat.postMessage", { channel: user_slack_id, text: text }) rescue nil
+  end
+
   def self.notify_project_review(user_slack_id:, project_name:, project_id:, action:, feedback_for_author: nil, reviewer_slack_id: nil, admin_slack_ids: [], scraps_awarded: 0, frontend_url: SCRAPS_URL, token:, rejection_reason: nil)
     return unless token.present? && user_slack_id.present?
 

@@ -14,13 +14,19 @@ class SlackChannelJoinJob < ApplicationJob
     token = ENV["SLACK_BOT_TOKEN"]
     return if token.blank?
 
-    slack_id = ActiveRecord::Base.connection.select_value(
-      "SELECT slack_id FROM users WHERE id = #{user_id.to_i}"
+    user_row = ActiveRecord::Base.connection.select_one(
+      "SELECT slack_id, username FROM users WHERE id = #{user_id.to_i}"
     )
-    return if slack_id.blank?
+    return if user_row.nil? || user_row["slack_id"].blank?
 
     CHANNELS.each do |cid|
-      SlackService.invite_to_channel(token: token, channel_id: cid, user_slack_id: slack_id)
+      SlackService.invite_to_channel(token: token, channel_id: cid, user_slack_id: user_row["slack_id"])
     end
+
+    SlackService.send_welcome_dm(
+      token: token,
+      user_slack_id: user_row["slack_id"],
+      username: user_row["username"]
+    )
   end
 end
