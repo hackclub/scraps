@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isOverUploadLimit } from '$lib/uploadLimit';
 	import { dropzone } from '$lib/dropzone';
 	import { X, ChevronDown, Upload, Check } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
@@ -96,8 +97,9 @@
 		const file = input.files?.[0];
 		if (!file) return;
 
-		if (file.size > 5 * 1024 * 1024) {
-			error = $t.createProject.imageMustBeLessThan;
+		const overMb = await isOverUploadLimit(file);
+		if (overMb) {
+			error = $t.createProject.imageMustBeLessThan.replace('{mb}', String(overMb));
 			return;
 		}
 

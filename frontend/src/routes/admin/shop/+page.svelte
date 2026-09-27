@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { isOverUploadLimit } from '$lib/uploadLimit';
 	import { dropzone } from '$lib/dropzone';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -122,8 +123,9 @@
 	async function handleImageUpload(event: Event) {
 		const file = (event.target as HTMLInputElement).files?.[0];
 		if (!file) return;
-		if (file.size > 5 * 1024 * 1024) {
-			formError = 'Image must be under 5MB';
+		const overMb = await isOverUploadLimit(file);
+		if (overMb) {
+			formError = `Image must be under ${overMb}MB`;
 			return;
 		}
 		uploadingImage = true;
@@ -616,8 +618,9 @@
 		if (row.kind === 'existing') return;
 		const file = (event.target as HTMLInputElement).files?.[0];
 		if (!file) return;
-		if (file.size > 5 * 1024 * 1024) {
-			gachaError = 'Image must be under 5MB';
+		const overMb = await isOverUploadLimit(file);
+		if (overMb) {
+			gachaError = `Image must be under ${overMb}MB`;
 			return;
 		}
 		row.uploading = true;
@@ -643,8 +646,9 @@
 	async function handleGachaImageUpload(event: Event) {
 		const file = (event.target as HTMLInputElement).files?.[0];
 		if (!file) return;
-		if (file.size > 5 * 1024 * 1024) {
-			gachaError = 'Image must be under 5MB';
+		const overMb = await isOverUploadLimit(file);
+		if (overMb) {
+			gachaError = `Image must be under ${overMb}MB`;
 			return;
 		}
 		gachaUploadingImage = true;

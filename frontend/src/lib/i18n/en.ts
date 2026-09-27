@@ -266,7 +266,7 @@ export default {
 		optional: 'optional',
 		uploading: 'uploading...',
 		clickToUploadImage: 'click or drop an image here',
-		imageMustBeLessThan: 'Image must be less than 5MB',
+		imageMustBeLessThan: 'Image must be less than {mb}MB',
 		name: 'name',
 		description: 'description',
 		hackatimeProject: 'hackatime project',
@@ -423,7 +423,7 @@ export default {
 		hoursLogged: '{hours}h logged',
 		github: 'github',
 		reviewFeedback: 'review feedback',
-		imageMustBeLessThan: 'Image must be less than 5MB',
+		imageMustBeLessThan: 'Image must be less than {mb}MB',
 		unsubmitProject: 'unsubmit project',
 		unsubmitConfirmTitle: 'unsubmit project?',
 		unsubmitConfirmMessage:
