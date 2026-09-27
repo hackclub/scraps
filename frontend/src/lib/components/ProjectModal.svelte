@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dropzone } from '$lib/dropzone';
 	import { X, ChevronDown, Upload, Check } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
 	import { formatHours, parseHackatimeProjectName } from '$lib/utils';
@@ -251,10 +252,11 @@
 						</div>
 					{:else}
 						<label
+							use:dropzone
 							class="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-black transition-colors hover:bg-gray-50"
 						>
 							<Upload size={32} class="mb-2 text-gray-400" />
-							<span class="text-sm text-gray-500">click to upload image</span>
+							<span class="text-sm text-gray-500">click or drop an image here</span>
 							<input type="file" accept="image/*" onchange={handleImageUpload} class="hidden" />
 						</label>
 					{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dropzone } from '$lib/dropzone';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -1267,7 +1268,10 @@
 
 				<div>
 					<span class="mb-1 block text-sm font-bold">image</span>
-					<div class="flex items-center gap-3">
+					<div
+						use:dropzone
+						class="flex items-center gap-3 rounded-lg border-2 border-dashed border-gray-400 p-3 transition-colors"
+					>
 						{#if formImage}
 							<img
 								src={formImage}
@@ -1290,6 +1294,7 @@
 								class="hidden"
 							/>
 						</label>
+						<span class="text-sm text-gray-500">or drop an image here</span>
 					</div>
 					<input
 						type="text"
@@ -1895,7 +1900,10 @@
 
 				<div>
 					<span class="mb-1 block text-sm font-bold">image</span>
-					<div class="flex items-center gap-3">
+					<div
+						use:dropzone
+						class="flex items-center gap-3 rounded-lg border-2 border-dashed border-gray-400 p-3 transition-colors"
+					>
 						{#if gachaImage}
 							<img
 								src={gachaImage}
@@ -1918,6 +1926,7 @@
 								class="hidden"
 							/>
 						</label>
+						<span class="text-sm text-gray-500">or drop an image here</span>
 					</div>
 					<input
 						type="text"
@@ -2030,6 +2039,7 @@
 											/>
 										</label>
 										<label
+											use:dropzone
 											class="col-span-2 flex cursor-pointer items-center gap-2 rounded-lg border-2 border-black px-3 py-1.5 text-sm font-bold hover:border-dashed {row.uploading
 												? 'opacity-50'
 												: ''}"

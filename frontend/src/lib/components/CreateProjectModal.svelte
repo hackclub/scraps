@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dropzone } from '$lib/dropzone';
 	import { X, ChevronDown, Upload, Check } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
 	import { formatHours } from '$lib/utils';
@@ -298,6 +299,7 @@
 						</div>
 					{:else}
 						<label
+							use:dropzone
 							class="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-black transition-colors hover:bg-gray-50"
 						>
 							<Upload size={32} class="mb-2 text-gray-400" />

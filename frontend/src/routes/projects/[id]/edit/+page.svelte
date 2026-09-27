@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dropzone } from '$lib/dropzone';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -363,6 +364,7 @@
 						</div>
 					{:else}
 						<label
+							use:dropzone
 							class="flex h-40 w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-black transition-colors hover:bg-gray-50"
 						>
 							<Upload size={32} class="mb-2 text-gray-400" />
