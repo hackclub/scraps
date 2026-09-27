@@ -249,6 +249,9 @@ class ProjectsController < ApplicationController
       return render_json({ error: "Image must be uploaded through Scraps" }, status: :unprocessable_entity)
     end
 
+    github_err = validate_http_url(params[:githubUrl].to_s.presence, "Code URL")
+    return render_json({ error: github_err }, status: :unprocessable_entity) if github_err
+
     parsed_ht = parse_hackatime_projects(params[:hackatimeProject].to_s.presence)
     prefixed_ht = prefix_hackatime_ids(parsed_ht, current_user.email, current_user.slack_id)
     tier = [[params[:tier].to_i.nonzero? || 1, 1].max, 4].min
@@ -302,8 +305,13 @@ class ProjectsController < ApplicationController
 
     playable_url = params.key?(:playableUrl) ? params[:playableUrl].to_s.presence : :not_set
     if playable_url != :not_set && playable_url
-      err = validate_playable_url(playable_url)
+      err = validate_http_url(playable_url, "Playable URL")
       return render_json({ error: err }, status: :unprocessable_entity) if err
+    end
+
+    if params.key?(:githubUrl)
+      github_err = validate_http_url(params[:githubUrl].to_s.presence, "Code URL")
+      return render_json({ error: github_err }, status: :unprocessable_entity) if github_err
     end
 
     ht_raw = params.key?(:hackatimeProject) ? params[:hackatimeProject].to_s.presence : :not_set
@@ -480,14 +488,14 @@ class ProjectsController < ApplicationController
     false
   end
 
-  def validate_playable_url(url)
+  def validate_http_url(url, label)
     return nil if url.blank?
     uri = URI.parse(url.strip)
-    return "Playable URL must use http or https" unless %w[http https].include?(uri.scheme)
-    return "Playable URL must be a valid public URL" unless uri.host&.include?(".")
+    return "#{label} must use http or https" unless %w[http https].include?(uri.scheme&.downcase)
+    return "#{label} must be a valid public URL" unless uri.host&.include?(".")
     nil
   rescue URI::InvalidURIError
-    "Playable URL is not a valid URL"
+    "#{label} is not a valid URL"
   end
 
   def parse_hackatime_projects(str)

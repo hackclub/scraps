@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { safeUrl } from '$lib/safeUrl';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -487,7 +488,7 @@
 							{#if dup.codeUrl}
 								<p class="mt-1 truncate text-sm">
 									<span class="font-bold">code:</span>
-									<a href={dup.codeUrl} target="_blank" class="text-blue-600 hover:underline"
+									<a href={safeUrl(dup.codeUrl)} target="_blank" class="text-blue-600 hover:underline"
 										>{dup.codeUrl}</a
 									>
 								</p>
@@ -495,7 +496,7 @@
 							{#if dup.playableUrl}
 								<p class="truncate text-sm">
 									<span class="font-bold">playable:</span>
-									<a href={dup.playableUrl} target="_blank" class="text-blue-600 hover:underline"
+									<a href={safeUrl(dup.playableUrl)} target="_blank" class="text-blue-600 hover:underline"
 										>{dup.playableUrl}</a
 									>
 								</p>
@@ -674,7 +675,7 @@
 			<div class="mt-4 flex flex-wrap gap-3">
 				{#if project.githubUrl}
 					<a
-						href={project.githubUrl}
+						href={safeUrl(project.githubUrl)}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
@@ -692,7 +693,7 @@
 				{/if}
 				{#if project.playableUrl}
 					<a
-						href={project.playableUrl}
+						href={safeUrl(project.playableUrl)}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-solid border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"

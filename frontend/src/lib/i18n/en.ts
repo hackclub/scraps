@@ -26,6 +26,7 @@ export default {
 		anyProject: 'any project',
 		weShip: 'we ship:',
 		chanceToWin: 'a chance to win something amazing',
+		runBy: 'Run by @mihi and @Iamalive',
 		yourEmail: 'your email',
 		pleaseEnterEmail: 'please enter your email',
 		pleaseEnterValidEmail: 'please enter a valid email',

@@ -77,7 +77,22 @@ class UserController < ApplicationController
     render_json({ success: true })
   end
 
-  TUTORIAL_GACHAPON_REWARDS = [1, 5, 10, 50].freeze
+  TUTORIAL_GACHAPON_WEIGHTS = { 1 => 55, 5 => 30, 10 => 12, 50 => 3 }.freeze
+
+  def self.tutorial_gachapon_reward(user_id)
+    digest = OpenSSL::HMAC.digest("SHA256", Rails.application.secret_key_base, "tutorial_gachapon:#{user_id}")
+    roll = digest.unpack1("N") % TUTORIAL_GACHAPON_WEIGHTS.values.sum
+    TUTORIAL_GACHAPON_WEIGHTS.each do |amount, weight|
+      return amount if roll < weight
+      roll -= weight
+    end
+    TUTORIAL_GACHAPON_WEIGHTS.keys.first
+  end
+
+  def tutorial_gachapon
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+    render_json({ reward: self.class.tutorial_gachapon_reward(current_user.id) })
+  end
 
   def complete_tutorial
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
@@ -86,8 +101,7 @@ class UserController < ApplicationController
       return render_json({ success: true, already_completed: true })
     end
 
-    reward = params[:gachaponReward].to_i
-    reward = 5 unless TUTORIAL_GACHAPON_REWARDS.include?(reward)
+    reward = self.class.tutorial_gachapon_reward(current_user.id)
     picked_ids = Array(params[:pickedItemIds]).map(&:to_i).uniq.first(2)
 
     result = ActiveRecord::Base.transaction do

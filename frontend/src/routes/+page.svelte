@@ -184,10 +184,11 @@
 			<strong>{$t.landing.youShip}</strong>
 			{$t.landing.anyProject}
 		</p>
-		<p class="mb-6 text-lg md:text-xl">
+		<p class="mb-1 text-lg md:text-xl">
 			<strong>{$t.landing.weShip}</strong>
 			{$t.landing.chanceToWin}
 		</p>
+		<p class="mb-6 text-sm text-gray-500">{$t.landing.runBy}</p>
 
 		<!-- Auth Section -->
 		<div class="flex flex-col gap-2">

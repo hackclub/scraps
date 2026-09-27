@@ -27,7 +27,7 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ gachaponReward, pickedItemIds })
+				body: JSON.stringify({ pickedItemIds })
 			});
 			await refreshUserScraps();
 		} catch {

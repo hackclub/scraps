@@ -1,23 +1,24 @@
 <script lang="ts">
 	import { Spool } from '@lucide/svelte';
+	import { API_URL } from '$lib/config';
 
 	let { onFinal }: { onFinal?: (reward: number) => void } = $props();
 
 	const REWARDS = [
-		{ amount: 1, weight: 55, color: 'text-gray-600', bg: 'bg-gray-100' },
-		{ amount: 5, weight: 30, color: 'text-green-600', bg: 'bg-green-100' },
-		{ amount: 10, weight: 12, color: 'text-blue-600', bg: 'bg-blue-100' },
-		{ amount: 50, weight: 3, color: 'text-yellow-600', bg: 'bg-yellow-100' }
+		{ amount: 1, color: 'text-gray-600', bg: 'bg-gray-100' },
+		{ amount: 5, color: 'text-green-600', bg: 'bg-green-100' },
+		{ amount: 10, color: 'text-blue-600', bg: 'bg-blue-100' },
+		{ amount: 50, color: 'text-yellow-600', bg: 'bg-yellow-100' }
 	];
-	const TOTAL_WEIGHT = REWARDS.reduce((n, r) => n + r.weight, 0);
 
-	function rollReward() {
-		let roll = Math.random() * TOTAL_WEIGHT;
-		for (const r of REWARDS) {
-			if (roll < r.weight) return r;
-			roll -= r.weight;
+	async function fetchReward() {
+		try {
+			const res = await fetch(`${API_URL}/user/tutorial-gachapon`, { credentials: 'include' });
+			const data = await res.json();
+			return REWARDS.find((r) => r.amount === data.reward) ?? REWARDS[0];
+		} catch {
+			return REWARDS[0];
 		}
-		return REWARDS[0];
 	}
 
 	type Phase = 'idle' | 'spinning' | 'done';
@@ -31,12 +32,13 @@
 
 	async function pull() {
 		phase = 'spinning';
-		const result = rollReward();
+		const resultPromise = fetchReward();
 		const t0 = performance.now();
 		while (performance.now() - t0 < 1100) {
 			spinAmount = REWARDS[Math.floor(Math.random() * REWARDS.length)].amount;
 			await sleep(60);
 		}
+		const result = await resultPromise;
 		landed = result;
 		phase = 'done';
 		await sleep(1800);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { safeUrl } from '$lib/safeUrl';
 	import { onMount } from 'svelte';
 	import {
 		ArrowLeft,
@@ -344,15 +345,15 @@
 											<Clock size={14} />
 											{formatHours(project.hours)}h
 										</span>
-										{#if project.githubUrl}
+										{#if safeUrl(project.githubUrl)}
 											<span
 												onclick={(e) => {
 													e.preventDefault();
 													e.stopPropagation();
-													window.open(project.githubUrl!, '_blank');
+													window.open(safeUrl(project.githubUrl), '_blank', 'noopener');
 												}}
 												onkeydown={(e) =>
-													e.key === 'Enter' && window.open(project.githubUrl!, '_blank')}
+													e.key === 'Enter' && window.open(safeUrl(project.githubUrl), '_blank', 'noopener')}
 												role="link"
 												tabindex="0"
 												class="flex cursor-pointer items-center gap-1 transition-colors hover:text-black"

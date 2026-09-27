@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { safeUrl } from '$lib/safeUrl';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ArrowLeft, Github, Globe, Trash2, ClipboardList, RotateCcw, Eye } from '@lucide/svelte';
@@ -173,7 +174,7 @@
 				</a>
 				{#if project.githubUrl}
 					<a
-						href={project.githubUrl}
+						href={safeUrl(project.githubUrl)}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="flex items-center gap-2 rounded-full border-2 border-black px-4 py-2 text-sm font-bold hover:border-dashed"
@@ -183,7 +184,7 @@
 				{/if}
 				{#if project.playableUrl}
 					<a
-						href={project.playableUrl}
+						href={safeUrl(project.playableUrl)}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="flex items-center gap-2 rounded-full border-2 border-black px-4 py-2 text-sm font-bold hover:border-dashed"

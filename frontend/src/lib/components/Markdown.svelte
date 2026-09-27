@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Marked } from 'marked';
+	import { Marked, type Tokens } from 'marked';
+	import DOMPurify from 'dompurify';
 
 	interface Props {
 		content: string;
@@ -13,9 +14,14 @@
 		gfm: true
 	});
 
+	const ALLOWED_TAGS = [
+		'p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'blockquote',
+		'ul', 'ol', 'li', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+	];
+
 	const renderer = {
-		link({ text }: { href: string; text: string }) {
-			return text;
+		link(this: { parser: { parseInline: (tokens: Tokens.Generic[]) => string } }, { tokens }: Tokens.Link) {
+			return this.parser.parseInline(tokens);
 		},
 		image() {
 			return '';
@@ -31,9 +37,10 @@
 	marked.use({ renderer });
 
 	function render(text: string): string {
-		const result = marked.parse(text);
-		if (typeof result !== 'string') return text;
-		return result;
+		if (!DOMPurify.isSupported) return '';
+		const result = marked.parse(text ?? '');
+		if (typeof result !== 'string') return '';
+		return DOMPurify.sanitize(result, { ALLOWED_TAGS, ALLOWED_ATTR: [] });
 	}
 </script>
 

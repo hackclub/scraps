@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { safeUrl } from '$lib/safeUrl';
 	import { onMount } from 'svelte';
 	import {
 		Users,
@@ -676,7 +677,7 @@
 												<p class="mt-1 truncate text-sm">
 													<span class="font-bold">code:</span>
 													<a
-														href={match.codeUrl}
+														href={safeUrl(match.codeUrl)}
 														target="_blank"
 														class="text-blue-600 hover:underline">{match.codeUrl}</a
 													>
@@ -686,7 +687,7 @@
 												<p class="truncate text-sm">
 													<span class="font-bold">playable:</span>
 													<a
-														href={match.playableUrl}
+														href={safeUrl(match.playableUrl)}
 														target="_blank"
 														class="text-blue-600 hover:underline">{match.playableUrl}</a
 													>

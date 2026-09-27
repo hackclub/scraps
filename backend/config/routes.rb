@@ -90,6 +90,7 @@ Rails.application.routes.draw do
     get    "me",                to: "user#me"
     put    "language",          to: "user#update_language"
     post   "complete-tutorial", to: "user#complete_tutorial"
+    get    "tutorial-gachapon", to: "user#tutorial_gachapon"
     get    "profile/:id",       to: "user#profile"
     get    "settings",          to: "user#settings"
     put    "settings",          to: "user#update_settings"

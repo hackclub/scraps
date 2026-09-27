@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { safeUrl } from '$lib/safeUrl';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -400,7 +401,7 @@
 					{/if}
 					{#if project.githubUrl}
 						<a
-							href={project.githubUrl}
+							href={safeUrl(project.githubUrl)}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
@@ -418,7 +419,7 @@
 					{/if}
 					{#if project.playableUrl}
 						<a
-							href={project.playableUrl}
+							href={safeUrl(project.playableUrl)}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-solid border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
