@@ -48,7 +48,7 @@ class ApplicationController < ActionController::API
 
     session_rec = ActiveRecord::Base.connection.select_one(
       "SELECT user_id FROM sessions WHERE token = $1 AND expires_at > NOW()",
-      "SessionLookup", [cookie]
+      "SessionLookup", [Session.hash_token(cookie)]
     )
     return nil unless session_rec
 

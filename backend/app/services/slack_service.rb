@@ -111,4 +111,20 @@ module SlackService
   rescue StandardError
     false
   end
+
+  ROLE_CHANGE_ALERT_SLACK_IDS = %w[U0828FYS2UC].freeze
+
+  def self.notify_role_change(token:, target_id:, target_username:, target_slack_id:, old_role:, new_role:, changed_by_username:, changed_by_slack_id:)
+    return unless token.present?
+
+    esc = ->(s) { s.to_s.gsub("&", "&amp;").gsub("<", "&lt;").gsub(">", "&gt;") }
+    who = target_slack_id.present? ? "<@#{target_slack_id}>" : "*#{esc.(target_username)}*"
+    by = changed_by_slack_id.present? ? "<@#{changed_by_slack_id}>" : "*#{esc.(changed_by_username)}*"
+    alert = %w[admin creator reviewer].include?(new_role) ? ":rotating_light:" : ":bust_in_silhouette:"
+    text = "#{alert} *Role changed:* #{who} (user #{target_id}) `#{esc.(old_role)}` → `#{esc.(new_role)}`\nChanged by #{by} · <#{SCRAPS_URL}/admin/users/#{target_id}|view user>"
+
+    ROLE_CHANGE_ALERT_SLACK_IDS.each do |slack_id|
+      post(token, "chat.postMessage", { channel: slack_id, text: text, unfurl_links: false }) rescue nil
+    end
+  end
 end

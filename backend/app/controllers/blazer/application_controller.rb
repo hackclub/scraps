@@ -11,7 +11,7 @@ module Blazer
       cookie = request.cookies["session"]
       session_rec = cookie.present? && ActiveRecord::Base.connection.select_one(
         "SELECT user_id FROM sessions WHERE token = $1 AND expires_at > NOW()",
-        "SessionLookup", [cookie]
+        "SessionLookup", [Session.hash_token(cookie)]
       )
       @current_user = session_rec && User.find_by(id: session_rec["user_id"])
     end

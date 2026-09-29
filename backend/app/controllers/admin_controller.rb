@@ -169,8 +169,23 @@ class AdminController < ApplicationController
     return render_json({ error: "Cannot change your own role" }, status: :bad_request) if current_user.id == params[:id].to_i
 
     conn = ActiveRecord::Base.connection
-    updated = conn.select_one("UPDATE users SET role = #{conn.quote(role)}, updated_at = NOW() WHERE id = #{params[:id].to_i} RETURNING id")
-    return render_json({ error: "Not Found" }, status: :not_found) unless updated
+    target = conn.select_one("SELECT id, username, role, slack_id FROM users WHERE id = #{params[:id].to_i}")
+    return render_json({ error: "Not Found" }, status: :not_found) unless target
+    conn.execute("UPDATE users SET role = #{conn.quote(role)}, updated_at = NOW() WHERE id = #{target['id'].to_i}")
+
+    if target["role"] != role
+      SlackService.notify_role_change(
+        token: ENV["SLACK_BOT_TOKEN"],
+        target_id: target["id"].to_i,
+        target_username: target["username"],
+        target_slack_id: target["slack_id"],
+        old_role: target["role"],
+        new_role: role,
+        changed_by_username: current_user.username,
+        changed_by_slack_id: current_user.slack_id
+      )
+    end
+
     render_json({ success: true })
   end
 

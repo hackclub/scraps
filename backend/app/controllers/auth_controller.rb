@@ -104,7 +104,7 @@ class AuthController < ApplicationController
     ActiveRecord::Base.connection.execute(
       ActiveRecord::Base.sanitize_sql_array(
         ["INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, NOW())",
-         token, user.id, expires_at.utc.iso8601]
+         Session.hash_token(token), user.id, expires_at.utc.iso8601]
       )
     )
 
@@ -154,7 +154,7 @@ class AuthController < ApplicationController
     token = request.cookies["session"]
     if token.present?
       ActiveRecord::Base.connection.execute(
-        ActiveRecord::Base.sanitize_sql_array(["DELETE FROM sessions WHERE token = ?", token])
+        ActiveRecord::Base.sanitize_sql_array(["DELETE FROM sessions WHERE token = ?", Session.hash_token(token)])
       )
       cookies.delete("session")
     end
