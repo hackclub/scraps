@@ -178,11 +178,11 @@
 >
 	{#if isLoggedIn}
 		<a href="/dashboard" class="shrink-0">
-			<img src="/images/scraps_logo.png" alt="scraps" class="h-8 md:h-10" />
+			<img src="/images/scraps_logo.png" alt="scraps" class="h-13 md:h-18" />
 		</a>
 	{:else}
 		<a href="https://hackclub.com" target="_blank" rel="noopener noreferrer" class="shrink-0">
-			<img src="/flag-standalone-bw.png" alt="Hack Club" class="h-8 md:h-10" />
+			<img src="/flag-standalone-bw.png" alt="Hack Club" class="h-10 md:h-14" />
 		</a>
 	{/if}
 
@@ -586,11 +586,11 @@
 >
 	{#if isLoggedIn}
 		<a href="/dashboard" class="shrink-0">
-			<img src="/images/scraps_logo.png" alt="scraps" class="h-8" />
+			<img src="/images/scraps_logo.png" alt="scraps" class="h-13" />
 		</a>
 	{:else}
 		<a href="https://hackclub.com" target="_blank" rel="noopener noreferrer" class="shrink-0">
-			<img src="/flag-standalone-bw.png" alt="Hack Club" class="h-8" />
+			<img src="/flag-standalone-bw.png" alt="Hack Club" class="h-10" />
 		</a>
 	{/if}
 

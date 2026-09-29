@@ -9,6 +9,7 @@
 
 	let myShopIds = $state<Set<number>>(new Set());
 	let shopSelectionLoading = $state(true);
+	let dailyRevealed = $state(true);
 	let probabilityItems = $derived(
 		$shopItemsStore.filter((item) => item.baseProbability > 0 && myShopIds.has(item.id))
 	);
@@ -40,7 +41,12 @@
 			const ids = new Set<number>();
 			if (dailyRes.ok) {
 				const d = await dailyRes.json();
-				(d.items ?? []).forEach((i: ShopItem) => ids.add(i.id));
+				let seen = false;
+				try {
+					seen = localStorage.getItem(`shop-daily-seen:${d.date}`) === '1';
+				} catch (_e) {}
+				dailyRevealed = seen;
+				if (seen) (d.items ?? []).forEach((i: ShopItem) => ids.add(i.id));
 			}
 			if (retainedRes.ok) {
 				const r = await retainedRes.json();
@@ -177,6 +183,15 @@
 		<h1 class="mb-2 text-4xl font-bold md:text-5xl">{$t.refinery.refinery}</h1>
 		<p class="text-lg text-gray-600">{$t.refinery.upgradeYourLuck}</p>
 	</div>
+
+	{#if !$shopLoading && !shopSelectionLoading && !dailyRevealed}
+		<a
+			href="/shop"
+			class="mb-6 block rounded-2xl border-4 border-dashed border-black p-4 text-center font-bold transition-all hover:border-solid"
+		>
+			{$t.refinery.revealDailyHint}
+		</a>
+	{/if}
 
 	{#if $shopLoading || shopSelectionLoading}
 		<div class="py-12 text-center text-gray-500">{$t.common.loading}</div>

@@ -16,8 +16,8 @@
     queue: default
     description: "Sync shipped projects to Airtable every 5 minutes"
   hackatime_ban_sync:
-    cron: "*/10 * * * *"
+    cron: "*/5 * * * *"
     class: "HackatimeBanSyncJob"
     active_job: true
     queue: default
-    description: "Refresh cached Hackatime ban flags for a batch of users"
+    description: "Check every user's Hackatime trust level; auto-ban anyone red"

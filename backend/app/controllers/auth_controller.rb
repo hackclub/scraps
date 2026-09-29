@@ -16,13 +16,31 @@ class AuthController < ApplicationController
     render_json({ success: true })
   end
 
+  OAUTH_STATE_COOKIE = "oauth_state"
+
   def login
-    redirect_to authorization_url(params[:r], params[:s]), allow_other_host: true
+    nonce = SecureRandom.hex(16)
+    cookies[OAUTH_STATE_COOKIE] = {
+      value: nonce,
+      httponly: true,
+      secure: !Rails.env.development?,
+      same_site: :lax,
+      path: "/",
+      expires: 10.minutes.from_now
+    }
+    redirect_to authorization_url(nonce, params[:r], params[:s]), allow_other_host: true
   end
 
   def callback
     code = params[:code]
     frontend_url = ENV.fetch("FRONTEND_URL") { "http://localhost:5173" }
+
+    expected_nonce = cookies[OAUTH_STATE_COOKIE].to_s
+    cookies.delete(OAUTH_STATE_COOKIE, path: "/")
+    state_nonce, state_rest = params[:state].to_s.split(".", 2)
+    unless expected_nonce.present? && state_nonce.present? && ActiveSupport::SecurityUtils.secure_compare(expected_nonce, state_nonce)
+      return redirect_to "#{frontend_url}/auth/error?reason=auth-failed", allow_other_host: true
+    end
 
     unless code
       return redirect_to "#{frontend_url}/auth/error?reason=auth-failed", allow_other_host: true
@@ -64,7 +82,7 @@ class AuthController < ApplicationController
 
     UserActivity.create!(user_id: user.id, email: identity["primary_email"], action: "auth_completed")
 
-    referral_code, signup_source = params[:state].to_s.split(".", 2)
+    referral_code, signup_source = state_rest.to_s.split(".", 2)
 
     if @new_user && referral_code.present?
       begin
@@ -163,7 +181,7 @@ class AuthController < ApplicationController
 
   private
 
-  def authorization_url(referral_code = nil, signup_source = nil)
+  def authorization_url(nonce, referral_code = nil, signup_source = nil)
     query = {
       client_id: ENV["HCAUTH_CLIENT_ID"],
       redirect_uri: ENV.fetch("HCAUTH_REDIRECT_URI") { "http://localhost:3000/api/auth/callback/hackclub" },
@@ -175,8 +193,7 @@ class AuthController < ApplicationController
     code = referral_code.to_s.strip.delete(".")
     source = signup_source.to_s.strip.downcase
     source = nil unless SignupSource.valid_slug?(source)
-    state = source ? "#{code}.#{source}" : code
-    query[:state] = state if state.present?
+    query[:state] = [nonce, code, source].compact.join(".")
     "#{HACKCLUB_AUTH_URL}/oauth/authorize?#{URI.encode_www_form(query)}"
   end
 

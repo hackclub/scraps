@@ -132,7 +132,8 @@ module HackatimeService
         username: obj["username"],
         slack_uid: obj["slack_uid"],
         banned: obj["banned"] || false,
-        suspected: obj["suspected"] || false
+        suspected: obj["suspected"] || false,
+        trust_level: obj["trust_level"]
       }
     rescue StandardError
       nil

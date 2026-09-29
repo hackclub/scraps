@@ -189,6 +189,7 @@ export default {
 		upgrading: 'upgrading...',
 		fromPreviousBuy: 'from previous buy',
 		noItemsAvailable: 'no items available for upgrades',
+		revealDailyHint: "reveal today's 5 picks in the shop to refine them here",
 		failedToUpgrade: 'Failed to upgrade probability',
 		failedToUndo: 'Failed to undo upgrade',
 		undo: 'undo',
