@@ -69,6 +69,10 @@ module HackatimeService
       cache_put(@user_cache, cache_key, fetch_user_info(user_id))
     end
 
+    def get_user_by_id(hackatime_user_id)
+      fetch_user_info(hackatime_user_id.to_i)
+    end
+
     def fetch_user_projects(user_id)
       if (hit = cache_get(@projects_cache, user_id))
         return hit[:value]

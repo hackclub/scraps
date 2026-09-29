@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_28_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -340,6 +340,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_28_120000) do
     t.text "first_name"
     t.datetime "hackatime_ban_checked_at"
     t.boolean "hackatime_banned", default: false, null: false
+    t.integer "hackatime_user_id"
     t.boolean "has_been_onboarded", default: false, null: false
     t.text "id_token"
     t.text "internal_notes"
