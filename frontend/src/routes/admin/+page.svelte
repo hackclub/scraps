@@ -16,6 +16,7 @@
 		DollarSign,
 		Calculator,
 		SearchCheck,
+		MessageSquare,
 		Link
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
@@ -506,6 +507,22 @@
 				<span class="text-xl font-bold">→</span>
 			</a>
 
+			<a
+				href="/admin/macros"
+				class="mb-6 flex items-center justify-between rounded-2xl border-4 border-black p-6 transition-all hover:border-dashed"
+			>
+				<div>
+					<h3 class="flex items-center gap-2 text-lg font-bold">
+						<MessageSquare size={20} />
+						review macros
+					</h3>
+					<p class="text-sm text-gray-500">
+						short name + full text for common rejection reasons, one click on the review page
+					</p>
+				</div>
+				<span class="text-xl font-bold">→</span>
+			</a>
+
 			<!-- Allowed to Log In -->
 			<a
 				href="/admin/allowlist"
@@ -685,7 +702,7 @@
 											<div class="flex flex-wrap items-center gap-2">
 												<span
 													class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
-													>{match.ysws}</span
+													>submitted to: {match.ysws}</span
 												>
 												<span class="text-xs text-gray-500">matched by: {match.matchType}</span>
 											</div>

@@ -16,6 +16,7 @@ export default {
 		users: 'users',
 		projects: 'projects',
 		orders: 'orders',
+		macros: 'macros',
 		news: 'news',
 		escape: 'escape',
 		admin: 'admin',

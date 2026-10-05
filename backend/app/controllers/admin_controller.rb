@@ -1593,12 +1593,14 @@ class AdminController < ApplicationController
     results = []
     offset = nil
     loop do
-      query = URI.encode_www_form([["filterByFormula", formula], ["pageSize", "100"], ["fields[]", "YSWS"], ["fields[]", "Playable URL"], ["fields[]", "Code URL"]] + (offset ? [["offset", offset]] : []))
+      query = URI.encode_www_form([["filterByFormula", formula], ["pageSize", "100"], ["cellFormat", "string"], ["timeZone", "UTC"], ["userLocale", "en-us"], ["fields[]", "YSWS"], ["fields[]", "Playable URL"], ["fields[]", "Code URL"]] + (offset ? [["offset", offset]] : []))
       resp = HTTParty.get("#{base_url}?#{query}", headers: { "Authorization" => "Bearer #{ENV['UNIFIED_AIRTABLE_TOKEN']}" })
       break unless resp.success?
       data = resp.parsed_response
       (data["records"] || []).each do |rec|
-        results << { "id" => rec["id"], "ysws" => rec.dig("fields", "YSWS") || "", "playable_url" => rec.dig("fields", "Playable URL") || "", "code_url" => rec.dig("fields", "Code URL") || "" }
+        ysws = rec.dig("fields", "YSWS")
+        ysws = ysws.join(", ") if ysws.is_a?(Array)
+        results << { "id" => rec["id"], "ysws" => ysws.to_s.strip.presence || "unknown program", "playable_url" => rec.dig("fields", "Playable URL") || "", "code_url" => rec.dig("fields", "Code URL") || "" }
       end
       offset = data["offset"]
       break unless offset

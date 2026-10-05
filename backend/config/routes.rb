@@ -126,6 +126,11 @@ Rails.application.routes.draw do
     post   "signup-sources",                  to: "signup_sources#create"
     delete "signup-sources/:id",              to: "signup_sources#destroy"
 
+    get    "review-macros",                   to: "review_macros#index"
+    post   "review-macros",                   to: "review_macros#create"
+    put    "review-macros/:id",               to: "review_macros#update"
+    delete "review-macros/:id",               to: "review_macros#destroy"
+
     # Login allowlist
     get    "login-allowlist",                 to: "admin#login_allowlist"
     get    "login-allowlist/users",           to: "admin#login_allowlist_users"

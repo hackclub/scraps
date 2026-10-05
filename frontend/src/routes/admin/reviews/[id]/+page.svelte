@@ -168,6 +168,22 @@
 		}
 	}
 
+	let macros = $state<{ id: number; shortName: string; body: string }[]>([]);
+
+	async function loadMacros() {
+		try {
+			const res = await fetch(`${API_URL}/admin/review-macros`, { credentials: 'include' });
+			if (res.ok) macros = await res.json();
+		} catch {
+			macros = [];
+		}
+	}
+
+	function insertMacro(body: string) {
+		const current = feedbackForAuthor.trimEnd();
+		feedbackForAuthor = current ? `${current}\n\n${body}` : body;
+	}
+
 	let payoutPrediction = $derived.by(() => {
 		const scrapsPerDollar = budget?.scrapsPerDollar ?? serverConfig.scrapsPerDollar ?? 12.8;
 		const [lo, hi] = budget?.targetDollarsPerHour ?? [4.5, 5];
@@ -218,6 +234,7 @@
 			return;
 		}
 		loadBudget();
+		loadMacros();
 
 		try {
 			const response = await fetch(`${API_URL}/admin/reviews/${projectId}`, {
@@ -531,7 +548,7 @@
 						<div class="rounded-lg border-2 border-red-200 bg-white p-3">
 							<div class="flex flex-wrap items-center gap-2">
 								<span class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
-									>{dup.ysws}</span
+									>submitted to: {dup.ysws}</span
 								>
 								<span class="text-xs text-gray-500">matched by: {dup.matchType}</span>
 							</div>
@@ -1062,6 +1079,30 @@
 							feedback for author <span class="text-red-500">*</span>
 							<span class="text-gray-400">(not required for permanent rejection)</span>
 						</label>
+						{#if macros.length > 0}
+							<div class="mb-2 flex flex-wrap items-center gap-2">
+								<span class="text-xs text-gray-500">macros:</span>
+								{#each macros as m (m.id)}
+									<button
+										type="button"
+										onclick={() => insertMacro(m.body)}
+										title={m.body}
+										class="cursor-pointer rounded-full border-2 border-black px-3 py-0.5 text-xs font-bold transition-all hover:border-dashed hover:bg-gray-100"
+									>
+										+ {m.shortName}
+									</button>
+								{/each}
+								{#if user?.role === 'admin' || user?.role === 'creator'}
+									<a href="/admin/macros" class="text-xs text-gray-500 underline">manage</a>
+								{/if}
+							</div>
+						{:else if user?.role === 'admin' || user?.role === 'creator'}
+							<p class="mb-2 text-xs text-gray-500">
+								no macros yet: <a href="/admin/macros" class="underline"
+									>add common rejection reasons</a
+								>
+							</p>
+						{/if}
 						<textarea
 							bind:value={feedbackForAuthor}
 							rows="4"
