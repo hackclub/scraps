@@ -1,7 +1,7 @@
 class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
-  before_action :authenticate_reviewer, only: %i[stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
+  before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
   before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
@@ -458,6 +458,7 @@ class AdminController < ApplicationController
       if scraps_awarded > 0
         conn.execute("INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{project['user_id'].to_i}, #{project_id}, #{conn.quote(previously_shipped ? "earned #{scraps_awarded} additional scraps (update)" : "earned #{scraps_awarded} scraps")}, NOW())")
       end
+      PayoutRollService.open_for_approval(conn, project_id: project_id, user_id: project["user_id"].to_i, base_scraps: scraps_awarded)
       conn.execute("INSERT INTO project_activity (user_id, project_id, action, created_at) VALUES (#{project['user_id'].to_i}, #{project_id}, '#{previously_shipped ? 'project_updated' : 'project_shipped'}', NOW())")
       AirtableSyncJob.perform_later(project_id) rescue nil
     end
@@ -1155,6 +1156,7 @@ class AdminController < ApplicationController
 
     previous = project["scraps_awarded"].to_i
     conn.execute("UPDATE projects SET status = 'in_progress', scraps_awarded = 0, scraps_paid_amount = 0, scraps_paid_at = NULL, updated_at = NOW() WHERE id = #{project_id}")
+    PayoutRollService.cancel_for_project(conn, project_id: project_id)
     conn.execute("INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, internal_justification, created_at) VALUES (#{project_id}, #{current_user.id}, 'denied', #{conn.quote(reason)}, 'Unshipped: removed #{previous} scraps', NOW())")
     render_json({ success: true, previous_scraps: previous })
   end
@@ -1391,6 +1393,89 @@ class AdminController < ApplicationController
     return render_json({ error: "User not found" }, status: :not_found) unless deleted
 
     render_json({ success: true })
+  end
+
+  TARGET_DOLLARS_PER_HOUR = (4.5..5.0)
+
+  def budget
+    conn = ActiveRecord::Base.connection
+    spd = ScrapsService::SCRAPS_PER_DOLLAR
+    sph = ScrapsService::SCRAPS_PER_HOUR
+
+    shipped = conn.select_one("SELECT COUNT(*) AS n, COALESCE(SUM(COALESCE(hours_override, hours)), 0) AS h, COALESCE(SUM(scraps_awarded), 0) AS s FROM projects WHERE status = 'shipped' AND (deleted = 0 OR deleted IS NULL)")
+    hours = shipped["h"].to_f
+    awarded = shipped["s"].to_f
+    avg_mult = hours > 0 ? awarded / (hours * sph) : nil
+
+    scores = conn.select_all("SELECT reviewer_score AS score, COUNT(*) AS n FROM reviews WHERE action = 'approved' AND reviewer_score IS NOT NULL GROUP BY reviewer_score ORDER BY reviewer_score").map { |r| { score: r["score"].to_f, count: r["n"].to_i } }
+    roll_like = conn.quote("#{PayoutRollService::BONUS_REASON}:%")
+    roll_delta = conn.select_value("SELECT COALESCE(SUM(amount), 0) FROM user_bonuses WHERE reason LIKE #{roll_like}").to_f
+    bonuses = conn.select_value("SELECT COALESCE(SUM(amount), 0) FROM user_bonuses WHERE reason NOT LIKE #{roll_like}").to_f
+    roll_stats = (conn.select_one(<<~SQL) rescue nil)
+      SELECT COUNT(*) FILTER (WHERE status = 'final') AS decided,
+             COUNT(*) FILTER (WHERE status = 'final' AND roll_1 IS NOT NULL) AS rolled,
+             COUNT(*) FILTER (WHERE status IN ('open', 'rolled')) AS undecided,
+             COALESCE(SUM(base_scraps) FILTER (WHERE status = 'final'), 0) AS decided_base,
+             COALESCE(SUM(FLOOR(base_scraps * final_multiplier)) FILTER (WHERE status = 'final'), 0) AS decided_final
+      FROM payout_rolls
+    SQL
+    roll_expected = PayoutRollService::EXPECTED_MULTIPLIER
+
+    queue = conn.select_all("SELECT * FROM projects WHERE status IN ('waiting_for_review', 'pending_admin_approval') AND (deleted = 0 OR deleted IS NULL)").to_a
+    queue_hours = queue.sum { |pr| (EffectiveHoursService.compute_for_project(pr)[:effective_hours] rescue (pr["hours_override"] || pr["hours"])).to_f }
+    queue_mult = avg_mult || 1.0
+    queue_scraps = queue_hours * sph * queue_mult * roll_expected
+
+    routes = conn.select_all(<<~SQL).map { |r| { route: r["order_type"], orders: r["n"].to_i, scraps_paid: r["paid"].to_i, item_value_scraps: r["face"].to_i, fulfillment_dollars: r["fc"].to_f.round(2) } }
+      SELECT so.order_type, COUNT(*) AS n, COALESCE(SUM(so.total_price), 0) AS paid,
+             COALESCE(SUM(si.price * so.quantity), 0) AS face,
+             COALESCE(SUM(COALESCE(si.fulfillment_cost, 0) * so.quantity), 0) AS fc
+      FROM shop_orders so JOIN shop_items si ON si.id = so.shop_item_id
+      WHERE so.status NOT IN ('cancelled', 'deleted', 'unclaimed')
+      GROUP BY so.order_type ORDER BY so.order_type
+    SQL
+    unclaimed_consolation = conn.select_value("SELECT COUNT(*) FROM shop_orders WHERE order_type = 'consolation' AND status = 'unclaimed'").to_i
+    refinery_spent = conn.select_value("SELECT COALESCE(SUM(cost), 0) FROM refinery_spending_history").to_f
+    refinery_undoable = conn.select_value("SELECT COALESCE(SUM(cost), 0) FROM refinery_orders").to_f
+    order_scraps = conn.select_value("SELECT COALESCE(SUM(total_price), 0) FROM shop_orders WHERE status NOT IN ('cancelled', 'deleted')").to_f
+
+    earned = awarded + roll_delta + bonuses
+    spent = order_scraps + refinery_spent
+    item_dollars = routes.sum { |r| r[:item_value_scraps] } / spd
+    fulfillment_dollars = routes.sum { |r| r[:fulfillment_dollars] }
+    delivered_dollars = item_dollars + fulfillment_dollars
+    committed_dollars = earned / spd
+    per_hour = ->(dollars, h) { h > 0 ? (dollars / h).round(2) : nil }
+
+    gachapons = conn.select_all("SELECT id, name, price FROM shop_gachapons ORDER BY id").map do |g|
+      pool = conn.select_all("SELECT si.price FROM shop_gachapon_items l JOIN shop_items si ON si.id = l.shop_item_id WHERE l.gachapon_id = #{g['id'].to_i} AND si.count != 0").map { |r| [r["price"].to_i, 1].max }
+      weights = pool.map { |pr| 1.0 / Math.sqrt(pr) }
+      ev = weights.sum > 0 ? pool.each_with_index.sum { |pr, i| pr * weights[i] } / weights.sum : 0
+      { id: g["id"].to_i, name: g["name"], price: g["price"].to_i, expected_prize_scraps: ev.round(1), payout_ratio: g["price"].to_i > 0 ? (ev / g["price"].to_f).round(2) : nil }
+    end
+
+    render_json({
+      target_dollars_per_hour: [TARGET_DOLLARS_PER_HOUR.min, TARGET_DOLLARS_PER_HOUR.max],
+      scraps_per_hour: sph,
+      scraps_per_dollar: spd,
+      approved: { projects: shipped["n"].to_i, hours: hours.round(1), scraps_awarded: awarded.to_i, payout_roll_scraps: roll_delta.to_i, avg_multiplier: avg_mult&.round(3), score_distribution: scores },
+      payout_roll: {
+        expected_multiplier: roll_expected,
+        decided: roll_stats ? roll_stats["decided"].to_i : 0,
+        rolled: roll_stats ? roll_stats["rolled"].to_i : 0,
+        undecided: roll_stats ? roll_stats["undecided"].to_i : 0,
+        realized_multiplier: roll_stats && roll_stats["decided_base"].to_f > 0 ? (roll_stats["decided_final"].to_f / roll_stats["decided_base"].to_f).round(3) : nil
+      },
+      bonuses_scraps: bonuses.to_i,
+      queue: { projects: queue.length, hours: queue_hours.round(1), projected_scraps: queue_scraps.round, assumed_multiplier: queue_mult.round(3) },
+      committed: { scraps: earned.to_i, dollars: committed_dollars.round(2), per_hour: per_hour.(committed_dollars, hours) },
+      projected_with_queue: { dollars: ((earned + queue_scraps) / spd).round(2), per_hour: per_hour.((earned + queue_scraps) / spd, hours + queue_hours) },
+      spent: { scraps: spent.to_i, refinery_scraps: refinery_spent.to_i, refinery_undoable_scraps: refinery_undoable.to_i, unspent_scraps: (earned - spent).to_i },
+      delivered: { item_dollars: item_dollars.round(2), fulfillment_dollars: fulfillment_dollars.round(2), dollars: delivered_dollars.round(2), per_hour: per_hour.(delivered_dollars, hours) },
+      routes: routes,
+      unclaimed_consolation: unclaimed_consolation,
+      gachapons: gachapons
+    })
   end
 
   def pricing_config

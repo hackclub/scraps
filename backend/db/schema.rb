@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_05_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -108,6 +108,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.text "title", null: false
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false
+  end
+
+  create_table "payout_rolls", force: :cascade do |t|
+    t.integer "base_scraps", null: false
+    t.datetime "created_at", null: false
+    t.datetime "decided_at"
+    t.decimal "final_multiplier", precision: 4, scale: 2
+    t.integer "project_id", null: false
+    t.decimal "roll_1", precision: 4, scale: 2
+    t.decimal "roll_2", precision: 4, scale: 2
+    t.string "status", default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["project_id"], name: "index_payout_rolls_on_project_id"
+    t.index ["user_id", "status"], name: "index_payout_rolls_on_user_id_and_status"
   end
 
   create_table "project_activity", id: :serial, force: :cascade do |t|

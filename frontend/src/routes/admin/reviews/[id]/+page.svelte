@@ -151,6 +151,54 @@
 		project ? Math.max(0, previewScraps - project.scrapsAwarded) : previewScraps
 	);
 
+	interface BudgetSnapshot {
+		targetDollarsPerHour: [number, number];
+		scrapsPerDollar: number;
+		approved: { hours: number; scrapsAwarded: number; payoutRollScraps: number };
+		payoutRoll: { expectedMultiplier: number };
+	}
+	let budget = $state<BudgetSnapshot | null>(null);
+
+	async function loadBudget() {
+		try {
+			const res = await fetch(`${API_URL}/admin/budget`, { credentials: 'include' });
+			if (res.ok) budget = await res.json();
+		} catch {
+			budget = null;
+		}
+	}
+
+	let payoutPrediction = $derived.by(() => {
+		const scrapsPerDollar = budget?.scrapsPerDollar ?? serverConfig.scrapsPerDollar ?? 12.8;
+		const [lo, hi] = budget?.targetDollarsPerHour ?? [4.5, 5];
+		const rollEv = budget?.payoutRoll?.expectedMultiplier ?? 1;
+		const dollars = (additionalScraps * rollEv) / scrapsPerDollar;
+		const projectRate = (SCRAPS_PER_HOUR * previewScoreMultiplier * rollEv) / scrapsPerDollar;
+		const hoursDelta = isUpdate
+			? previewScoreMultiplier > 0
+				? additionalScraps / (SCRAPS_PER_HOUR * previewScoreMultiplier)
+				: 0
+			: effectiveHours;
+		let eventBefore: number | null = null;
+		let eventAfter: number | null = null;
+		if (budget) {
+			const h = budget.approved.hours;
+			const committedDollars =
+				(budget.approved.scrapsAwarded + (budget.approved.payoutRollScraps ?? 0)) / scrapsPerDollar;
+			eventBefore = h > 0 ? committedDollars / h : null;
+			eventAfter = h + hoursDelta > 0 ? (committedDollars + dollars) / (h + hoursDelta) : null;
+		}
+		const tone = (rate: number | null) =>
+			rate == null
+				? 'text-gray-700'
+				: rate > hi
+					? 'text-red-600'
+					: rate < lo
+						? 'text-yellow-600'
+						: 'text-green-700';
+		return { dollars, projectRate, eventBefore, eventAfter, lo, hi, tone, rollEv };
+	});
+
 	let hoursOverrideError = $derived(
 		hoursOverride !== undefined && project && hoursOverride > project.hours
 			? `Approved hours cannot exceed logged hours (${formatHours(project.hours)}h)`
@@ -169,6 +217,7 @@
 			goto('/dashboard');
 			return;
 		}
+		loadBudget();
 
 		try {
 			const response = await fetch(`${API_URL}/admin/reviews/${projectId}`, {
@@ -439,7 +488,8 @@
 					<div>
 						<p class="font-bold text-red-800">hackatime banned</p>
 						<p class="text-sm text-red-700">
-							this user is banned on hackatime. they will be redirected to fraud.hackclub.com on login.
+							this user is banned on hackatime. they will be redirected to fraud.hackclub.com on
+							login.
 						</p>
 					</div>
 				</div>
@@ -488,16 +538,20 @@
 							{#if dup.codeUrl}
 								<p class="mt-1 truncate text-sm">
 									<span class="font-bold">code:</span>
-									<a href={safeUrl(dup.codeUrl)} target="_blank" class="text-blue-600 hover:underline"
-										>{dup.codeUrl}</a
+									<a
+										href={safeUrl(dup.codeUrl)}
+										target="_blank"
+										class="text-blue-600 hover:underline">{dup.codeUrl}</a
 									>
 								</p>
 							{/if}
 							{#if dup.playableUrl}
 								<p class="truncate text-sm">
 									<span class="font-bold">playable:</span>
-									<a href={safeUrl(dup.playableUrl)} target="_blank" class="text-blue-600 hover:underline"
-										>{dup.playableUrl}</a
+									<a
+										href={safeUrl(dup.playableUrl)}
+										target="_blank"
+										class="text-blue-600 hover:underline">{dup.playableUrl}</a
 									>
 								</p>
 							{/if}
@@ -935,8 +989,56 @@
 							class="w-full"
 						/>
 						<p class="mt-1 text-xs text-gray-500">
-							1 is a severe penalty, 2 is neutral (×1), 3 is a strong reward: this sets the payout
-							rate directly, required for approval
+							start at 2 (a solid, complete project) and move from there. aim for an overall average
+							around 1.9: roughly 2 in 5 projects below 2, 1 in 5 above, and 3s rare (~1 in 20). be
+							strictest on long projects.
+						</p>
+					</div>
+
+					<div class="rounded-xl border-2 border-black bg-gray-50 p-4">
+						<p class="mb-3 text-sm font-bold">predicted payout</p>
+						<div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+							<div>
+								<p class="text-gray-500">{isUpdate ? 'this update adds' : 'this approval costs'}</p>
+								<p class="text-xl font-bold">
+									${payoutPrediction.dollars.toFixed(2)}
+								</p>
+								<p class="text-xs text-gray-500">
+									{additionalScraps} scraps × bonus roll avg ×{payoutPrediction.rollEv.toFixed(2)}
+								</p>
+							</div>
+							<div>
+								<p class="text-gray-500">this project's rate</p>
+								<p class="text-xl font-bold {payoutPrediction.tone(payoutPrediction.projectRate)}">
+									${payoutPrediction.projectRate.toFixed(2)}/h
+								</p>
+								<p class="text-xs text-gray-500">
+									target ${payoutPrediction.lo}–{payoutPrediction.hi}/h overall
+								</p>
+							</div>
+							<div>
+								<p class="text-gray-500">event-wide after approving</p>
+								{#if budget}
+									<p class="text-xl font-bold {payoutPrediction.tone(payoutPrediction.eventAfter)}">
+										{payoutPrediction.eventAfter == null
+											? '—'
+											: `$${payoutPrediction.eventAfter.toFixed(2)}/h`}
+									</p>
+									<p class="text-xs text-gray-500">
+										now {payoutPrediction.eventBefore == null
+											? 'no approved hours'
+											: `$${payoutPrediction.eventBefore.toFixed(2)}/h`}
+									</p>
+								{:else}
+									<p class="text-xs text-gray-500">budget unavailable</p>
+								{/if}
+							</div>
+						</div>
+						<p class="mt-3 text-xs text-gray-500">
+							one project above target is fine: what has to land in range is the event-wide number
+							(project payouts incl. bonus-roll results; onboarding bonuses are tracked on the
+							budget page). the bonus roll averages ×{payoutPrediction.rollEv.toFixed(2)} when users play
+							it well, so it adds swing, not cost.
 						</p>
 					</div>
 

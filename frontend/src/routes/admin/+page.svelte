@@ -490,6 +490,22 @@
 		<div class="mx-auto max-w-4xl px-6 pb-24 md:px-12">
 			<h2 class="mb-4 text-2xl font-bold">admin actions</h2>
 
+			<a
+				href="/admin/budget"
+				class="mb-6 flex items-center justify-between rounded-2xl border-4 border-black p-6 transition-all hover:border-dashed"
+			>
+				<div>
+					<h3 class="flex items-center gap-2 text-lg font-bold">
+						<DollarSign size={20} />
+						budget
+					</h3>
+					<p class="text-sm text-gray-500">
+						live $ per approved hour, review-queue what-if, spending by route, gachapon payouts
+					</p>
+				</div>
+				<span class="text-xl font-bold">→</span>
+			</a>
+
 			<!-- Allowed to Log In -->
 			<a
 				href="/admin/allowlist"

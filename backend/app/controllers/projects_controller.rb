@@ -435,6 +435,20 @@ class ProjectsController < ApplicationController
     render_json(project_row_to_h(updated, strip_ids: true))
   end
 
+  def payout_roll
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+    row = PayoutRollService.current(ActiveRecord::Base.connection, project_id: params[:id], user_id: current_user.id)
+    render_json({ payout_roll: PayoutRollService.state_for(row) })
+  end
+
+  def payout_roll_roll
+    payout_roll_action { PayoutRollService.roll!(project_id: params[:id], user_id: current_user.id) }
+  end
+
+  def payout_roll_keep
+    payout_roll_action { PayoutRollService.keep!(project_id: params[:id], user_id: current_user.id) }
+  end
+
   def reviews
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
@@ -477,6 +491,17 @@ class ProjectsController < ApplicationController
   end
 
   private
+
+  def payout_roll_action
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+    render_json({ payout_roll: yield })
+  rescue PayoutRollService::RollError => e
+    case e.message
+    when "no_open_payout" then render_json({ error: "This payout has already been decided" }, status: :unprocessable_entity)
+    when "already_spent" then render_json({ error: "You've already spent part of this payout, so it can't be rolled. It's yours as is." }, status: :unprocessable_entity)
+    else raise
+    end
+  end
 
   def valid_image_url?(url)
     return true if url.blank?

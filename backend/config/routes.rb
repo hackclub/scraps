@@ -35,6 +35,9 @@ Rails.application.routes.draw do
     post   ":id/submit",           to: "projects#submit"
     post   ":id/unsubmit",         to: "projects#unsubmit"
     get    ":id/reviews",          to: "projects#reviews"
+    get    ":id/payout-roll",      to: "projects#payout_roll"
+    post   ":id/payout-roll/roll", to: "projects#payout_roll_roll"
+    post   ":id/payout-roll/keep", to: "projects#payout_roll_keep"
   end
 
   # Shop
@@ -110,6 +113,7 @@ Rails.application.routes.draw do
   scope :admin do
     get    "stats",                           to: "admin#stats"
     get    "config",                          to: "admin#pricing_config"
+    get    "budget",                          to: "admin#budget"
     post   "sync-airtable",                   to: "admin#sync_airtable"
     post   "fix-negative-balances",           to: "admin#fix_negative_balances"
     get    "unified-duplicates",              to: "admin#unified_duplicates"

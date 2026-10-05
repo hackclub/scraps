@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
-	import { Spool, PartyPopper, ChevronRight, X } from '@lucide/svelte';
+	import { Spool, PartyPopper, ChevronRight, X, Dices, Check, RotateCcw } from '@lucide/svelte';
 	import { projectsStore, type Project } from '$lib/stores';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { reviewerScoreMultiplier } from '$lib/utils';
@@ -30,6 +30,83 @@
 	let scoreMultiplier = $state(1);
 	let scrapsAwarded = $state(0);
 	let displayTotal = $state(0);
+
+	interface PayoutRoll {
+		status: 'open' | 'rolled' | 'final' | 'cancelled';
+		baseScraps: number;
+		roll1: number | null;
+		roll2: number | null;
+		finalMultiplier: number | null;
+		finalScraps: number | null;
+		minMultiplier: number;
+		maxMultiplier: number;
+	}
+	let payoutRoll = $state<PayoutRoll | null>(null);
+	let rolling = $state(false);
+	let spinValue = $state(1);
+	let rollError = $state<string | null>(null);
+	let deciding = $state(false);
+
+	async function fetchPayoutRoll(projectId: number) {
+		try {
+			const res = await fetch(`${API_URL}/projects/${projectId}/payout-roll`, {
+				credentials: 'include'
+			});
+			payoutRoll = res.ok ? ((await res.json()).payoutRoll ?? null) : null;
+		} catch {
+			payoutRoll = null;
+		}
+	}
+
+	async function payoutAction(action: 'roll' | 'keep'): Promise<boolean> {
+		if (!celebProject) return false;
+		rollError = null;
+		try {
+			const res = await fetch(`${API_URL}/projects/${celebProject.id}/payout-roll/${action}`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				rollError = data.error ?? 'Something went wrong';
+				return false;
+			}
+			payoutRoll = data.payoutRoll;
+			return true;
+		} catch {
+			rollError = 'Something went wrong';
+			return false;
+		}
+	}
+
+	async function rollBonus() {
+		if (deciding || !payoutRoll) return;
+		deciding = true;
+		playButtonClickSound();
+		rolling = true;
+		const lo = payoutRoll.minMultiplier;
+		const hi = payoutRoll.maxMultiplier;
+		const spin = setInterval(() => {
+			spinValue = Math.round((lo + Math.random() * (hi - lo)) * 100) / 100;
+		}, 60);
+		const [ok] = await Promise.all([payoutAction('roll'), sleep(1100)]);
+		clearInterval(spin);
+		rolling = false;
+		deciding = false;
+		if (ok) playBoxAppearSound();
+	}
+
+	async function keepPayout() {
+		if (deciding) return;
+		deciding = true;
+		playButtonClickSound();
+		await payoutAction('keep');
+		deciding = false;
+	}
+
+	let pendingMultiplier = $derived(
+		payoutRoll?.status === 'rolled' ? (payoutRoll.roll1 ?? 1) : (payoutRoll?.finalMultiplier ?? 1)
+	);
 
 	let appearAudio: HTMLAudioElement | null = null;
 	let clickAudio: HTMLAudioElement | null = null;
@@ -126,6 +203,7 @@
 			scoreMultiplier = 1;
 		}
 
+		await fetchPayoutRoll(project.id);
 		show = true;
 		playBoxAppearSound();
 	}
@@ -154,7 +232,10 @@
 		playBoxAppearSound();
 	}
 
-	function close() {
+	async function close() {
+		if (payoutRoll && (payoutRoll.status === 'open' || payoutRoll.status === 'rolled')) {
+			await payoutAction('keep');
+		}
 		if (celebProject) markSeen(celebProject);
 		closing = true;
 		setTimeout(() => {
@@ -271,12 +352,85 @@
 							<p class="flex items-center justify-center gap-2 text-5xl font-black">
 								<Spool size={36} />{displayTotal.toLocaleString()}
 							</p>
-							<button
-								onclick={close}
-								class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-6 py-3 font-bold text-white transition-all hover:bg-gray-800"
-							>
-								Awesome!
-							</button>
+							{#if payoutRoll && payoutRoll.status !== 'cancelled'}
+								{#if rolling || payoutRoll.status !== 'open'}
+									<p
+										class="text-4xl font-black tabular-nums {rolling
+											? 'text-gray-400'
+											: pendingMultiplier >= 1
+												? 'text-green-600'
+												: 'text-red-600'}"
+									>
+										×{(rolling ? spinValue : pendingMultiplier).toFixed(2)}
+									</p>
+									{#if !rolling}
+										<p class="text-lg font-bold">
+											= {Math.floor(payoutRoll.baseScraps * pendingMultiplier).toLocaleString()} scraps
+										</p>
+									{/if}
+								{/if}
+								{#if rollError}
+									<p class="text-sm font-bold text-red-600">{rollError}</p>
+								{/if}
+								{#if !rolling && payoutRoll.status === 'open' && !rollError}
+									<p class="text-sm text-gray-600">
+										take your payout, or roll for a bonus between ×{payoutRoll.minMultiplier.toFixed(
+											2
+										)} and ×{payoutRoll.maxMultiplier.toFixed(2)}. you get one reroll, and the
+										reroll is final.
+									</p>
+									<div class="flex flex-wrap justify-center gap-3">
+										<button
+											onclick={keepPayout}
+											disabled={deciding}
+											class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-5 py-3 font-bold transition-all hover:border-dashed disabled:opacity-50"
+										>
+											<Check size={18} /> Take payout
+										</button>
+										<button
+											onclick={rollBonus}
+											disabled={deciding}
+											class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-5 py-3 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
+										>
+											<Dices size={18} /> Roll for a bonus
+										</button>
+									</div>
+								{:else if !rolling && payoutRoll.status === 'rolled'}
+									<div class="flex flex-wrap justify-center gap-3">
+										<button
+											onclick={keepPayout}
+											disabled={deciding}
+											class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-5 py-3 font-bold transition-all hover:border-dashed disabled:opacity-50"
+										>
+											<Check size={18} /> Keep ×{pendingMultiplier.toFixed(2)}
+										</button>
+										<button
+											onclick={rollBonus}
+											disabled={deciding}
+											class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-5 py-3 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
+										>
+											<RotateCcw size={18} /> Reroll (final)
+										</button>
+									</div>
+									<p class="text-xs text-gray-500">
+										if you reroll, you have to keep whatever you get
+									</p>
+								{:else if !rolling}
+									<button
+										onclick={close}
+										class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-6 py-3 font-bold text-white transition-all hover:bg-gray-800"
+									>
+										Awesome!
+									</button>
+								{/if}
+							{:else}
+								<button
+									onclick={close}
+									class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-6 py-3 font-bold text-white transition-all hover:bg-gray-800"
+								>
+									Awesome!
+								</button>
+							{/if}
 						{/if}
 					</div>
 				{/key}
