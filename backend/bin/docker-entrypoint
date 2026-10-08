@@ -3,6 +3,13 @@
 # If running the rails server then create or migrate existing database
 if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
+
+  if [ "${RUN_SIDEKIQ:-true}" == "true" ]; then
+    (while true; do
+      bundle exec sidekiq -C config/sidekiq.yml || echo "[entrypoint] sidekiq exited ($?), restarting in 5s"
+      sleep 5
+    done) &
+  fi
 fi
 
 exec "${@}"

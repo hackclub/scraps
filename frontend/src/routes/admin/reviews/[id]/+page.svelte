@@ -644,17 +644,14 @@
 					<p class="text-blue-700">{project.reviewerNotes}</p>
 				</div>
 			{/if}
-			<div class="flex flex-wrap items-center gap-3 text-sm">
-				{#if deductedHours > 0}
+			{#if deductedHours > 0}
+				<div class="flex flex-wrap items-center gap-3 text-sm">
 					<span
 						class="rounded-full border-2 border-yellow-500 bg-yellow-100 px-3 py-1 font-bold text-yellow-800"
 						>−{formatHours(deductedHours)}h overlap</span
 					>
-				{/if}
-				<span class="rounded-full border-2 border-black bg-gray-100 px-3 py-1 font-bold"
-					>tier {project.tier}</span
-				>
-			</div>
+				</div>
+			{/if}
 
 			{#if hackatimeProjects.length > 0}
 				<div class="mt-4 rounded-lg border-2 border-black bg-gray-50 p-4">
