@@ -162,6 +162,32 @@
 		}
 	}
 
+	let airtableSyncing = $state(false);
+	let airtableResult = $state<{ usersQueued: number; shippedProjects: number } | null>(null);
+	let airtableError = $state<string | null>(null);
+
+	async function syncAirtable() {
+		airtableSyncing = true;
+		airtableResult = null;
+		airtableError = null;
+		try {
+			const res = await fetch(`${API_URL}/admin/sync-airtable`, {
+				method: 'POST',
+				credentials: 'include'
+			});
+			const data = await res.json();
+			if (data.error) {
+				airtableError = data.error;
+			} else {
+				airtableResult = data;
+			}
+		} catch {
+			airtableError = 'Failed to queue airtable sync';
+		} finally {
+			airtableSyncing = false;
+		}
+	}
+
 	async function checkUnifiedDuplicates() {
 		dupChecking = true;
 		dupResult = null;
@@ -656,6 +682,37 @@
 								? 's'
 								: ''}
 						</p>
+					</div>
+				{/if}
+			</div>
+
+			<div class="mb-6 rounded-2xl border-4 border-black p-6">
+				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<h3 class="flex items-center gap-2 text-lg font-bold">
+							<RefreshCw size={20} />
+							sync airtable
+						</h3>
+						<p class="text-sm text-gray-500">
+							push every user to Users and every shipped project to YSWS Project Submission
+						</p>
+					</div>
+					<button
+						onclick={syncAirtable}
+						disabled={airtableSyncing}
+						class="cursor-pointer rounded-full bg-black px-6 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						{airtableSyncing ? 'queueing...' : 'sync now'}
+					</button>
+				</div>
+				{#if airtableError}
+					<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{airtableError}</div>
+				{/if}
+				{#if airtableResult}
+					<div class="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+						queued {airtableResult.usersQueued.toLocaleString()} users (~{Math.ceil(
+							(airtableResult.usersQueued * 0.4) / 60
+						)} min) and {airtableResult.shippedProjects.toLocaleString()} shipped projects
 					</div>
 				{/if}
 			</div>

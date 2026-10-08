@@ -1263,7 +1263,16 @@ class AdminController < ApplicationController
 
   def sync_airtable
     AirtableSyncJob.perform_later
-    render_json({ success: true })
+
+    user_ids = User.where.not(role: "banned").order(:id).pluck(:id)
+    user_ids.each_with_index do |uid, i|
+      AirtableUserSyncJob.set(wait: (i * 0.4).seconds).perform_later(uid)
+    end
+
+    shipped = ActiveRecord::Base.connection.select_value(
+      "SELECT COUNT(*) FROM projects WHERE status = 'shipped' AND (deleted = 0 OR deleted IS NULL)"
+    ).to_i
+    render_json({ success: true, usersQueued: user_ids.size, shippedProjects: shipped })
   end
 
   # --- Login allowlist ---
