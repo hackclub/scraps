@@ -2,11 +2,16 @@ module SlackService
   SCRAPS_URL = "https://scraps.hackclub.com"
 
   def self.post(token, method, payload)
-    HTTParty.post(
+    resp = HTTParty.post(
       "https://slack.com/api/#{method}",
       headers: { "Authorization" => "Bearer #{token}", "Content-Type" => "application/json" },
       body: payload.to_json
     )
+    body = resp.parsed_response
+    if body.is_a?(Hash) && body["ok"] == false
+      Rails.logger.warn("[SlackService] #{method} to #{payload[:channel] || payload['channel']} failed: #{body['error']}")
+    end
+    resp
   end
 
   # slack addition flow
