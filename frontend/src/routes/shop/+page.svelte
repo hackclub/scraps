@@ -458,7 +458,9 @@
 					ondragleave={onDailyZoneDragLeave}
 					ondrop={onDailyZoneDrop}
 					role="list"
-					class="grid grid-cols-5 gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
+					class="{visibleDailyItems.length > 5
+						? 'flex snap-x overflow-x-auto'
+						: 'grid grid-cols-5'} gap-2 rounded-2xl border-4 p-2 transition-all sm:gap-3 {dailyDropHover
 						? 'border-dashed border-black bg-indigo-50'
 						: 'border-transparent'}"
 				>
@@ -468,10 +470,10 @@
 							draggable={true}
 							ondragstart={(e) => onDragStart(e, item)}
 							ondragend={onDragEnd}
-							class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-white transition-all active:cursor-grabbing {draggingId ===
-							item.id
-								? 'opacity-30'
-								: ''}"
+							class="relative cursor-grab overflow-hidden rounded-xl border-4 border-black bg-white transition-all active:cursor-grabbing {visibleDailyItems.length >
+							5
+								? 'w-[calc(20%-0.4rem)] shrink-0 snap-start sm:w-[calc(20%-0.6rem)]'
+								: ''} {draggingId === item.id ? 'opacity-30' : ''}"
 						>
 							<button
 								onclick={() => (selectedItem = item)}

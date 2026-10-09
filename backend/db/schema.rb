@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_05_130000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_08_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -167,6 +167,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_05_130000) do
     t.index ["updated_at"], name: "index_projects_on_updated_at"
     t.index ["user_id"], name: "index_projects_on_user_id"
     t.index ["views"], name: "index_projects_on_views"
+  end
+
+  create_table "referral_reward_claims", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "reward", null: false
+    t.integer "shop_order_id"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id", "reward"], name: "index_referral_reward_claims_on_user_id_and_reward", unique: true
   end
 
   create_table "referrals", force: :cascade do |t|

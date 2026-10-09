@@ -110,6 +110,28 @@ class AdminController < ApplicationController
     return render_json({ error: "User not found" }, status: :not_found) unless target
 
     projects = conn.select_all("SELECT * FROM projects WHERE user_id = #{target_id} ORDER BY updated_at DESC").to_a
+    
+    payout_rolls = conn.select_all(<<~SQL).index_by { |r| r["project_id"].to_i }
+      SELECT DISTINCT ON (project_id) project_id, base_scraps, roll_1, roll_2, final_multiplier, status
+      FROM payout_rolls
+      WHERE user_id = #{target_id} AND status <> 'cancelled' AND roll_1 IS NOT NULL
+      ORDER BY project_id, id DESC
+    SQL
+    projects.each do |p|
+      r = payout_rolls[p["id"].to_i]
+      next p["payout_roll"] = nil unless r
+      base = r["base_scraps"].to_i
+      final = r["final_multiplier"]&.to_f
+      p["payout_roll"] = {
+        status: r["status"],
+        base_scraps: base,
+        roll_1: r["roll_1"].to_f,
+        roll_2: r["roll_2"]&.to_f,
+        final_multiplier: final,
+        delta: final ? (base * final).floor - base : nil
+      }
+    end
+    
     stats = {
       total: projects.length,
       shipped: projects.count { |p| p["status"] == "shipped" },
@@ -342,8 +364,10 @@ class AdminController < ApplicationController
         end
       rescue StandardError; end
     end
+    ht_user_id ||= conn.select_value("SELECT hackatime_user_id FROM users WHERE id = #{project['user_id'].to_i}")&.to_i
+    ht_user_id ||= HackatimeService.parse_hackatime_projects(project["hackatime_project"]).filter_map { |e| e[:hackatime_user_id] }.first
 
-    ysws_dupes = search_unified_airtable(project["github_url"], project["playable_url"]) rescue []
+    ysws_dupes =search_unified_airtable(project["github_url"], project["playable_url"]) rescue []
 
     is_admin_user = %w[admin creator].include?(current_user.role)
     masked_project = (!is_admin_user && project["status"] == "pending_admin_approval") ? project.merge("status" => "waiting_for_review") : project
@@ -502,7 +526,7 @@ class AdminController < ApplicationController
     conn = ActiveRecord::Base.connection
     rows = conn.select_all(<<~SQL).to_a
       SELECT shipping_address FROM shop_orders
-      WHERE order_type IN ('purchase', 'luck_win') AND is_fulfilled = false
+      WHERE order_type IN ('purchase', 'luck_win', 'referral_reward') AND is_fulfilled = false
     SQL
 
     count = rows.count do |r|

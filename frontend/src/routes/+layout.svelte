@@ -11,6 +11,7 @@
 	import PayoutCelebration from '$lib/components/PayoutCelebration.svelte';
 	import { handleNavigation, prefetchUserData, onboardingSandbox } from '$lib/stores';
 	import { getUser, type User } from '$lib/auth-client';
+	import { installEmojiAutocomplete } from '$lib/emoji';
 
 	let { children } = $props();
 
@@ -28,6 +29,8 @@
 	});
 
 	let hideNavbar = $derived($page.url.pathname.startsWith('/auth/error'));
+
+	onMount(() => installEmojiAutocomplete());
 
 	// Prefetch data on initial load if user is logged in
 	onMount(async () => {

@@ -6,6 +6,7 @@ export default {
 		dashboard: 'dashboard',
 		leaderboard: 'leaderboard',
 		referrals: 'invite',
+		faq: 'faq',
 		settings: 'settings',
 		shop: 'shop',
 		refinery: 'refinery',

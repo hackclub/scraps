@@ -17,8 +17,7 @@
 		Bot,
 		ArrowLeft,
 		MessageSquare,
-		ShieldAlert,
-		Lock
+		ShieldAlert
 	} from '@lucide/svelte';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
@@ -787,22 +786,8 @@
 						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
 					>
 						<ShieldAlert size={18} />
-						<span>fraud check</span>
+						<span>telescreen</span>
 					</a>
-				{/if}
-				{#if project.githubUrl}
-					<button
-						onclick={async () => {
-							if (project?.githubUrl) {
-								await navigator.clipboard.writeText(project.githubUrl);
-								window.open('https://airlock.hackclub.com/', '_blank');
-							}
-						}}
-						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
-					>
-						<Lock size={18} />
-						<span>airlock</span>
-					</button>
 				{/if}
 			</div>
 

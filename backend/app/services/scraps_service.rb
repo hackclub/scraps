@@ -99,7 +99,7 @@ module ScrapsService
   end
 
   def self.compute_roll_threshold(probability)
-    [(probability * 17 / 20.0).floor, 1].max
+    [probability.floor, 1].max
   end
 
   def self.get_upgrade_cost(price, upgrade_count, _actual_spent = nil, base_upgrade_cost = nil)

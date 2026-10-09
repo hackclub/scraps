@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Marked, type Tokens } from 'marked';
 	import DOMPurify from 'dompurify';
+	import { renderEmojis } from '$lib/emoji';
 
 	interface Props {
 		content: string;
@@ -36,6 +37,13 @@
 
 	marked.use({ renderer });
 
+	let container: HTMLDivElement;
+
+	$effect(() => {
+		content;
+		renderEmojis(container);
+	});
+
 	function render(text: string): string {
 		if (!DOMPurify.isSupported) return '';
 		const result = marked.parse(text ?? '');
@@ -44,7 +52,7 @@
 	}
 </script>
 
-<div class="markdown {className}">
+<div class="markdown {className}" bind:this={container}>
 	{@html render(content)}
 </div>
 
@@ -137,7 +145,7 @@
 		text-decoration: none;
 		pointer-events: none;
 	}
-	.markdown :global(img) {
+	.markdown :global(img:not(.emoji)) {
 		display: none;
 	}
 	.markdown :global(table) {

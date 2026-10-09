@@ -37,13 +37,6 @@
 		costPerHour: number;
 	}
 
-	interface TierCost {
-		tier: number;
-		multiplier: number;
-		hours: number;
-		projects: number;
-	}
-
 	interface Stats {
 		totalUsers: number;
 		totalProjects: number;
@@ -54,7 +47,6 @@
 		inProgressHours: number;
 		inProgressWeightedGrants: number;
 		shopStats?: ShopStats;
-		tierCostBreakdown?: TierCost[];
 	}
 
 	let stats = $state<Stats | null>(null);
@@ -366,32 +358,6 @@
 					</div>
 				</div>
 			</div>
-
-			{#if stats.tierCostBreakdown && stats.tierCostBreakdown.length > 0}
-				<h2 class="mt-10 mb-6 text-2xl font-bold">projects by tier</h2>
-				<div class="rounded-2xl border-4 border-black p-6">
-					<table class="w-full text-left">
-						<thead>
-							<tr class="border-b-2 border-black">
-								<th class="pb-2 font-bold">tier</th>
-								<th class="pb-2 font-bold">multiplier</th>
-								<th class="pb-2 font-bold">hours</th>
-								<th class="pb-2 text-right font-bold">projects</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each stats.tierCostBreakdown as tier}
-								<tr class="border-b border-gray-200">
-									<td class="py-2 font-bold">T{tier.tier}</td>
-									<td class="py-2">{tier.multiplier}x</td>
-									<td class="py-2">{tier.hours.toLocaleString()}h</td>
-									<td class="py-2 text-right font-bold">{tier.projects.toLocaleString()}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			{/if}
 
 			{#if stats.shopStats}
 				<h2 class="mt-10 mb-6 text-2xl font-bold">shop spending</h2>

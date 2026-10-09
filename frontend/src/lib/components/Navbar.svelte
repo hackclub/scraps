@@ -13,6 +13,7 @@
 		Shield,
 		ClipboardList,
 		Users,
+		CircleHelp,
 		FolderKanban,
 		ShoppingBag,
 		Newspaper,
@@ -21,8 +22,7 @@
 		Menu,
 		X,
 		ChevronDown,
-		Settings,
-		MessageSquare
+		Settings
 	} from '@lucide/svelte';
 	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
@@ -60,13 +60,15 @@
 	let isAdminOnly = $derived(user?.role === 'admin' || user?.role === 'creator');
 	let isInAdminSection = $derived(currentPath.startsWith('/admin'));
 	let dashboardMoreActive = $derived(
-		currentPath === '/shop' || currentPath === '/refinery' || currentPath === '/referrals'
+		currentPath === '/shop' ||
+			currentPath === '/refinery' ||
+			currentPath === '/referrals' ||
+			currentPath === '/faq'
 	);
 	let adminMoreActive = $derived(
 		currentPath.startsWith('/admin/shop') ||
 			currentPath.startsWith('/admin/news') ||
-			currentPath.startsWith('/admin/orders') ||
-			currentPath.startsWith('/admin/macros')
+			currentPath.startsWith('/admin/orders')
 	);
 
 	let observer: IntersectionObserver | null = null;
@@ -237,7 +239,7 @@
 				<a
 					href="/admin"
 					class="flex cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 {currentPath ===
-					'/admin'
+						'/admin' || currentPath.startsWith('/admin/macros')
 						? 'border-black bg-black text-white'
 						: 'border-black hover:border-dashed'}"
 				>
@@ -322,17 +324,6 @@
 							</span>
 						{/if}
 					</a>
-					<a
-						href="/admin/macros"
-						class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath.startsWith(
-							'/admin/macros'
-						)
-							? 'border-black bg-black text-white'
-							: 'border-black hover:border-dashed'}"
-					>
-						<MessageSquare size={18} />
-						<span class="text-lg font-bold">{$t.nav.macros}</span>
-					</a>
 
 					<!-- More dropdown for smaller screens -->
 					<div class="more-menu-container relative xl:hidden">
@@ -404,18 +395,6 @@
 										</span>
 									{/if}
 								</a>
-								<a
-									href="/admin/macros"
-									onclick={closeMoreMenu}
-									class="flex w-full cursor-pointer items-center gap-2 border-t-2 border-black px-4 py-3 transition-colors hover:bg-gray-100 {currentPath.startsWith(
-										'/admin/macros'
-									)
-										? 'bg-gray-100'
-										: ''}"
-								>
-									<MessageSquare size={18} />
-									<span class="font-bold">{$t.nav.macros}</span>
-								</a>
 							</div>
 						{/if}
 					</div>
@@ -470,6 +449,17 @@
 				<span class="text-lg font-bold">{$t.nav.referrals}</span>
 			</a>
 
+			<a
+				href="/faq"
+				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
+				'/faq'
+					? 'border-black bg-black text-white'
+					: 'border-black hover:border-dashed'}"
+			>
+				<CircleHelp size={18} />
+				<span class="text-lg font-bold">{$t.nav.faq}</span>
+			</a>
+
 			<!-- More dropdown for smaller screens -->
 			<div class="more-menu-container relative xl:hidden">
 				<button
@@ -520,6 +510,17 @@
 						>
 							<Users size={18} />
 							<span class="font-bold">{$t.nav.referrals}</span>
+						</a>
+						<a
+							href="/faq"
+							onclick={closeMoreMenu}
+							class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-gray-100 {currentPath ===
+							'/faq'
+								? 'bg-gray-100 font-bold'
+								: ''}"
+						>
+							<CircleHelp size={18} />
+							<span class="font-bold">{$t.nav.faq}</span>
 						</a>
 					</div>
 				{/if}
@@ -709,7 +710,7 @@
 						href="/admin"
 						onclick={handleMobileNavClick}
 						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
-						'/admin'
+							'/admin' || currentPath.startsWith('/admin/macros')
 							? 'border-black bg-black text-white'
 							: 'border-black hover:border-dashed'}"
 					>
@@ -801,18 +802,6 @@
 									{ordersNeedsInfoCount}
 								</span>
 							{/if}
-						</a>
-						<a
-							href="/admin/macros"
-							onclick={handleMobileNavClick}
-							class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath.startsWith(
-								'/admin/macros'
-							)
-								? 'border-black bg-black text-white'
-								: 'border-black hover:border-dashed'}"
-						>
-							<MessageSquare size={20} />
-							<span class="text-lg font-bold">{$t.nav.macros}</span>
 						</a>
 					{/if}
 				{/if}
@@ -909,6 +898,17 @@
 					>
 						<Users size={20} />
 						<span class="text-lg font-bold">{$t.nav.referrals}</span>
+					</a>
+					<a
+						href="/faq"
+						onclick={handleMobileNavClick}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
+						'/faq'
+							? 'border-black bg-black text-white'
+							: 'border-black hover:border-dashed'}"
+					>
+						<CircleHelp size={20} />
+						<span class="text-lg font-bold">{$t.nav.faq}</span>
 					</a>
 					<button
 						onclick={() => {

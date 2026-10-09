@@ -2,6 +2,8 @@ class ShopController < ApplicationController
   class ShopError < StandardError; end
 
   RETAINED_ITEMS_CAP_BASE = 2
+  DAILY_PICKS_BASE = 5
+  DAILY_PICKS_REFERRAL_BONUS = 2
 
   def self.retained_items_cap_for(user)
     return RETAINED_ITEMS_CAP_BASE unless user
@@ -41,11 +43,7 @@ class ShopController < ApplicationController
 
   def daily_picks
     conn = ActiveRecord::Base.connection
-    ids = Rails.cache.fetch("shop:daily:v2:#{Date.current}", expires_in: 1.hour) do
-      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false AND consolation_prize = false AND hidden = false").map { |r| r["id"].to_i }
-      seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
-      pool.shuffle(random: Random.new(seed)).first(5)
-    end
+    ids = daily_pick_ids_for(current_user)
 
     rows = ids.any? ? conn.select_all(<<~SQL).to_a : []
       SELECT si.*, (SELECT COUNT(*) FROM shop_hearts WHERE shop_item_id = si.id) AS heart_count
@@ -73,10 +71,13 @@ class ShopController < ApplicationController
 
     item_id = params[:id].to_i
     conn = ActiveRecord::Base.connection
-    target = conn.select_one("SELECT gachapon_only, consolation_prize FROM shop_items WHERE id = #{item_id}")
+    target = conn.select_one("SELECT gachapon_only, consolation_prize, hidden FROM shop_items WHERE id = #{item_id}")
     return render_json({ error: "Item not found" }, status: :not_found) unless target
     reason = off_shelf_reason(target)
     return render_json({ error: reason }, status: :unprocessable_entity) if reason
+    unless daily_pick_ids_for(current_user).include?(item_id)
+      return render_json({ error: "You can only keep items from today's picks" }, status: :unprocessable_entity)
+    end
 
     count = conn.select_one("SELECT COUNT(*) AS cnt FROM shop_retained_items WHERE user_id = #{current_user.id}")["cnt"].to_i
     return render_json({ error: "Your permanent shop is full" }, status: :unprocessable_entity) if count >= self.class.retained_items_cap_for(current_user)
@@ -294,6 +295,9 @@ class ShopController < ApplicationController
     return render_json({ error: "Item not found" }, status: :not_found) unless item
     reason = off_shelf_reason(item)
     return render_json({ error: reason }, status: :unprocessable_entity) if reason
+    unless in_users_shop?(current_user, item_id)
+      return render_json({ error: "This item isn't in your shop right now" }, status: :unprocessable_entity)
+    end
     infinite = infinite_stock?(item["count"])
 
     if !infinite && item["count"].to_i < quantity
@@ -367,6 +371,9 @@ class ShopController < ApplicationController
     return render_json({ error: "Item not found" }, status: :not_found) unless item
     reason = off_shelf_reason(item)
     return render_json({ error: reason }, status: :unprocessable_entity) if reason
+    unless in_users_shop?(current_user, item_id)
+      return render_json({ error: "This item isn't in your shop right now" }, status: :unprocessable_entity)
+    end
     infinite = infinite_stock?(item["count"])
     return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
@@ -409,8 +416,6 @@ class ShopController < ApplicationController
         rolled = rand(1..100)
         threshold = ScrapsService.compute_roll_threshold(effective_prob)
         won = rolled <= threshold
-        # Don't reveal the roll was actually a win-zone miss: shift display value past effective_prob
-        display_rolled = (!won && rolled <= effective_prob) ? rand((effective_prob.to_i + 1)..100) : rolled
 
         conn.execute(<<~SQL)
           INSERT INTO shop_rolls (user_id, shop_item_id, rolled, threshold, won, created_at)
@@ -436,11 +441,11 @@ class ShopController < ApplicationController
             conn.execute("INSERT INTO shop_penalties (user_id, shop_item_id, probability_multiplier, created_at, updated_at) VALUES (#{current_user.id}, #{item_id}, 50, NOW(), NOW())")
           end
 
-          { won: true, order_id: order_row["id"].to_i, effective_probability: effective_prob, rolled: display_rolled, roll_cost: roll_cost }
+          { won: true, order_id: order_row["id"].to_i, effective_probability: effective_prob, rolled: rolled, roll_cost: roll_cost }
         else
           consolation_row = conn.select_one(<<~SQL)
             INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, notes, created_at, updated_at)
-            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'unclaimed', 'consolation', #{conn.quote("Lost roll - rolled #{display_rolled}, needed #{effective_prob.to_i} or less")}, NOW(), NOW())
+            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'unclaimed', 'consolation', #{conn.quote("Lost roll - rolled #{rolled}, needed #{effective_prob.to_i} or less")}, NOW(), NOW())
             RETURNING id
           SQL
 
@@ -449,7 +454,7 @@ class ShopController < ApplicationController
             conn.execute("UPDATE shop_penalties SET probability_multiplier = #{recovered}, updated_at = NOW() WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
           end
 
-          { won: false, consolation_order_id: consolation_row["id"].to_i, effective_probability: effective_prob, rolled: display_rolled, roll_cost: roll_cost, penalty_recovered: penalty_mult < 100 }
+          { won: false, consolation_order_id: consolation_row["id"].to_i, effective_probability: effective_prob, rolled: rolled, roll_cost: roll_cost, penalty_recovered: penalty_mult < 100 }
         end
       end
 
@@ -899,7 +904,26 @@ class ShopController < ApplicationController
   def off_shelf_reason(item)
     return "This item is only available from a gachapon" if truthy?(item["gachapon_only"])
     return "This item is only available as a consolation prize" if truthy?(item["consolation_prize"])
+    return "This item isn't available" if truthy?(item["hidden"])
     nil
+  end
+
+  def daily_pick_ids_for(user)
+    conn = ActiveRecord::Base.connection
+    shuffled = Rails.cache.fetch("shop:daily:v3:#{Date.current}", expires_in: 1.hour) do
+      pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false AND consolation_prize = false AND hidden = false").map { |r| r["id"].to_i }
+      seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
+      pool.shuffle(random: Random.new(seed)).first(DAILY_PICKS_BASE + DAILY_PICKS_REFERRAL_BONUS)
+    end
+    extra = user && conn.select_value("SELECT 1 FROM referral_reward_claims WHERE user_id = #{user.id.to_i} AND reward = 'daily_picks'")
+    shuffled.first(DAILY_PICKS_BASE + (extra ? DAILY_PICKS_REFERRAL_BONUS : 0))
+  end
+
+  def in_users_shop?(user, item_id)
+    return true if daily_pick_ids_for(user).include?(item_id)
+    ActiveRecord::Base.connection.select_value(
+      "SELECT 1 FROM shop_retained_items WHERE user_id = #{user.id.to_i} AND shop_item_id = #{item_id.to_i}"
+    ).present?
   end
 
   def weighted_sample(rows)

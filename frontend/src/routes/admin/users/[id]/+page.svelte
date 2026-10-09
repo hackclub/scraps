@@ -35,6 +35,14 @@
 		createdAt: string;
 		updatedAt: string;
 		deleted: number | null;
+		payoutRoll: {
+			status: string;
+			baseScraps: number;
+			roll1: number;
+			roll2: number | null;
+			finalMultiplier: number | null;
+			delta: number | null;
+		} | null;
 	}
 
 	interface UserStats {
@@ -711,6 +719,24 @@
 								<span class="flex shrink-0 items-center gap-3 text-gray-500">
 									<span>{formatHours(project.hoursOverride ?? project.hours)}h</span>
 									<span>{project.deleted ? 'deleted' : statusTag.label}</span>
+									{#if project.payoutRoll}
+										{@const roll = project.payoutRoll}
+										<span title="bonus payout roll on {roll.baseScraps} scraps">
+											rolled {roll.roll1.toFixed(2)}x{#if roll.roll2 !== null}
+												→ {roll.roll2.toFixed(2)}x{/if}
+											{#if roll.delta !== null}
+												<span
+													class="font-bold {roll.delta > 0
+														? 'text-green-600'
+														: roll.delta < 0
+															? 'text-red-600'
+															: ''}">({roll.delta > 0 ? '+' : ''}{roll.delta})</span
+												>
+											{:else}
+												(deciding)
+											{/if}
+										</span>
+									{/if}
 									{#if project.status === 'shipped' && (currentUser?.role === 'admin' || currentUser?.role === 'creator')}
 										<button
 											onclick={(e) => {

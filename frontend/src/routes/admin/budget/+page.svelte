@@ -148,7 +148,8 @@
 		purchase: 'direct purchase',
 		luck_win: 'luck roll win',
 		gachapon: 'gachapon',
-		consolation: 'consolation prize'
+		consolation: 'consolation prize',
+		referral_reward: 'referral reward'
 	};
 </script>
 

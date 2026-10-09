@@ -73,6 +73,7 @@ Rails.application.routes.draw do
   scope :referrals do
     get "me",          to: "referrals#me"
     get "leaderboard", to: "referrals#leaderboard"
+    post "claim/:reward", to: "referrals#claim"
   end
 
   # Leaderboard
@@ -83,6 +84,11 @@ Rails.application.routes.draw do
   end
 
   # News
+  scope :emojis do
+    get "/",      to: "emojis#search"
+    get "lookup", to: "emojis#lookup"
+  end
+
   scope :news do
     get "/",       to: "news#index"
     get "latest",  to: "news#latest"

@@ -1,6 +1,10 @@
 require "active_support/core_ext/integer/time"
 
+require Rails.root.join("lib/active_job/queue_adapters/dropped_adapter").to_s
+
 Rails.application.configure do
+  config.active_job.queue_adapter = ENV["RUN_JOBS"] == "1" ? :sidekiq : :dropped
+
   # Settings specified here will take precedence over those in config/application.rb.
 
   # Make code changes take effect immediately without server restart.
