@@ -1622,18 +1622,27 @@ class AdminController < ApplicationController
     matches
   end
 
+  UNIFIED_HOURS_FIELDS = ["Override Hours Spent", "Hours Spent"].freeze
+
   def fetch_airtable_records(base_url, formula)
     results = []
     offset = nil
+    hours_fields = UNIFIED_HOURS_FIELDS
     loop do
-      query = URI.encode_www_form([["filterByFormula", formula], ["pageSize", "100"], ["cellFormat", "string"], ["timeZone", "UTC"], ["userLocale", "en-us"], ["fields[]", "YSWS"], ["fields[]", "Playable URL"], ["fields[]", "Code URL"]] + (offset ? [["offset", offset]] : []))
+      query = URI.encode_www_form([["filterByFormula", formula], ["pageSize", "100"], ["cellFormat", "string"], ["timeZone", "UTC"], ["userLocale", "en-us"], ["fields[]", "YSWS"], ["fields[]", "Playable URL"], ["fields[]", "Code URL"]] + hours_fields.map { |f| ["fields[]", f] } + (offset ? [["offset", offset]] : []))
       resp = HTTParty.get("#{base_url}?#{query}", headers: { "Authorization" => "Bearer #{ENV['UNIFIED_AIRTABLE_TOKEN']}" })
+      if resp.code == 422 && hours_fields.any?
+        hours_fields = []
+        next
+      end
       break unless resp.success?
       data = resp.parsed_response
       (data["records"] || []).each do |rec|
         ysws = rec.dig("fields", "YSWS")
         ysws = ysws.join(", ") if ysws.is_a?(Array)
-        results << { "id" => rec["id"], "ysws" => ysws.to_s.strip.presence || "unknown program", "playable_url" => rec.dig("fields", "Playable URL") || "", "code_url" => rec.dig("fields", "Code URL") || "" }
+        hours_raw = hours_fields.filter_map { |f| rec.dig("fields", f).to_s.strip.presence }.first
+        hours = hours_raw && Float(hours_raw.delete(","), exception: false)
+        results << { "id" => rec["id"], "ysws" => ysws.to_s.strip.presence || "unknown program", "playable_url" => rec.dig("fields", "Playable URL") || "", "code_url" => rec.dig("fields", "Code URL") || "", "hours" => hours }
       end
       offset = data["offset"]
       break unless offset

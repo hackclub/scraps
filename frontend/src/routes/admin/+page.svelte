@@ -22,6 +22,7 @@
 	import { getUser } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { t } from '$lib/i18n';
+	import { formatHours } from '$lib/utils';
 	import CaughtSnooping from '$lib/components/CaughtSnooping.svelte';
 
 	const SCRAPS_PER_HOUR = serverConfig.scrapsPerHour ?? 64;
@@ -79,6 +80,7 @@
 		ysws: string;
 		playableUrl: string;
 		codeUrl: string;
+		hours: number | null;
 	}
 	interface UnifiedDuplicatesResult {
 		totalChecked: number;
@@ -726,6 +728,12 @@
 												<span
 													class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
 													>submitted to: {match.ysws}</span
+												>
+												<span
+													class="rounded-full border-2 border-red-600 px-2 py-0.5 text-xs font-bold"
+													>{match.hours == null
+														? 'hours not listed'
+														: `${formatHours(match.hours)}h submitted there`}</span
 												>
 												<span class="text-xs text-gray-500">matched by: {match.matchType}</span>
 											</div>

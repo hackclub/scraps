@@ -94,6 +94,7 @@
 		playableUrl: string;
 		codeUrl: string;
 		matchType: string;
+		hours: number | null;
 	}
 
 	let hackatimeUserId = $state<number | null>(null);
@@ -459,7 +460,7 @@
 	<title>review {project?.name || 'project'} - admin - scraps</title>
 </svelte:head>
 
-<div class="mx-auto max-w-4xl px-6 pt-24 pb-32 md:px-12">
+<div class="mx-auto max-w-4xl px-6 pt-24 pb-32 md:px-12 xl:max-w-7xl">
 	{#if loading}
 		<div class="py-12 text-center text-gray-500">{$t.common.loading}</div>
 	{:else if !project}
@@ -486,638 +487,666 @@
 			</a>
 		</div>
 	{:else}
-		<a
-			href="/admin/reviews"
-			class="mb-8 inline-flex cursor-pointer items-center gap-2 font-bold hover:underline"
-		>
-			<ArrowLeft size={20} />
-			back to reviews
-		</a>
-
 		{@const isReviewable = project.status === 'waiting_for_review'}
-
-		<!-- Hackatime Status Banners (admin-only) -->
-		{#if hackatimeBanned}
-			<div class="mb-6 rounded-2xl border-4 border-red-600 bg-red-50 p-4">
-				<div class="flex items-center gap-3">
-					<ShieldAlert size={20} class="text-red-600" />
-					<div>
-						<p class="font-bold text-red-800">hackatime banned</p>
-						<p class="text-sm text-red-700">
-							this user is banned on hackatime. they will be redirected to fraud.hackclub.com on
-							login.
-						</p>
-					</div>
-				</div>
-			</div>
-		{/if}
-		{#if hackatimeSuspected}
-			<div class="mb-6 rounded-2xl border-4 border-orange-500 bg-orange-50 p-4">
-				<div class="flex items-center gap-3">
-					<ShieldAlert size={20} class="text-orange-600" />
-					<div>
-						<p class="font-bold text-orange-800">hackatime suspected</p>
-						<p class="text-sm text-orange-700">
-							this user is flagged as suspected on hackatime. please review their activity
-							carefully.
-						</p>
-					</div>
-				</div>
-			</div>
-		{/if}
-
-		<!-- YSWS Duplicate Banner -->
-		{#if yswsDuplicates.length > 0}
-			<div class="mb-6 rounded-2xl border-4 border-red-600 bg-red-50 p-4">
-				<div class="flex items-center gap-3">
-					<AlertTriangle size={20} class="text-red-600" />
-					<div class="flex-1">
-						<p class="font-bold text-red-800">
-							submitted to {yswsDuplicates.length} other YSWS program{yswsDuplicates.length !== 1
-								? 's'
-								: ''}
-						</p>
-						<p class="text-sm text-red-700">
-							this project's URLs were found in the unified airtable under other YSWS programs
-						</p>
-					</div>
-				</div>
-				<div class="mt-3 space-y-2">
-					{#each yswsDuplicates as dup}
-						<div class="rounded-lg border-2 border-red-200 bg-white p-3">
-							<div class="flex flex-wrap items-center gap-2">
-								<span class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
-									>submitted to: {dup.ysws}</span
-								>
-								<span class="text-xs text-gray-500">matched by: {dup.matchType}</span>
-							</div>
-							{#if dup.codeUrl}
-								<p class="mt-1 truncate text-sm">
-									<span class="font-bold">code:</span>
-									<a
-										href={safeUrl(dup.codeUrl)}
-										target="_blank"
-										class="text-blue-600 hover:underline">{dup.codeUrl}</a
-									>
-								</p>
-							{/if}
-							{#if dup.playableUrl}
-								<p class="truncate text-sm">
-									<span class="font-bold">playable:</span>
-									<a
-										href={safeUrl(dup.playableUrl)}
-										target="_blank"
-										class="text-blue-600 hover:underline">{dup.playableUrl}</a
-									>
-								</p>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			</div>
-		{/if}
-
-		<!-- Status Banner (shown when project is not waiting for review) -->
-		{#if !isReviewable}
-			<div class="mb-6 rounded-2xl border-4 border-gray-400 bg-gray-100 p-4">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-3">
-						<Info size={20} class="text-gray-500" />
-						<div>
-							<p class="font-bold text-gray-700">this project is not waiting for review</p>
-							<p class="text-sm text-gray-500">status: {project.status}</p>
-						</div>
-					</div>
-					<a
-						href="/projects/{project.id}"
-						class="font-bold text-gray-600 underline hover:text-black">view project</a
-					>
-				</div>
-			</div>
-		{/if}
-		<!-- Project Image -->
-		<div class="mb-6 h-64 w-full overflow-hidden rounded-2xl border-4 border-black md:h-80">
-			{#if project.image}
-				<img src={project.image} alt={project.name} class="h-full w-full object-cover" />
-			{:else}
-				<ProjectPlaceholder seed={project.id} />
-			{/if}
-		</div>
-
-		<!-- Project Info -->
 		{@const statusTag = getStatusTag(project.status)}
-		<div class="mb-6 rounded-2xl border-4 border-black p-6">
-			<div class="mb-2 flex items-start justify-between">
-				<h1 class="text-3xl font-bold">{project.name}</h1>
-				<span
-					class="rounded-full border-2 px-3 py-1 text-sm font-bold {statusTag.bg} {statusTag.text} {statusTag.border}"
-				>
-					{statusTag.label}
-				</span>
-			</div>
-			<Markdown content={project.description} class="mb-4 text-gray-600" />
-			{#if project.updateDescription}
-				<div class="mb-4 rounded-lg border-2 border-dashed border-gray-400 bg-gray-50 p-4">
-					<p class="mb-1 flex items-center gap-1.5 text-sm font-bold text-gray-600">
-						<RefreshCw size={14} />
-						{$t.project.whatWasUpdated}
-					</p>
-					<p class="text-gray-700">{project.updateDescription}</p>
-				</div>
-			{/if}
-			{#if project.aiDescription}
-				<div class="mb-4 rounded-lg border-2 border-dashed border-purple-400 bg-purple-50 p-4">
-					<p class="mb-1 flex items-center gap-1.5 text-sm font-bold text-purple-600">
-						<Bot size={14} />
-						{$t.project.aiWasUsed}
-					</p>
-					<p class="text-purple-700">{project.aiDescription}</p>
-				</div>
-			{/if}
-			{#if project.reviewerNotes}
-				<div class="mb-4 rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 p-4">
-					<p class="mb-1 flex items-center gap-1.5 text-sm font-bold text-blue-600">
-						<MessageSquare size={14} />
-						notes from author
-					</p>
-					<p class="text-blue-700">{project.reviewerNotes}</p>
-				</div>
-			{/if}
-			{#if deductedHours > 0}
-				<div class="flex flex-wrap items-center gap-3 text-sm">
-					<span
-						class="rounded-full border-2 border-yellow-500 bg-yellow-100 px-3 py-1 font-bold text-yellow-800"
-						>−{formatHours(deductedHours)}h overlap</span
-					>
-				</div>
-			{/if}
 
-			{#if hackatimeProjects.length > 0}
-				<div class="mt-4 rounded-lg border-2 border-black bg-gray-50 p-4">
-					<p class="mb-2 text-sm font-bold">hackatime projects attached</p>
-					<ul class="space-y-1 text-sm">
-						{#each hackatimeProjects as hp}
-							<li class="flex items-center justify-between gap-2">
-								<span class="font-mono">{hp.name}</span>
-								{#if hp.found}
-									<span class="font-bold">{formatHours(hp.hours)}h</span>
-								{:else}
-									<span class="text-red-600">not found on hackatime</span>
-								{/if}
-							</li>
-						{/each}
-						<li
-							class="mt-1 flex items-center justify-between gap-2 border-t-2 border-black pt-1 font-bold"
-						>
-							<span>total</span>
-							<span>{formatHours(hackatimeProjects.reduce((s, h) => s + h.hours, 0))}h</span>
-						</li>
-					</ul>
-				</div>
-			{/if}
-
-			{#if overlappingProjects.length > 0}
-				<div class="mt-4 rounded-lg border-2 border-dashed border-yellow-500 bg-yellow-50 p-4">
-					<p class="mb-2 flex items-center gap-1.5 text-sm font-bold text-yellow-700">
-						<AlertTriangle size={14} />
-						shared hackatime project: hours will be deducted
-					</p>
-					<p class="mb-2 text-sm text-yellow-700">
-						this project shares a hackatime project with other shipped projects. hours from those
-						projects will be subtracted when calculating scraps.
-					</p>
-					<ul class="mb-3 space-y-1 text-sm text-yellow-800">
-						{#each overlappingProjects as op}
-							<li class="flex items-center gap-2">
-								<span>•</span>
-								<a href="/projects/{op.id}" class="font-bold underline">{op.name}</a>
-								<span>| {formatHours(op.hours)}h</span>
-							</li>
-						{/each}
-					</ul>
-					<div class="flex flex-wrap gap-3 text-sm font-bold">
-						<span
-							class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
-						>
-							logged: {formatHours(project.hours)}h
-						</span>
-						<span
-							class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
-						>
-							overlap: -{formatHours(deductedHours)}h
-						</span>
-						<span class="rounded-full border-2 border-black bg-yellow-200 px-3 py-1 text-black">
-							suggested: {formatHours(suggestedHours)}h
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			{#if isUpdate}
-				<div class="mt-4 rounded-lg border-2 border-dashed border-blue-500 bg-blue-50 p-4">
-					<p class="mb-2 flex items-center gap-1.5 text-sm font-bold text-blue-700">
-						<RefreshCw size={14} />
-						update: scraps preview
-					</p>
-					<p class="mb-2 text-sm text-blue-700">
-						this is an updated project. previously awarded scraps will be subtracted from the new
-						total.
-					</p>
-					<div class="flex flex-wrap gap-3 text-sm font-bold">
-						<span class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1 text-blue-800">
-							previously awarded: {project.scrapsAwarded} scraps
-						</span>
-						<span class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1 text-blue-800">
-							new total: {previewScraps} scraps ({formatHours(effectiveHours)}h × score {reviewerScore.toFixed(
-								1
-							)})
-						</span>
-						<span class="rounded-full border-2 border-black bg-blue-200 px-3 py-1 text-black">
-							additional: +{additionalScraps} scraps
-						</span>
-					</div>
-				</div>
-			{/if}
-
-			<div class="mt-4 flex flex-wrap gap-3">
-				{#if project.githubUrl}
-					<a
-						href={safeUrl(project.githubUrl)}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
-					>
-						<Github size={18} />
-						<span>repo</span>
-					</a>
-				{:else}
-					<span
-						class="inline-flex cursor-not-allowed items-center gap-2 rounded-full border-4 border-dashed border-gray-300 px-4 py-2 font-bold text-gray-400"
-					>
-						<Github size={18} />
-						<span>repo</span>
-					</span>
-				{/if}
-				{#if project.playableUrl}
-					<a
-						href={safeUrl(project.playableUrl)}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-solid border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
-					>
-						<Globe size={18} />
-						<span>demo link</span>
-					</a>
-				{:else}
-					<span
-						class="inline-flex cursor-not-allowed items-center gap-2 rounded-full border-4 border-dashed border-gray-300 px-4 py-2 font-bold text-gray-400"
-					>
-						<Globe size={18} />
-						<span>demo link</span>
-					</span>
-				{/if}
-				{#if hackatimeUserId}
-					<a
-						href="https://telescreen.hackclub.com/workbench/hackatime/overview?u={hackatimeUserId}&p={encodeURIComponent(
-							hackatimeProjects.map((h) => h.name).join(',')
-						)}"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
-					>
-						<ShieldAlert size={18} />
-						<span>telescreen</span>
-					</a>
-				{/if}
-			</div>
-
-			<!-- User Info (clickable) -->
-			{#if projectUser}
+		<div class="xl:grid xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-x-8">
+			<div class="min-w-0 xl:col-start-1 xl:row-start-1">
 				<a
-					href="/admin/users/{projectUser.id}"
-					class="-mx-6 mt-6 -mb-6 flex cursor-pointer items-center gap-4 border-t-2 border-gray-200 px-6 pt-6 pb-6 transition-all hover:bg-gray-50"
+					href="/admin/reviews"
+					class="mb-8 inline-flex cursor-pointer items-center gap-2 font-bold hover:underline"
 				>
-					{#if projectUser.avatar}
-						<img
-							src={projectUser.avatar}
-							alt=""
-							class="h-12 w-12 rounded-full border-2 border-black"
-						/>
-					{:else}
-						<div class="h-12 w-12 rounded-full border-2 border-black bg-gray-200"></div>
-					{/if}
-					<div class="flex-1">
-						<p class="font-bold">{projectUser.username || 'unknown'}</p>
-						{#if projectUser.email}
-							<p class="text-sm text-gray-500">{projectUser.email}</p>
-						{/if}
-					</div>
-					<span class="text-sm text-gray-500">view profile →</span>
+					<ArrowLeft size={20} />
+					back to reviews
 				</a>
-			{/if}
-		</div>
 
-		<!-- Previous Reviews -->
-		{#if reviews.length > 0}
-			<div class="mb-6 rounded-2xl border-4 border-black p-6">
-				<h2 class="mb-4 text-xl font-bold">previous reviews</h2>
-				<div class="space-y-4">
-					{#each [...reviews].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) as review}
-						{@const ReviewIcon = getReviewIcon(review.action)}
-						<div
-							class="rounded-lg border-2 border-black p-4 transition-all duration-200 hover:border-dashed"
-						>
-							<div class="mb-2 flex items-center justify-between">
-								<a
-									href="/admin/users/{review.reviewerId}"
-									class="flex cursor-pointer items-center gap-2 transition-all duration-200 hover:opacity-80"
-								>
-									{#if review.reviewerAvatar}
-										<img
-											src={review.reviewerAvatar}
-											alt=""
-											class="h-6 w-6 rounded-full border-2 border-black"
-										/>
-									{:else}
-										<div class="h-6 w-6 rounded-full border-2 border-black bg-gray-200"></div>
+				<!-- Hackatime Status Banners (admin-only) -->
+				{#if hackatimeBanned}
+					<div class="mb-6 rounded-2xl border-4 border-red-600 bg-red-50 p-4">
+						<div class="flex items-center gap-3">
+							<ShieldAlert size={20} class="text-red-600" />
+							<div>
+								<p class="font-bold text-red-800">hackatime banned</p>
+								<p class="text-sm text-red-700">
+									this user is banned on hackatime. they will be redirected to fraud.hackclub.com on
+									login.
+								</p>
+							</div>
+						</div>
+					</div>
+				{/if}
+				{#if hackatimeSuspected}
+					<div class="mb-6 rounded-2xl border-4 border-orange-500 bg-orange-50 p-4">
+						<div class="flex items-center gap-3">
+							<ShieldAlert size={20} class="text-orange-600" />
+							<div>
+								<p class="font-bold text-orange-800">hackatime suspected</p>
+								<p class="text-sm text-orange-700">
+									this user is flagged as suspected on hackatime. please review their activity
+									carefully.
+								</p>
+							</div>
+						</div>
+					</div>
+				{/if}
+
+				<!-- YSWS Duplicate Banner -->
+				{#if yswsDuplicates.length > 0}
+					<div class="mb-6 rounded-2xl border-4 border-red-600 bg-red-50 p-4">
+						<div class="flex items-center gap-3">
+							<AlertTriangle size={20} class="text-red-600" />
+							<div class="flex-1">
+								<p class="font-bold text-red-800">
+									submitted to {yswsDuplicates.length} other YSWS program{yswsDuplicates.length !==
+									1
+										? 's'
+										: ''}
+								</p>
+								<p class="text-sm text-red-700">
+									this project's URLs were found in the unified airtable under other YSWS programs
+								</p>
+							</div>
+						</div>
+						<div class="mt-3 space-y-2">
+							{#each yswsDuplicates as dup}
+								<div class="rounded-lg border-2 border-red-200 bg-white p-3">
+									<div class="flex flex-wrap items-center gap-2">
+										<span class="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white"
+											>submitted to: {dup.ysws}</span
+										>
+										<span class="rounded-full border-2 border-red-600 px-2 py-0.5 text-xs font-bold"
+											>{dup.hours == null
+												? 'hours not listed'
+												: `${formatHours(dup.hours)}h submitted there`}</span
+										>
+										<span class="text-xs text-gray-500">matched by: {dup.matchType}</span>
+									</div>
+									{#if dup.codeUrl}
+										<p class="mt-1 truncate text-sm">
+											<span class="font-bold">code:</span>
+											<a
+												href={safeUrl(dup.codeUrl)}
+												target="_blank"
+												class="text-blue-600 hover:underline">{dup.codeUrl}</a
+											>
+										</p>
 									{/if}
-									<ReviewIcon size={18} class={getReviewIconColor(review.action)} />
-									<span class="font-bold">{review.reviewerName || $t.project.reviewer}</span>
-								</a>
-								<div class="flex items-center gap-2">
-									<span
-										class="rounded border px-2 py-1 text-xs font-bold {review.action === 'approved'
-											? 'border-green-600 bg-green-100 text-green-700'
-											: review.action === 'denied'
-												? 'border-yellow-600 bg-yellow-100 text-yellow-700'
-												: 'border-red-600 bg-red-100 text-red-700'}"
-									>
-										{review.action === 'permanently_rejected'
-											? 'rejected'
-											: review.action === 'scraps_unawarded'
-												? 'scraps unawarded'
-												: review.action}
-									</span>
-									<span class="text-xs text-gray-500">
-										{new Date(review.createdAt).toLocaleString()}
-									</span>
+									{#if dup.playableUrl}
+										<p class="truncate text-sm">
+											<span class="font-bold">playable:</span>
+											<a
+												href={safeUrl(dup.playableUrl)}
+												target="_blank"
+												class="text-blue-600 hover:underline">{dup.playableUrl}</a
+											>
+										</p>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Status Banner (shown when project is not waiting for review) -->
+				{#if !isReviewable}
+					<div class="mb-6 rounded-2xl border-4 border-gray-400 bg-gray-100 p-4">
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-3">
+								<Info size={20} class="text-gray-500" />
+								<div>
+									<p class="font-bold text-gray-700">this project is not waiting for review</p>
+									<p class="text-sm text-gray-500">status: {project.status}</p>
 								</div>
 							</div>
-							<p class="mb-2 text-sm text-gray-700">
-								<strong>Feedback:</strong>
-								{review.feedbackForAuthor}
-							</p>
-							{#if review.internalJustification}
-								<p class="text-sm text-gray-500">
-									<strong>Internal:</strong>
-									{review.internalJustification}
-								</p>
-							{/if}
+							<a
+								href="/projects/{project.id}"
+								class="font-bold text-gray-600 underline hover:text-black">view project</a
+							>
 						</div>
-					{/each}
+					</div>
+				{/if}
+				<!-- Project Image -->
+				<div class="mb-6 h-64 w-full overflow-hidden rounded-2xl border-4 border-black md:h-80">
+					{#if project.image}
+						<img src={project.image} alt={project.name} class="h-full w-full object-cover" />
+					{:else}
+						<ProjectPlaceholder seed={project.id} />
+					{/if}
 				</div>
-			</div>
-		{/if}
 
-		{#if error && isReviewable}
-			<div class="mb-6 rounded-lg border-2 border-red-500 bg-red-100 p-4 text-red-700">
-				{error}
-			</div>
-		{/if}
-
-		<!-- Project Internal Notes Section (always interactive) -->
-		<div class="mb-6 rounded-2xl border-4 border-black bg-white p-6">
-			<h2 class="mb-4 text-xl font-bold">project internal notes</h2>
-			<textarea
-				bind:value={projectInternalNotes}
-				rows="3"
-				placeholder="Notes about this project (visible to reviewers only)"
-				class="w-full resize-none rounded-lg border-2 border-black bg-white px-4 py-2 focus:border-dashed focus:outline-none"
-			></textarea>
-			<div class="mt-3 flex items-center justify-between">
-				<p class="text-xs text-gray-500">attached to this project only</p>
-				<button
-					onclick={saveProjectNotes}
-					disabled={savingProjectNotes}
-					class="cursor-pointer rounded-full bg-black px-4 py-2 text-sm font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
-				>
-					{savingProjectNotes ? $t.common.saving : 'save notes'}
-				</button>
-			</div>
-		</div>
-
-		<!-- User Internal Notes Section (always interactive) -->
-		{#if projectUser}
-			<div class="mb-6 rounded-2xl border-4 border-black bg-white p-6">
-				<h2 class="mb-4 text-xl font-bold">user internal notes</h2>
-				<textarea
-					bind:value={userInternalNotes}
-					rows="3"
-					placeholder="Notes about this user (visible to reviewers only)"
-					class="w-full resize-none rounded-lg border-2 border-black bg-white px-4 py-2 focus:border-dashed focus:outline-none"
-				></textarea>
-				<div class="mt-3 flex items-center justify-between">
-					<p class="text-xs text-gray-500">these notes persist across all reviews for this user</p>
-					<button
-						onclick={saveUserNotes}
-						disabled={savingNotes}
-						class="cursor-pointer rounded-full bg-black px-4 py-2 text-sm font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
-					>
-						{savingNotes ? $t.common.saving : 'save notes'}
-					</button>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Review-only sections (sold-out effect when not reviewable) -->
-		<div
-			class="relative {!isReviewable ? 'pointer-events-none opacity-50 grayscale select-none' : ''}"
-		>
-			<!-- Review Form -->
-			<div class="rounded-2xl border-4 border-black p-6">
-				<h2 class="mb-4 text-xl font-bold">submit review</h2>
-				<div class="space-y-4">
-					<label class="flex cursor-pointer items-center gap-3">
-						<input
-							type="checkbox"
-							bind:checked={isReship}
-							class="h-5 w-5 cursor-pointer accent-black"
-						/>
-						<span class="text-sm font-bold"
-							>reship <span class="font-normal text-gray-500"
-								>(this project was shipped before: drives the Airtable hours justification)</span
-							></span
+				<!-- Project Info -->
+				<div class="mb-6 rounded-2xl border-4 border-black p-6">
+					<div class="mb-2 flex items-start justify-between">
+						<h1 class="text-3xl font-bold">{project.name}</h1>
+						<span
+							class="rounded-full border-2 px-3 py-1 text-sm font-bold {statusTag.bg} {statusTag.text} {statusTag.border}"
 						>
-					</label>
+							{statusTag.label}
+						</span>
+					</div>
+					<Markdown content={project.description} class="mb-4 text-gray-600" />
+					{#if project.updateDescription}
+						<div class="mb-4 rounded-lg border-2 border-dashed border-gray-400 bg-gray-50 p-4">
+							<p class="mb-1 flex items-center gap-1.5 text-sm font-bold text-gray-600">
+								<RefreshCw size={14} />
+								{$t.project.whatWasUpdated}
+							</p>
+							<p class="text-gray-700">{project.updateDescription}</p>
+						</div>
+					{/if}
+					{#if project.aiDescription}
+						<div class="mb-4 rounded-lg border-2 border-dashed border-purple-400 bg-purple-50 p-4">
+							<p class="mb-1 flex items-center gap-1.5 text-sm font-bold text-purple-600">
+								<Bot size={14} />
+								{$t.project.aiWasUsed}
+							</p>
+							<p class="text-purple-700">{project.aiDescription}</p>
+						</div>
+					{/if}
+					{#if project.reviewerNotes}
+						<div class="mb-4 rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 p-4">
+							<p class="mb-1 flex items-center gap-1.5 text-sm font-bold text-blue-600">
+								<MessageSquare size={14} />
+								notes from author
+							</p>
+							<p class="text-blue-700">{project.reviewerNotes}</p>
+						</div>
+					{/if}
+					{#if deductedHours > 0}
+						<div class="flex flex-wrap items-center gap-3 text-sm">
+							<span
+								class="rounded-full border-2 border-yellow-500 bg-yellow-100 px-3 py-1 font-bold text-yellow-800"
+								>−{formatHours(deductedHours)}h overlap</span
+							>
+						</div>
+					{/if}
 
-					<div>
-						<label class="mb-1 block text-sm font-bold"
-							>hours to approve <span class="font-normal text-gray-500"
-								>(logged {formatHours(project.hours)}h{#if deductedHours > 0}, −{formatHours(
-										deductedHours
-									)}h overlap{/if} → suggested {formatHours(suggestedHours)}h)</span
-							></label
-						>
-						<input
-							type="number"
-							step="0.1"
-							min="0"
-							max={project.hours}
-							bind:value={hoursOverride}
-							class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {hoursOverrideError
-								? 'border-red-500'
-								: 'border-black'}"
-						/>
-						{#if hoursOverrideError}
-							<p class="mt-1 text-sm text-red-500">{hoursOverrideError}</p>
+					{#if hackatimeProjects.length > 0}
+						<div class="mt-4 rounded-lg border-2 border-black bg-gray-50 p-4">
+							<p class="mb-2 text-sm font-bold">hackatime projects attached</p>
+							<ul class="space-y-1 text-sm">
+								{#each hackatimeProjects as hp}
+									<li class="flex items-center justify-between gap-2">
+										<span class="font-mono">{hp.name}</span>
+										{#if hp.found}
+											<span class="font-bold">{formatHours(hp.hours)}h</span>
+										{:else}
+											<span class="text-red-600">not found on hackatime</span>
+										{/if}
+									</li>
+								{/each}
+								<li
+									class="mt-1 flex items-center justify-between gap-2 border-t-2 border-black pt-1 font-bold"
+								>
+									<span>total</span>
+									<span>{formatHours(hackatimeProjects.reduce((s, h) => s + h.hours, 0))}h</span>
+								</li>
+							</ul>
+						</div>
+					{/if}
+
+					{#if overlappingProjects.length > 0}
+						<div class="mt-4 rounded-lg border-2 border-dashed border-yellow-500 bg-yellow-50 p-4">
+							<p class="mb-2 flex items-center gap-1.5 text-sm font-bold text-yellow-700">
+								<AlertTriangle size={14} />
+								shared hackatime project: hours will be deducted
+							</p>
+							<p class="mb-2 text-sm text-yellow-700">
+								this project shares a hackatime project with other shipped projects. hours from
+								those projects will be subtracted when calculating scraps.
+							</p>
+							<ul class="mb-3 space-y-1 text-sm text-yellow-800">
+								{#each overlappingProjects as op}
+									<li class="flex items-center gap-2">
+										<span>•</span>
+										<a href="/projects/{op.id}" class="font-bold underline">{op.name}</a>
+										<span>| {formatHours(op.hours)}h</span>
+									</li>
+								{/each}
+							</ul>
+							<div class="flex flex-wrap gap-3 text-sm font-bold">
+								<span
+									class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
+								>
+									logged: {formatHours(project.hours)}h
+								</span>
+								<span
+									class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
+								>
+									overlap: -{formatHours(deductedHours)}h
+								</span>
+								<span class="rounded-full border-2 border-black bg-yellow-200 px-3 py-1 text-black">
+									suggested: {formatHours(suggestedHours)}h
+								</span>
+							</div>
+						</div>
+					{/if}
+
+					{#if isUpdate}
+						<div class="mt-4 rounded-lg border-2 border-dashed border-blue-500 bg-blue-50 p-4">
+							<p class="mb-2 flex items-center gap-1.5 text-sm font-bold text-blue-700">
+								<RefreshCw size={14} />
+								update: scraps preview
+							</p>
+							<p class="mb-2 text-sm text-blue-700">
+								this is an updated project. previously awarded scraps will be subtracted from the
+								new total.
+							</p>
+							<div class="flex flex-wrap gap-3 text-sm font-bold">
+								<span
+									class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1 text-blue-800"
+								>
+									previously awarded: {project.scrapsAwarded} scraps
+								</span>
+								<span
+									class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1 text-blue-800"
+								>
+									new total: {previewScraps} scraps ({formatHours(effectiveHours)}h × score {reviewerScore.toFixed(
+										1
+									)})
+								</span>
+								<span class="rounded-full border-2 border-black bg-blue-200 px-3 py-1 text-black">
+									additional: +{additionalScraps} scraps
+								</span>
+							</div>
+						</div>
+					{/if}
+
+					<div class="mt-4 flex flex-wrap gap-3">
+						{#if project.githubUrl}
+							<a
+								href={safeUrl(project.githubUrl)}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
+							>
+								<Github size={18} />
+								<span>repo</span>
+							</a>
+						{:else}
+							<span
+								class="inline-flex cursor-not-allowed items-center gap-2 rounded-full border-4 border-dashed border-gray-300 px-4 py-2 font-bold text-gray-400"
+							>
+								<Github size={18} />
+								<span>repo</span>
+							</span>
+						{/if}
+						{#if project.playableUrl}
+							<a
+								href={safeUrl(project.playableUrl)}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-solid border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
+							>
+								<Globe size={18} />
+								<span>demo link</span>
+							</a>
+						{:else}
+							<span
+								class="inline-flex cursor-not-allowed items-center gap-2 rounded-full border-4 border-dashed border-gray-300 px-4 py-2 font-bold text-gray-400"
+							>
+								<Globe size={18} />
+								<span>demo link</span>
+							</span>
+						{/if}
+						{#if hackatimeUserId}
+							<a
+								href="https://telescreen.hackclub.com/workbench/hackatime/overview?u={hackatimeUserId}&p={encodeURIComponent(
+									hackatimeProjects.map((h) => h.name).join(',')
+								)}"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="inline-flex cursor-pointer items-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed"
+							>
+								<ShieldAlert size={18} />
+								<span>telescreen</span>
+							</a>
 						{/if}
 					</div>
 
-					<div>
-						<label class="mb-1 block text-sm font-bold">
-							reviewer score: {reviewerScore.toFixed(1)} <span class="text-red-500">*</span>
-							<span class="text-gray-400">(2 is neutral: ×{previewScoreMultiplier.toFixed(2)})</span
+					<!-- User Info (clickable) -->
+					{#if projectUser}
+						<a
+							href="/admin/users/{projectUser.id}"
+							class="-mx-6 mt-6 -mb-6 flex cursor-pointer items-center gap-4 border-t-2 border-gray-200 px-6 pt-6 pb-6 transition-all hover:bg-gray-50"
+						>
+							{#if projectUser.avatar}
+								<img
+									src={projectUser.avatar}
+									alt=""
+									class="h-12 w-12 rounded-full border-2 border-black"
+								/>
+							{:else}
+								<div class="h-12 w-12 rounded-full border-2 border-black bg-gray-200"></div>
+							{/if}
+							<div class="flex-1">
+								<p class="font-bold">{projectUser.username || 'unknown'}</p>
+								{#if projectUser.email}
+									<p class="text-sm text-gray-500">{projectUser.email}</p>
+								{/if}
+							</div>
+							<span class="text-sm text-gray-500">view profile →</span>
+						</a>
+					{/if}
+				</div>
+
+				<!-- Previous Reviews -->
+				{#if reviews.length > 0}
+					<div class="mb-6 rounded-2xl border-4 border-black p-6">
+						<h2 class="mb-4 text-xl font-bold">previous reviews</h2>
+						<div class="space-y-4">
+							{#each [...reviews].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) as review}
+								{@const ReviewIcon = getReviewIcon(review.action)}
+								<div
+									class="rounded-lg border-2 border-black p-4 transition-all duration-200 hover:border-dashed"
+								>
+									<div class="mb-2 flex items-center justify-between">
+										<a
+											href="/admin/users/{review.reviewerId}"
+											class="flex cursor-pointer items-center gap-2 transition-all duration-200 hover:opacity-80"
+										>
+											{#if review.reviewerAvatar}
+												<img
+													src={review.reviewerAvatar}
+													alt=""
+													class="h-6 w-6 rounded-full border-2 border-black"
+												/>
+											{:else}
+												<div class="h-6 w-6 rounded-full border-2 border-black bg-gray-200"></div>
+											{/if}
+											<ReviewIcon size={18} class={getReviewIconColor(review.action)} />
+											<span class="font-bold">{review.reviewerName || $t.project.reviewer}</span>
+										</a>
+										<div class="flex items-center gap-2">
+											<span
+												class="rounded border px-2 py-1 text-xs font-bold {review.action ===
+												'approved'
+													? 'border-green-600 bg-green-100 text-green-700'
+													: review.action === 'denied'
+														? 'border-yellow-600 bg-yellow-100 text-yellow-700'
+														: 'border-red-600 bg-red-100 text-red-700'}"
+											>
+												{review.action === 'permanently_rejected'
+													? 'rejected'
+													: review.action === 'scraps_unawarded'
+														? 'scraps unawarded'
+														: review.action}
+											</span>
+											<span class="text-xs text-gray-500">
+												{new Date(review.createdAt).toLocaleString()}
+											</span>
+										</div>
+									</div>
+									<p class="mb-2 text-sm text-gray-700">
+										<strong>Feedback:</strong>
+										{review.feedbackForAuthor}
+									</p>
+									{#if review.internalJustification}
+										<p class="text-sm text-gray-500">
+											<strong>Internal:</strong>
+											{review.internalJustification}
+										</p>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if error && isReviewable}
+					<div class="mb-6 rounded-lg border-2 border-red-500 bg-red-100 p-4 text-red-700">
+						{error}
+					</div>
+				{/if}
+			</div>
+
+			<aside class="xl:sticky xl:top-24 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start">
+				<!-- Project Internal Notes Section (always interactive) -->
+				<div class="mb-6 rounded-2xl border-4 border-black bg-white p-6">
+					<h2 class="mb-4 text-xl font-bold">project internal notes</h2>
+					<textarea
+						bind:value={projectInternalNotes}
+						rows="5"
+						placeholder="Notes about this project (visible to reviewers only)"
+						class="w-full resize-none rounded-lg border-2 border-black bg-white px-4 py-2 focus:border-dashed focus:outline-none"
+					></textarea>
+					<div class="mt-3 flex items-center justify-between">
+						<p class="text-xs text-gray-500">attached to this project only</p>
+						<button
+							onclick={saveProjectNotes}
+							disabled={savingProjectNotes}
+							class="cursor-pointer rounded-full bg-black px-4 py-2 text-sm font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
+						>
+							{savingProjectNotes ? $t.common.saving : 'save notes'}
+						</button>
+					</div>
+				</div>
+
+				<!-- User Internal Notes Section (always interactive) -->
+				{#if projectUser}
+					<div class="mb-6 rounded-2xl border-4 border-black bg-white p-6">
+						<h2 class="mb-4 text-xl font-bold">user internal notes</h2>
+						<textarea
+							bind:value={userInternalNotes}
+							rows="5"
+							placeholder="Notes about this user (visible to reviewers only)"
+							class="w-full resize-none rounded-lg border-2 border-black bg-white px-4 py-2 focus:border-dashed focus:outline-none"
+						></textarea>
+						<div class="mt-3 flex items-center justify-between">
+							<p class="text-xs text-gray-500">
+								these notes persist across all reviews for this user
+							</p>
+							<button
+								onclick={saveUserNotes}
+								disabled={savingNotes}
+								class="cursor-pointer rounded-full bg-black px-4 py-2 text-sm font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:opacity-50"
+							>
+								{savingNotes ? $t.common.saving : 'save notes'}
+							</button>
+						</div>
+					</div>
+				{/if}
+			</aside>
+
+			<!-- Review-only sections (sold-out effect when not reviewable) -->
+			<div
+				class="relative min-w-0 xl:col-start-1 xl:row-start-2 {!isReviewable
+					? 'pointer-events-none opacity-50 grayscale select-none'
+					: ''}"
+			>
+				<!-- Review Form -->
+				<div class="rounded-2xl border-4 border-black p-6">
+					<h2 class="mb-4 text-xl font-bold">submit review</h2>
+					<div class="space-y-4">
+						<label class="flex cursor-pointer items-center gap-3">
+							<input
+								type="checkbox"
+								bind:checked={isReship}
+								class="h-5 w-5 cursor-pointer accent-black"
+							/>
+							<span class="text-sm font-bold"
+								>reship <span class="font-normal text-gray-500"
+									>(this project was shipped before: drives the Airtable hours justification)</span
+								></span
 							>
 						</label>
-						<input
-							type="range"
-							min="1"
-							max="3"
-							step="0.1"
-							bind:value={reviewerScore}
-							class="w-full"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							start at 2 (a solid, complete project) and move from there. aim for an overall average
-							around 1.9: roughly 2 in 5 projects below 2, 1 in 5 above, and 3s rare (~1 in 20). be
-							strictest on long projects.
-						</p>
-					</div>
 
-					<div class="rounded-xl border-2 border-black bg-gray-50 p-4">
-						<p class="mb-3 text-sm font-bold">predicted payout</p>
-						<div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-							<div>
-								<p class="text-gray-500">{isUpdate ? 'this update adds' : 'this approval costs'}</p>
-								<p class="text-xl font-bold">
-									${payoutPrediction.dollars.toFixed(2)}
-								</p>
-								<p class="text-xs text-gray-500">
-									{additionalScraps} scraps × bonus roll avg ×{payoutPrediction.rollEv.toFixed(2)}
-								</p>
-							</div>
-							<div>
-								<p class="text-gray-500">this project's rate</p>
-								<p class="text-xl font-bold {payoutPrediction.tone(payoutPrediction.projectRate)}">
-									${payoutPrediction.projectRate.toFixed(2)}/h
-								</p>
-								<p class="text-xs text-gray-500">
-									target ${payoutPrediction.lo}–{payoutPrediction.hi}/h overall
-								</p>
-							</div>
-							<div>
-								<p class="text-gray-500">event-wide after approving</p>
-								{#if budget}
-									<p class="text-xl font-bold {payoutPrediction.tone(payoutPrediction.eventAfter)}">
-										{payoutPrediction.eventAfter == null
-											? '—'
-											: `$${payoutPrediction.eventAfter.toFixed(2)}/h`}
+						<div>
+							<label class="mb-1 block text-sm font-bold"
+								>hours to approve <span class="font-normal text-gray-500"
+									>(logged {formatHours(project.hours)}h{#if deductedHours > 0}, −{formatHours(
+											deductedHours
+										)}h overlap{/if} → suggested {formatHours(suggestedHours)}h)</span
+								></label
+							>
+							<input
+								type="number"
+								step="0.1"
+								min="0"
+								max={project.hours}
+								bind:value={hoursOverride}
+								class="w-full rounded-lg border-2 px-4 py-2 focus:border-dashed focus:outline-none {hoursOverrideError
+									? 'border-red-500'
+									: 'border-black'}"
+							/>
+							{#if hoursOverrideError}
+								<p class="mt-1 text-sm text-red-500">{hoursOverrideError}</p>
+							{/if}
+						</div>
+
+						<div>
+							<label class="mb-1 block text-sm font-bold">
+								reviewer score: {reviewerScore.toFixed(1)} <span class="text-red-500">*</span>
+								<span class="text-gray-400"
+									>(2 is neutral: ×{previewScoreMultiplier.toFixed(2)})</span
+								>
+							</label>
+							<input
+								type="range"
+								min="1"
+								max="3"
+								step="0.1"
+								bind:value={reviewerScore}
+								class="w-full"
+							/>
+							<p class="mt-1 text-xs text-gray-500">
+								start at 2 (a solid, complete project) and move from there. aim for an overall
+								average around 1.9: roughly 2 in 5 projects below 2, 1 in 5 above, and 3s rare (~1
+								in 20). be strictest on long projects.
+							</p>
+						</div>
+
+						<div class="rounded-xl border-2 border-black bg-gray-50 p-4">
+							<p class="mb-3 text-sm font-bold">predicted payout</p>
+							<div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+								<div>
+									<p class="text-gray-500">
+										{isUpdate ? 'this update adds' : 'this approval costs'}
+									</p>
+									<p class="text-xl font-bold">
+										${payoutPrediction.dollars.toFixed(2)}
 									</p>
 									<p class="text-xs text-gray-500">
-										now {payoutPrediction.eventBefore == null
-											? 'no approved hours'
-											: `$${payoutPrediction.eventBefore.toFixed(2)}/h`}
+										{additionalScraps} scraps × bonus roll avg ×{payoutPrediction.rollEv.toFixed(2)}
 									</p>
-								{:else}
-									<p class="text-xs text-gray-500">budget unavailable</p>
-								{/if}
-							</div>
-						</div>
-						<p class="mt-3 text-xs text-gray-500">
-							one project above target is fine: what has to land in range is the event-wide number
-							(project payouts incl. bonus-roll results; onboarding bonuses are tracked on the
-							budget page). the bonus roll averages ×{payoutPrediction.rollEv.toFixed(2)} when users play
-							it well, so it adds swing, not cost.
-						</p>
-					</div>
-
-					<div>
-						<label class="mb-1 block text-sm font-bold"
-							>internal justification <span class="text-red-500">*</span></label
-						>
-						<textarea
-							bind:value={internalJustification}
-							rows="2"
-							placeholder="Internal notes about this review decision"
-							class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						></textarea>
-						<p class="mt-1 text-xs text-gray-500">
-							never shown to the user: synced to Airtable as the override justification
-						</p>
-					</div>
-
-					<div>
-						<label class="mb-1 block text-sm font-bold">
-							feedback for author <span class="text-red-500">*</span>
-							<span class="text-gray-400">(not required for permanent rejection)</span>
-						</label>
-						{#if macros.length > 0}
-							<div class="mb-2 flex flex-wrap items-center gap-2">
-								<span class="text-xs text-gray-500">macros:</span>
-								{#each macros as m (m.id)}
-									<button
-										type="button"
-										onclick={() => insertMacro(m.body)}
-										title={m.body}
-										class="cursor-pointer rounded-full border-2 border-black px-3 py-0.5 text-xs font-bold transition-all hover:border-dashed hover:bg-gray-100"
+								</div>
+								<div>
+									<p class="text-gray-500">this project's rate</p>
+									<p
+										class="text-xl font-bold {payoutPrediction.tone(payoutPrediction.projectRate)}"
 									>
-										+ {m.shortName}
-									</button>
-								{/each}
-								{#if user?.role === 'admin' || user?.role === 'creator'}
-									<a href="/admin/macros" class="text-xs text-gray-500 underline">manage</a>
-								{/if}
+										${payoutPrediction.projectRate.toFixed(2)}/h
+									</p>
+									<p class="text-xs text-gray-500">
+										target ${payoutPrediction.lo}–{payoutPrediction.hi}/h overall
+									</p>
+								</div>
+								<div>
+									<p class="text-gray-500">event-wide after approving</p>
+									{#if budget}
+										<p
+											class="text-xl font-bold {payoutPrediction.tone(payoutPrediction.eventAfter)}"
+										>
+											{payoutPrediction.eventAfter == null
+												? '—'
+												: `$${payoutPrediction.eventAfter.toFixed(2)}/h`}
+										</p>
+										<p class="text-xs text-gray-500">
+											now {payoutPrediction.eventBefore == null
+												? 'no approved hours'
+												: `$${payoutPrediction.eventBefore.toFixed(2)}/h`}
+										</p>
+									{:else}
+										<p class="text-xs text-gray-500">budget unavailable</p>
+									{/if}
+								</div>
 							</div>
-						{:else if user?.role === 'admin' || user?.role === 'creator'}
-							<p class="mb-2 text-xs text-gray-500">
-								no macros yet: <a href="/admin/macros" class="underline"
-									>add common rejection reasons</a
-								>
+							<p class="mt-3 text-xs text-gray-500">
+								one project above target is fine: what has to land in range is the event-wide number
+								(project payouts incl. bonus-roll results; onboarding bonuses are tracked on the
+								budget page). the bonus roll averages ×{payoutPrediction.rollEv.toFixed(2)} when users
+								play it well, so it adds swing, not cost.
 							</p>
-						{/if}
-						<textarea
-							bind:value={feedbackForAuthor}
-							rows="4"
-							placeholder="Shown to the project author on approval (in the payout flow) or via Slack DM on denial."
-							class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
-						></textarea>
-					</div>
+						</div>
 
-					<div class="flex gap-3 pt-4">
-						<button
-							onclick={() => requestConfirmation('approved')}
-							disabled={submitting || !!hoursOverrideError || !isReviewable}
-							class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-green-600 px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							<Check size={20} />
-							<span>approve</span>
-						</button>
-						<button
-							onclick={() => requestConfirmation('denied')}
-							disabled={submitting || !!hoursOverrideError || !isReviewable}
-							class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-yellow-500 px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							<X size={20} />
-							<span>reject</span>
-						</button>
-						<button
-							onclick={() => requestConfirmation('permanently_rejected')}
-							disabled={submitting || !!hoursOverrideError || !isReviewable}
-							class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-red-600 px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-						>
-							<Ban size={20} />
-							<span>permanently reject</span>
-						</button>
+						<div>
+							<label class="mb-1 block text-sm font-bold"
+								>internal justification <span class="text-red-500">*</span></label
+							>
+							<textarea
+								bind:value={internalJustification}
+								rows="6"
+								placeholder="Internal notes about this review decision"
+								class="w-full resize-y rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+							></textarea>
+							<p class="mt-1 text-xs text-gray-500">
+								never shown to the user: synced to Airtable as the override justification
+							</p>
+						</div>
+
+						<div>
+							<label class="mb-1 block text-sm font-bold">
+								feedback for author <span class="text-red-500">*</span>
+								<span class="text-gray-400">(not required for permanent rejection)</span>
+							</label>
+							{#if macros.length > 0}
+								<div class="mb-2 flex flex-wrap items-center gap-2">
+									<span class="text-xs text-gray-500">macros:</span>
+									{#each macros as m (m.id)}
+										<button
+											type="button"
+											onclick={() => insertMacro(m.body)}
+											title={m.body}
+											class="cursor-pointer rounded-full border-2 border-black px-3 py-0.5 text-xs font-bold transition-all hover:border-dashed hover:bg-gray-100"
+										>
+											+ {m.shortName}
+										</button>
+									{/each}
+									{#if user?.role === 'admin' || user?.role === 'creator'}
+										<a href="/admin/macros" class="text-xs text-gray-500 underline">manage</a>
+									{/if}
+								</div>
+							{:else if user?.role === 'admin' || user?.role === 'creator'}
+								<p class="mb-2 text-xs text-gray-500">
+									no macros yet: <a href="/admin/macros" class="underline"
+										>add common rejection reasons</a
+									>
+								</p>
+							{/if}
+							<textarea
+								bind:value={feedbackForAuthor}
+								rows="4"
+								placeholder="Shown to the project author on approval (in the payout flow) or via Slack DM on denial."
+								class="w-full resize-none rounded-lg border-2 border-black px-4 py-2 focus:border-dashed focus:outline-none"
+							></textarea>
+						</div>
+
+						<div class="flex gap-3 pt-4">
+							<button
+								onclick={() => requestConfirmation('approved')}
+								disabled={submitting || !!hoursOverrideError || !isReviewable}
+								class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-green-600 px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<Check size={20} />
+								<span>approve</span>
+							</button>
+							<button
+								onclick={() => requestConfirmation('denied')}
+								disabled={submitting || !!hoursOverrideError || !isReviewable}
+								class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-yellow-500 px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<X size={20} />
+								<span>reject</span>
+							</button>
+							<button
+								onclick={() => requestConfirmation('permanently_rejected')}
+								disabled={submitting || !!hoursOverrideError || !isReviewable}
+								class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-red-600 px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<Ban size={20} />
+								<span>permanently reject</span>
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
