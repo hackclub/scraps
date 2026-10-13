@@ -76,6 +76,11 @@
 	);
 	let canAfford = $derived($userScrapsStore >= rollCost);
 	let canAffordFull = $derived($userScrapsStore >= item.price);
+	let sizeOptions = $derived(item.sizeVariants ?? []);
+	let isSized = $derived(item.hasSizes ?? sizeOptions.length > 0);
+	let selectedSize = $state<string | null>(null);
+	let needsSize = $derived(isSized && !selectedSize);
+	let sizesSoldOut = $derived(isSized && sizeOptions.length === 0);
 	let alertMessage = $state<string | null>(null);
 	let alertType = $state<'error' | 'info'>('info');
 	let rollReveal = $state<{ finalNumber: number; won: boolean; finish: () => void } | null>(null);
@@ -163,7 +168,9 @@
 		try {
 			const response = await fetch(`${API_URL}/shop/items/${item.id}/try-luck`, {
 				method: 'POST',
-				credentials: 'include'
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ size: selectedSize })
 			});
 			const data = await response.json();
 
@@ -208,7 +215,7 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({ quantity: 1 })
+				body: JSON.stringify({ quantity: 1, size: selectedSize })
 			});
 			const data = await response.json();
 
@@ -323,14 +330,24 @@
 			{/each}
 		</div>
 
-		{#if item.sizeVariants && item.sizeVariants.length > 0}
+		{#if isSized}
 			<div class="mb-4">
-				<p class="mb-1 text-xs font-bold text-gray-500">sizes available</p>
+				<p class="mb-1 text-xs font-bold text-gray-500">
+					{sizesSoldOut ? 'all sizes are sold out' : 'pick your size'}
+				</p>
 				<div class="flex flex-wrap gap-2">
-					{#each item.sizeVariants as variant (variant.name)}
-						<span class="rounded-full border-2 border-black px-3 py-1 text-xs font-bold">
-							{variant.name} · {variant.count}
-						</span>
+					{#each sizeOptions as variant (variant.name)}
+						<button
+							type="button"
+							onclick={() => (selectedSize = variant.name)}
+							aria-pressed={selectedSize === variant.name}
+							class="cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold transition-all duration-200 {selectedSize ===
+							variant.name
+								? 'bg-black text-white'
+								: 'hover:border-dashed'}"
+						>
+							{variant.name} · {variant.count} left
+						</button>
 					{/each}
 				</div>
 			</div>
@@ -457,7 +474,7 @@
 			{/if}
 		</div>
 
-		{#if item.count === 0}
+		{#if item.count === 0 || sizesSoldOut}
 			<span
 				class="block w-full cursor-not-allowed rounded-full border-4 border-dashed border-gray-300 px-4 py-3 text-center text-lg font-bold text-gray-400"
 			>
@@ -467,18 +484,20 @@
 			<div class="flex gap-2">
 				<button
 					onclick={() => (showConfirmation = true)}
-					disabled={tryingLuck || purchasing || !canAfford}
+					disabled={tryingLuck || purchasing || !canAfford || needsSize}
 					class="flex-1 cursor-pointer rounded-full bg-black px-4 py-3 text-lg font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{#if !canAfford}
 						{$t.shop.notEnoughScraps}
+					{:else if needsSize}
+						pick a size first
 					{:else}
 						{$t.shop.tryYourLuck}
 					{/if}
 				</button>
 				<button
 					onclick={() => (showBuyConfirmation = true)}
-					disabled={tryingLuck || purchasing || !canAffordFull}
+					disabled={tryingLuck || purchasing || !canAffordFull || needsSize}
 					class="cursor-pointer rounded-full border-4 border-black px-4 py-3 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 					title={$t.shop.buyNowTooltip}
 				>
@@ -506,6 +525,9 @@
 							>{item.effectiveProbability.toFixed(1)}%</strong
 						>
 					</span>
+					{#if selectedSize}
+						<span class="mt-2 block">size: <strong>{selectedSize}</strong></span>
+					{/if}
 				</p>
 				<div class="flex gap-3">
 					<button
@@ -539,6 +561,9 @@
 				<h2 class="mb-4 text-2xl font-bold">{$t.shop.confirmBuyNow}</h2>
 				<p class="mb-6 text-gray-600">
 					{$t.shop.confirmBuyNowMessage} <strong>{item.price} {$t.common.scraps}</strong>.
+					{#if selectedSize}
+						<span class="mt-2 block">size: <strong>{selectedSize}</strong></span>
+					{/if}
 				</p>
 				<div class="flex gap-3">
 					<button

@@ -40,6 +40,7 @@
 		totalPrice: number;
 		status: string;
 		orderType: string;
+		size: string | null;
 		notes: string | null;
 		internalNotes: string | null;
 		userNote: string | null;
@@ -104,10 +105,9 @@
 	} | null>(null);
 	let undoPreviewError = $state<string | null>(null);
 
+	let isInactive = $derived(!!order && ['cancelled', 'deleted'].includes(order.status));
 	let canUndo = $derived(
-		!!order &&
-			['purchase', 'luck_win'].includes(order.orderType) &&
-			!['cancelled', 'deleted'].includes(order.status)
+		!!order && ['purchase', 'luck_win'].includes(order.orderType) && !isInactive
 	);
 
 	onMount(async () => {
@@ -393,6 +393,12 @@
 							<span class="text-gray-400">•</span>
 							<span class="font-bold text-gray-500">×{order.quantity}</span>
 						{/if}
+						{#if order.size}
+							<span class="text-gray-400">•</span>
+							<span class="rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold text-black"
+								>size {order.size}</span
+							>
+						{/if}
 					</div>
 				</div>
 				<div class="flex shrink-0 flex-wrap items-center gap-2">
@@ -569,7 +575,7 @@
 
 					<!-- Actions -->
 					<div class="flex shrink-0 flex-col gap-3 md:w-48">
-						{#if !order.isFulfilled}
+						{#if !order.isFulfilled && !isInactive}
 							<input
 								type="text"
 								placeholder="tracking # (optional)"
@@ -595,21 +601,23 @@
 								</p>
 							</div>
 						{/if}
-						<button
-							onclick={toggleFulfilled}
-							disabled={actionLoading}
-							class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 {order.isFulfilled
-								? 'bg-gray-200 hover:border-dashed hover:bg-gray-300'
-								: 'bg-green-500 text-white hover:border-dashed hover:bg-green-600'}"
-						>
-							{#if order.isFulfilled}
-								<X size={16} />
-								{$t.admin.unfulfill}
-							{:else}
-								<Check size={16} />
-								{$t.admin.fulfill}
-							{/if}
-						</button>
+						{#if !isInactive || order.isFulfilled}
+							<button
+								onclick={toggleFulfilled}
+								disabled={actionLoading}
+								class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 {order.isFulfilled
+									? 'bg-gray-200 hover:border-dashed hover:bg-gray-300'
+									: 'bg-green-500 text-white hover:border-dashed hover:bg-green-600'}"
+							>
+								{#if order.isFulfilled}
+									<X size={16} />
+									{$t.admin.unfulfill}
+								{:else}
+									<Check size={16} />
+									{$t.admin.fulfill}
+								{/if}
+							</button>
+						{/if}
 						{#if canUndo}
 							<button
 								onclick={openUndo}

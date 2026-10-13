@@ -36,6 +36,7 @@
 		totalPrice: number;
 		status: string;
 		orderType: string;
+		size: string | null;
 		notes: string | null;
 		internalNotes: string | null;
 		userNote: string | null;
@@ -76,7 +77,7 @@
 	let user = $state<User | null>(null);
 	let orders = $state<Order[]>([]);
 	let loading = $state(true);
-	let filter = $state<'all' | 'pending' | 'fulfilled'>('all');
+	let filter = $state<'all' | 'pending' | 'fulfilled' | 'cancelled'>('all');
 	let searchQuery = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
@@ -92,13 +93,22 @@
 		[...new Map(orders.map((o) => [o.userId, o.username])).values()].sort()
 	);
 
+	function isInactive(o: Order) {
+		return o.status === 'cancelled' || o.status === 'deleted';
+	}
+
+	let activeOrders = $derived(orders.filter((o) => !isInactive(o)));
+	let cancelledOrders = $derived(orders.filter(isInactive));
+
 	let filteredOrders = $derived.by(() => {
 		let result =
-			filter === 'all'
-				? orders
-				: filter === 'pending'
-					? orders.filter((o) => !o.isFulfilled)
-					: orders.filter((o) => o.isFulfilled);
+			filter === 'cancelled'
+				? cancelledOrders
+				: filter === 'all'
+					? activeOrders
+					: filter === 'pending'
+						? activeOrders.filter((o) => !o.isFulfilled)
+						: activeOrders.filter((o) => o.isFulfilled);
 
 		if (filterItem) {
 			result = result.filter((o) => o.itemName === filterItem);
@@ -253,7 +263,7 @@
 					? 'bg-black text-white'
 					: 'hover:border-dashed'}"
 			>
-				{$t.admin.all} ({orders.length})
+				{$t.admin.all} ({activeOrders.length})
 			</button>
 			<button
 				onclick={() => (filter = 'pending')}
@@ -262,7 +272,7 @@
 					? 'bg-black text-white'
 					: 'hover:border-dashed'}"
 			>
-				{$t.admin.pending} ({orders.filter((o) => !o.isFulfilled).length})
+				{$t.admin.pending} ({activeOrders.filter((o) => !o.isFulfilled).length})
 			</button>
 			<button
 				onclick={() => (filter = 'fulfilled')}
@@ -271,8 +281,19 @@
 					? 'bg-black text-white'
 					: 'hover:border-dashed'}"
 			>
-				{$t.admin.fulfilled} ({orders.filter((o) => o.isFulfilled).length})
+				{$t.admin.fulfilled} ({activeOrders.filter((o) => o.isFulfilled).length})
 			</button>
+			{#if cancelledOrders.length > 0}
+				<button
+					onclick={() => (filter = 'cancelled')}
+					class="cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 {filter ===
+					'cancelled'
+						? 'bg-black text-white'
+						: 'hover:border-dashed'}"
+				>
+					cancelled ({cancelledOrders.length})
+				</button>
+			{/if}
 		</div>
 
 		<!-- Search and Date Filters -->
@@ -400,7 +421,9 @@
 					/>
 
 					<div class="min-w-0 flex-1">
-						<p class="truncate text-lg font-bold">{order.itemName}</p>
+						<p class="truncate text-lg font-bold">
+							{order.itemName}{order.size ? ` · ${order.size}` : ''}
+						</p>
 						<div class="flex items-center gap-1.5 text-sm text-gray-500">
 							{#if order.userAvatar}
 								<img src={order.userAvatar} alt="" class="h-5 w-5 rounded-full object-cover" />

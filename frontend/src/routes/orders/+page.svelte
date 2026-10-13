@@ -31,12 +31,50 @@
 		itemName: string;
 		itemImage: string;
 		itemIsConsolationPrize: boolean;
+		size: string | null;
+		itemHasSizes: boolean;
+		sizeOptions: { name: string; count: number }[];
 	}
 
 	let orders = $state<Order[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let addressOrder = $state<Order | null>(null);
+	let savingSizeFor = $state<number | null>(null);
+	let sizeError = $state<{ orderId: number; message: string } | null>(null);
+
+	function canChooseSize(order: Order): boolean {
+		return (
+			order.itemHasSizes &&
+			!order.isFulfilled &&
+			!['cancelled', 'deleted'].includes(order.status) &&
+			!(order.orderType === 'consolation' && !order.itemIsConsolationPrize)
+		);
+	}
+
+	async function chooseSize(order: Order, size: string) {
+		if (savingSizeFor !== null || order.size === size) return;
+		savingSizeFor = order.id;
+		sizeError = null;
+		try {
+			const response = await fetch(`${API_URL}/shop/orders/${order.id}/size`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ size })
+			});
+			const data = await response.json();
+			if (!response.ok || data.error) {
+				sizeError = { orderId: order.id, message: data.error || 'could not save your size' };
+				return;
+			}
+			await fetchOrders();
+		} catch {
+			sizeError = { orderId: order.id, message: 'could not save your size' };
+		} finally {
+			savingSizeFor = null;
+		}
+	}
 
 	let needsAddressCount = $derived(
 		orders.filter((o) => !o.shippingAddress && !o.isFulfilled).length
@@ -279,7 +317,40 @@
 								{#if order.quantity > 1}
 									<span class="text-gray-600">{$t.orders.qty}: {order.quantity}</span>
 								{/if}
+								{#if order.size}
+									<span class="font-bold text-gray-600">size: {order.size}</span>
+								{/if}
 							</div>
+
+							{#if canChooseSize(order)}
+								<div class="mt-3">
+									<p class="mb-1 text-sm font-bold {order.size ? 'text-gray-500' : 'text-yellow-600'}">
+										{order.size ? 'change size' : 'pick your size so we can ship it'}
+									</p>
+									<div class="flex flex-wrap gap-2">
+										{#each order.sizeOptions as option (option.name)}
+											<button
+												type="button"
+												onclick={() => chooseSize(order, option.name)}
+												disabled={savingSizeFor !== null}
+												aria-pressed={order.size === option.name}
+												class="cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 {order.size ===
+												option.name
+													? 'bg-black text-white'
+													: 'hover:border-dashed'}"
+											>
+												{option.name}
+											</button>
+										{/each}
+										{#if order.sizeOptions.length === 0 && !order.size}
+											<span class="text-sm text-gray-500">no sizes in stock right now</span>
+										{/if}
+									</div>
+									{#if sizeError && sizeError.orderId === order.id}
+										<p class="mt-1 text-sm font-bold text-red-600">{sizeError.message}</p>
+									{/if}
+								</div>
+							{/if}
 
 							{#if order.shippingAddress}
 								<div class="mt-3 flex items-start gap-2 text-sm text-gray-600">

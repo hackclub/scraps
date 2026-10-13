@@ -527,6 +527,7 @@ class AdminController < ApplicationController
     rows = conn.select_all(<<~SQL).to_a
       SELECT shipping_address FROM shop_orders
       WHERE order_type IN ('purchase', 'luck_win', 'referral_reward') AND is_fulfilled = false
+        AND status NOT IN ('cancelled', 'deleted')
     SQL
 
     count = rows.count do |r|
@@ -545,7 +546,7 @@ class AdminController < ApplicationController
 
     rows = conn.select_all(<<~SQL).to_a
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
-             so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at,
+             so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at, so.size,
              si.id AS item_id, si.name AS item_name, si.image AS item_image,
              u.id AS user_id, u.username, u.avatar AS user_avatar, u.slack_id, u.email AS user_email
       FROM shop_orders so
@@ -569,7 +570,7 @@ class AdminController < ApplicationController
     end
 
     render_json(rows.map { |r|
-      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
+      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
     })
   end
 
@@ -577,7 +578,7 @@ class AdminController < ApplicationController
     conn = ActiveRecord::Base.connection
     r = conn.select_one(<<~SQL)
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
-             so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at,
+             so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at, so.size,
              si.id AS item_id, si.name AS item_name, si.image AS item_image,
              u.id AS user_id, u.username, u.avatar AS user_avatar, u.slack_id, u.email AS user_email
       FROM shop_orders so
@@ -597,7 +598,7 @@ class AdminController < ApplicationController
 
     render_json({
       id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i,
-      status: r["status"], order_type: r["order_type"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"],
+      status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"],
       tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"],
       created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"],
       user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: hackatime_banned
@@ -621,20 +622,23 @@ class AdminController < ApplicationController
     return render_json({ error: "Invalid status" }, status: :bad_request) if order_status && !valid_statuses.include?(order_status)
 
     conn = ActiveRecord::Base.connection
-    current_order = conn.select_one("SELECT id, status, order_type, shop_item_id, quantity FROM shop_orders WHERE id = #{order_id}")
+    current_order = conn.select_one("SELECT id, status, order_type, shop_item_id, quantity, size FROM shop_orders WHERE id = #{order_id}")
     return render_json({ error: "Not found" }, status: :not_found) unless current_order
 
     restocks = %w[purchase luck_win].include?(current_order["order_type"]) ||
       (current_order["order_type"] == "consolation" && current_order["status"] != "unclaimed")
-    if order_status && restocks
+    if order_status
       was_inactive = %w[cancelled deleted].include?(current_order["status"])
       will_be_inactive = %w[cancelled deleted].include?(order_status)
       qty = current_order["quantity"].to_i
+      iid = current_order["shop_item_id"].to_i
 
       if !was_inactive && will_be_inactive
-        conn.execute("UPDATE shop_items SET count = count + #{qty}, updated_at = NOW() WHERE id = #{current_order['shop_item_id'].to_i}")
+        conn.execute("UPDATE shop_items SET count = count + #{qty}, updated_at = NOW() WHERE id = #{iid}") if restocks
+        ShopSizeService.adjust(conn, iid, current_order["size"], qty)
       elsif was_inactive && !will_be_inactive
-        conn.execute("UPDATE shop_items SET count = GREATEST(count - #{qty}, 0), updated_at = NOW() WHERE id = #{current_order['shop_item_id'].to_i}")
+        conn.execute("UPDATE shop_items SET count = GREATEST(count - #{qty}, 0), updated_at = NOW() WHERE id = #{iid}") if restocks
+        ShopSizeService.adjust(conn, iid, current_order["size"], -qty)
       end
     end
 
@@ -708,6 +712,7 @@ class AdminController < ApplicationController
         qty = order["quantity"].to_i
         conn.execute("UPDATE shop_items SET count = count + #{qty}, updated_at = NOW() WHERE id = #{order['shop_item_id'].to_i}")
       end
+      ShopSizeService.adjust(conn, order["shop_item_id"], order["size"], order["quantity"].to_i) if not_inactive
     end
 
     render_json({ success: true })
@@ -758,6 +763,7 @@ class AdminController < ApplicationController
       SQL
 
       conn.execute("UPDATE shop_items SET count = count + #{plan[:restock]}, updated_at = NOW() WHERE id = #{iid}") if plan[:restock] > 0
+      ShopSizeService.adjust(conn, iid, order["size"], order["quantity"].to_i)
 
       if order["order_type"] == "luck_win"
         conn.execute("DELETE FROM shop_rolls WHERE id = #{plan[:roll_id].to_i}") if plan[:roll_id]
@@ -813,9 +819,9 @@ class AdminController < ApplicationController
       raise "Active order with that id already exists" if existing
 
       conn.execute(<<~SQL)
-        INSERT INTO shop_orders (id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, notes, is_fulfilled, created_at, updated_at)
+        INSERT INTO shop_orders (size, id, user_id, shop_item_id, quantity, price_per_item, total_price, status, order_type, shipping_address, phone, notes, is_fulfilled, created_at, updated_at)
         OVERRIDING SYSTEM VALUE
-        VALUES (#{order_payload['id'].to_i}, #{order_payload['user_id'].to_i || order_payload['userId'].to_i}, #{order_payload['shop_item_id'].to_i || order_payload['shopItemId'].to_i}, #{order_payload['quantity'].to_i}, #{order_payload['price_per_item'].to_i || order_payload['pricePerItem'].to_i}, #{order_payload['total_price'].to_i || order_payload['totalPrice'].to_i}, #{conn.quote(order_payload['status'])}, #{conn.quote(order_payload['order_type'] || order_payload['orderType'])}, #{conn.quote(order_payload['shipping_address'] || order_payload['shippingAddress'])}, #{conn.quote(order_payload['phone'])}, #{conn.quote(order_payload['notes'])}, #{order_payload['is_fulfilled'] || order_payload['isFulfilled'] ? 'true' : 'false'}, #{conn.quote(order_payload['created_at'] || order_payload['createdAt'])}, NOW())
+        VALUES (#{conn.quote(order_payload['size'])}, #{order_payload['id'].to_i},#{order_payload['user_id'].to_i || order_payload['userId'].to_i}, #{order_payload['shop_item_id'].to_i || order_payload['shopItemId'].to_i}, #{order_payload['quantity'].to_i}, #{order_payload['price_per_item'].to_i || order_payload['pricePerItem'].to_i}, #{order_payload['total_price'].to_i || order_payload['totalPrice'].to_i}, #{conn.quote(order_payload['status'])}, #{conn.quote(order_payload['order_type'] || order_payload['orderType'])}, #{conn.quote(order_payload['shipping_address'] || order_payload['shippingAddress'])}, #{conn.quote(order_payload['phone'])}, #{conn.quote(order_payload['notes'])}, #{order_payload['is_fulfilled'] || order_payload['isFulfilled'] ? 'true' : 'false'}, #{conn.quote(order_payload['created_at'] || order_payload['createdAt'])}, NOW())
       SQL
 
       (parsed["refineryOrders"] || []).each do |r|
@@ -856,6 +862,7 @@ class AdminController < ApplicationController
         qty = order_payload["quantity"].to_i
         conn.execute("UPDATE shop_items SET count = GREATEST(count - #{qty}, 0), updated_at = NOW() WHERE id = #{iid.to_i}")
       end
+      ShopSizeService.adjust(conn, iid, order_payload["size"], -order_payload["quantity"].to_i) unless was_inactive
 
       conn.execute("UPDATE admin_deleted_orders SET restored = true, restored_by = #{current_user.id}, restored_at = NOW() WHERE id = #{archived['id'].to_i}")
     end

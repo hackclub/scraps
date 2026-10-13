@@ -304,6 +304,9 @@ class ShopController < ApplicationController
       return render_json({ error: "Not enough stock available" }, status: :unprocessable_entity)
     end
 
+    size, size_error = requested_size(item, quantity)
+    return render_json({ error: size_error }, status: :unprocessable_entity) if size_error
+
     total_price = item["price"].to_i * quantity
     phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
 
@@ -321,10 +324,16 @@ class ShopController < ApplicationController
           conn.execute("UPDATE shop_items SET count = count - #{quantity}, updated_at = NOW() WHERE id = #{item_id}")
         end
 
+        if size
+          lock_size!(conn, item_id, size, quantity)
+          ShopSizeService.adjust(conn, item_id, size, -quantity)
+        end
+
         mergeable = conn.select_one(<<~SQL)
           SELECT * FROM shop_orders
           WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}
             AND order_type = 'purchase' AND status = 'pending' AND price_per_item = #{item["price"].to_i}
+            AND size IS NOT DISTINCT FROM #{conn.quote(size)}
           FOR UPDATE
           LIMIT 1
         SQL
@@ -338,8 +347,8 @@ class ShopController < ApplicationController
           SQL
         else
           conn.select_one(<<~SQL)
-            INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
-            VALUES (#{current_user.id}, #{item_id}, #{quantity}, #{item['price'].to_i}, #{total_price}, NULL, #{conn.quote(phone)}, 'pending', 'purchase', NOW(), NOW())
+            INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, size, created_at, updated_at)
+            VALUES (#{current_user.id}, #{item_id}, #{quantity}, #{item['price'].to_i}, #{total_price}, NULL, #{conn.quote(phone)}, 'pending', 'purchase', #{conn.quote(size)}, NOW(), NOW())
             RETURNING *
           SQL
         end
@@ -352,12 +361,14 @@ class ShopController < ApplicationController
           item_name: item["name"],
           quantity: order_row["quantity"].to_i,
           total_price: order_row["total_price"].to_i,
-          status: order_row["status"]
+          status: order_row["status"],
+          size: order_row["size"]
         }
       })
     rescue ShopError => e
       return render_json({ error: "Insufficient scraps", required: total_price }, status: :unprocessable_entity) if e.message == "insufficient_funds"
       return render_json({ error: "Not enough stock" }, status: :unprocessable_entity) if e.message == "out_of_stock"
+      return render_json({ error: "That size is out of stock" }, status: :unprocessable_entity) if e.message == "size_out_of_stock"
       raise
     end
   end
@@ -377,6 +388,9 @@ class ShopController < ApplicationController
     infinite = infinite_stock?(item["count"])
     return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if !infinite && item["count"].to_i < 1
 
+    size, size_error = requested_size(item, 1)
+    return render_json({ error: size_error }, status: :unprocessable_entity) if size_error
+
     phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
 
     begin
@@ -387,6 +401,8 @@ class ShopController < ApplicationController
           locked = conn.select_one("SELECT count FROM shop_items WHERE id = #{item_id} FOR UPDATE")
           raise ShopError, "out_of_stock" unless locked && locked["count"].to_i >= 1
         end
+
+        lock_size!(conn, item_id, size, 1) if size
 
         boost_row = conn.select_one("SELECT COALESCE(SUM(boost_amount),0) AS bp FROM refinery_orders WHERE user_id = #{current_user.id} AND shop_item_id = #{item_id}")
         boost_pct = boost_row["bp"].to_f
@@ -424,10 +440,11 @@ class ShopController < ApplicationController
 
         if won
           conn.execute("UPDATE shop_items SET count = count - 1, updated_at = NOW() WHERE id = #{item_id}") unless infinite
+          ShopSizeService.adjust(conn, item_id, size, -1)
 
           order_row = conn.select_one(<<~SQL)
-            INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
-            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'pending', 'luck_win', NOW(), NOW())
+            INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, size, created_at, updated_at)
+            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'pending', 'luck_win', #{conn.quote(size)}, NOW(), NOW())
             RETURNING id
           SQL
 
@@ -476,6 +493,7 @@ class ShopController < ApplicationController
     rescue ShopError => e
       return render_json({ error: "Insufficient scraps" }, status: :unprocessable_entity) if e.message == "insufficient_funds"
       return render_json({ error: "Out of stock" }, status: :unprocessable_entity) if e.message == "out_of_stock"
+      return render_json({ error: "That size is out of stock" }, status: :unprocessable_entity) if e.message == "size_out_of_stock"
       raise
     end
   end
@@ -705,8 +723,9 @@ class ShopController < ApplicationController
 
     rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
-             so.shipping_address, so.tracking_number, so.is_fulfilled, so.created_at,
-             si.id AS item_id, si.name AS item_name, si.image AS item_image, si.consolation_prize AS item_is_consolation_prize
+             so.shipping_address, so.tracking_number, so.is_fulfilled, so.created_at, so.size,
+             si.id AS item_id, si.name AS item_name, si.image AS item_image, si.consolation_prize AS item_is_consolation_prize,
+             si.size_variants AS item_size_variants
       FROM shop_orders so
       INNER JOIN shop_items si ON si.id = so.shop_item_id
       WHERE so.user_id = #{current_user.id} AND so.status != 'unclaimed'
@@ -728,7 +747,10 @@ class ShopController < ApplicationController
         item_id: r["item_id"].to_i,
         item_name: r["item_name"],
         item_image: r["item_image"],
-        item_is_consolation_prize: truthy?(r["item_is_consolation_prize"])
+        item_is_consolation_prize: truthy?(r["item_is_consolation_prize"]),
+        size: r["size"],
+        item_has_sizes: ShopSizeService.sized?(r["item_size_variants"]),
+        size_options: ShopSizeService.in_stock(r["item_size_variants"])
       }
     })
   end
@@ -764,6 +786,41 @@ class ShopController < ApplicationController
 
     conn.execute("UPDATE shop_orders SET shipping_address = #{conn.quote(shipping_address)}, updated_at = NOW() WHERE id = #{order_id}")
     render_json({ success: true })
+  end
+
+  def set_order_size
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    order_id = params[:id].to_i
+    size = params[:size].to_s.strip
+    return render_json({ error: "Pick a size" }, status: :unprocessable_entity) if size.blank?
+
+    conn = ActiveRecord::Base.connection
+    outcome = ActiveRecord::Base.transaction do
+      conn.execute("SELECT 1 FROM users WHERE id = #{current_user.id} FOR UPDATE")
+
+      order = conn.select_one("SELECT * FROM shop_orders WHERE id = #{order_id} AND user_id = #{current_user.id} FOR UPDATE")
+      next { error: "Order not found", status: :not_found } unless order
+      if truthy?(order["is_fulfilled"]) || %w[cancelled deleted unclaimed].include?(order["status"])
+        next { error: "This order can't be changed anymore", status: :unprocessable_entity }
+      end
+      next { success: true } if order["size"] == size
+
+      item_id = order["shop_item_id"].to_i
+      qty = order["quantity"].to_i
+      item = conn.select_one("SELECT size_variants FROM shop_items WHERE id = #{item_id} FOR UPDATE")
+      if !item || ShopSizeService.available(item["size_variants"], size) < qty
+        next { error: "That size is out of stock", status: :unprocessable_entity }
+      end
+
+      ShopSizeService.adjust(conn, item_id, order["size"], qty)
+      ShopSizeService.adjust(conn, item_id, size, -qty)
+      conn.execute("UPDATE shop_orders SET size = #{conn.quote(size)}, updated_at = NOW() WHERE id = #{order_id}")
+      { success: true }
+    end
+
+    return render_json({ error: outcome[:error] }, status: outcome[:status]) if outcome[:error]
+    render_json({ success: true, size: size })
   end
 
   def refinery_undo
@@ -944,6 +1001,20 @@ class ShopController < ApplicationController
     1.0 / Math.sqrt(p)
   end
 
+  def requested_size(item, quantity)
+    return [nil, nil] unless ShopSizeService.sized?(item["size_variants"])
+
+    size = params[:size].to_s.strip.presence
+    return [nil, "Pick a size first"] unless size
+    return [nil, "That size is out of stock"] if ShopSizeService.available(item["size_variants"], size) < quantity
+    [size, nil]
+  end
+
+  def lock_size!(conn, item_id, size, quantity)
+    locked = conn.select_one("SELECT size_variants FROM shop_items WHERE id = #{item_id.to_i} FOR UPDATE")
+    raise ShopError, "size_out_of_stock" unless locked && ShopSizeService.available(locked["size_variants"], size) >= quantity
+  end
+
   def parse_size_variants(raw)
     return raw if raw.is_a?(Array)
     JSON.parse(raw.to_s.presence || "[]")
@@ -998,6 +1069,7 @@ class ShopController < ApplicationController
       gachapon_only: truthy?(item["gachapon_only"]),
       consolation_prize: truthy?(item["consolation_prize"]),
       size_variants: parse_size_variants(item["size_variants"]).select { |v| v["count"].to_i > 0 },
+      has_sizes: ShopSizeService.sized?(item["size_variants"]),
       created_at: item["created_at"],
       updated_at: item["updated_at"]
     }

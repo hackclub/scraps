@@ -58,6 +58,7 @@ Rails.application.routes.draw do
     get    "orders",                       to: "shop#orders"
     get    "orders/pending-address",       to: "shop#pending_address"
     post   "orders/:id/address",           to: "shop#set_address"
+    post   "orders/:id/size",              to: "shop#set_order_size"
     get    "addresses",                    to: "shop#addresses"
     get    "daily",                        to: "shop#daily_picks"
     get    "retained",                     to: "shop#retained_items"
