@@ -38,7 +38,7 @@
 		payoutRoll: {
 			status: string;
 			baseScraps: number;
-			roll1: number;
+			roll1: number | null;
 			roll2: number | null;
 			finalMultiplier: number | null;
 			delta: number | null;
@@ -86,6 +86,19 @@
 		items: { id: number; name: string; image: string | null; count: number }[];
 	}
 
+	interface PendingOrder {
+		id: number;
+		itemName: string | null;
+		itemImage: string | null;
+		quantity: number;
+		totalPrice: number;
+		status: string;
+		orderType: string;
+		size: string | null;
+		createdAt: string;
+	}
+
+	let pendingOrders = $state<PendingOrder[]>([]);
 	let currentUser = $state<CurrentUser | null>(null);
 	let targetUser = $state<TargetUser | null>(null);
 	let projects = $state<Project[]>([]);
@@ -205,6 +218,7 @@
 				projects = result.projects || [];
 				stats = result.stats;
 				retainedShop = result.retainedShop || null;
+				pendingOrders = result.pendingOrders || [];
 				hackatimeSuspected = result.hackatimeSuspected || false;
 				hackatimeBanned = result.hackatimeBanned || false;
 				editingNotes = result.user?.internalNotes || '';
@@ -722,9 +736,9 @@
 									{#if project.payoutRoll}
 										{@const roll = project.payoutRoll}
 										<span title="bonus payout roll on {roll.baseScraps} scraps">
-											rolled {roll.roll1.toFixed(2)}x{#if roll.roll2 !== null}
+											{#if roll.roll1 === null}{roll.status === 'final' ? "didn't roll · 1.00x" : "hasn't rolled yet"}{:else}rolled {roll.roll1.toFixed(2)}x{/if}{#if roll.roll2 !== null}
 												→ {roll.roll2.toFixed(2)}x{/if}
-											{#if roll.delta !== null}
+											{#if roll.roll1 === null}{:else if roll.delta !== null}
 												<span
 													class="font-bold {roll.delta > 0
 														? 'text-green-600'
@@ -757,6 +771,42 @@
 				</ul>
 			{/if}
 		</div>
+
+		{#if currentUser?.role === 'admin' || currentUser?.role === 'creator'}
+		<div class="mt-6 rounded-2xl border-4 border-black p-6">
+			<h2 class="mb-4 text-xl font-bold">pending orders ({pendingOrders.length})</h2>
+			{#if pendingOrders.length === 0}
+				<p class="text-gray-500">no pending orders</p>
+			{:else}
+				<ul class="divide-y divide-gray-200">
+					{#each pendingOrders as order}
+						<li>
+							<a
+								href="/admin/orders/{order.id}"
+								class="flex cursor-pointer items-center justify-between gap-3 py-2 text-sm hover:underline"
+							>
+								<span class="flex min-w-0 items-center gap-3">
+									{#if order.itemImage}
+										<img src={order.itemImage} alt="" class="h-8 w-8 rounded object-cover" />
+									{/if}
+									<span class="truncate">
+										{order.itemName ?? 'unknown item'}{order.size ? ` · ${order.size}` : ''}
+										{#if order.quantity > 1}× {order.quantity}{/if}
+									</span>
+								</span>
+								<span class="flex shrink-0 items-center gap-3 text-gray-500">
+									<span>{order.orderType.replace(/_/g, ' ')}</span>
+									<span>{order.totalPrice} scraps</span>
+									<span>{order.status}</span>
+									<span>{new Date(order.createdAt).toLocaleDateString()}</span>
+								</span>
+							</a>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+		{/if}
 
 		<!-- Shop slots -->
 		<div class="mt-6 rounded-2xl border-4 border-black p-6">

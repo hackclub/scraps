@@ -114,7 +114,7 @@ class AdminController < ApplicationController
     payout_rolls = conn.select_all(<<~SQL).index_by { |r| r["project_id"].to_i }
       SELECT DISTINCT ON (project_id) project_id, base_scraps, roll_1, roll_2, final_multiplier, status
       FROM payout_rolls
-      WHERE user_id = #{target_id} AND status <> 'cancelled' AND roll_1 IS NOT NULL
+      WHERE user_id = #{target_id} AND status <> 'cancelled'
       ORDER BY project_id, id DESC
     SQL
     projects.each do |p|
@@ -125,7 +125,7 @@ class AdminController < ApplicationController
       p["payout_roll"] = {
         status: r["status"],
         base_scraps: base,
-        roll_1: r["roll_1"].to_f,
+        roll_1: r["roll_1"]&.to_f,
         roll_2: r["roll_2"]&.to_f,
         final_multiplier: final,
         delta: final ? (base * final).floor - base : nil
@@ -149,6 +149,16 @@ class AdminController < ApplicationController
       used: retained_items.length,
       items: retained_items.map { |i| { id: i["id"].to_i, name: i["name"], image: i["image"], count: i["count"].to_i } }
     }
+
+    pending_orders = conn.select_all(<<~SQL).to_a
+      SELECT so.id, so.quantity, so.total_price, so.status, so.order_type, so.size, so.created_at,
+             si.name AS item_name, si.image AS item_image
+      FROM shop_orders so
+      LEFT JOIN shop_items si ON si.id = so.shop_item_id
+      WHERE so.user_id = #{target_id} AND so.is_fulfilled = false
+        AND so.status NOT IN ('cancelled', 'deleted')
+      ORDER BY so.created_at DESC
+    SQL
 
     balance = ScrapsService.get_user_scraps_balance(target_id)
     ht_suspected = false
@@ -181,7 +191,14 @@ class AdminController < ApplicationController
       hackatime_banned: ht_banned,
       projects: projects,
       stats: stats,
-      retained_shop: retained_shop
+      retained_shop: retained_shop,
+      pending_orders: (is_admin_user ? pending_orders : []).map do |o|
+        {
+          id: o["id"].to_i, item_name: o["item_name"], item_image: o["item_image"],
+          quantity: o["quantity"].to_i, total_price: o["total_price"].to_i, status: o["status"],
+          order_type: o["order_type"], size: o["size"], created_at: o["created_at"]
+        }
+      end
     })
   end
 
@@ -387,7 +404,10 @@ class AdminController < ApplicationController
           .group_by { |p| HackatimeService.strip_hackatime_ids(p["name"]) }
         ht_breakdown = target_names.map do |name|
           secs = (by_name[name] || []).sum { |p| p["total_duration"].to_f }
-          { name: name, hours: (secs / 3600.0 * 100).round / 100.0, found: by_name.key?(name) }
+          categories = (by_name[name] || []).map { |p| HackatimeService.fetch_category_seconds(ht_user_id, p["name"]) }
+          ai_secs = categories.any?(&:nil?) ? nil : categories.sum { |c| c.sum { |category, s| HackatimeService.ai_category?(category) ? s : 0 } }
+          { name: name, hours: (secs / 3600.0 * 100).round / 100.0, found: by_name.key?(name),
+            ai_hours: ai_secs && (ai_secs / 3600.0 * 100).round / 100.0 }
         end
       rescue StandardError
         ht_breakdown = []

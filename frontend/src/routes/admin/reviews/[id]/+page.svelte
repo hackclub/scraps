@@ -100,7 +100,11 @@
 	let hackatimeUserId = $state<number | null>(null);
 	let hackatimeSuspected = $state(false);
 	let hackatimeBanned = $state(false);
-	let hackatimeProjects = $state<{ name: string; hours: number; found: boolean }[]>([]);
+	let hackatimeProjects = $state<
+		{ name: string; hours: number; found: boolean; aiHours: number | null }[]
+	>([]);
+	let aiHoursKnown = $derived(hackatimeProjects.some((h) => h.found && h.aiHours != null));
+	let aiHoursTotal = $derived(hackatimeProjects.reduce((s, h) => s + (h.aiHours ?? 0), 0));
 	let yswsDuplicates = $state<YswsDuplicate[]>([]);
 	let loading = $state(true);
 	let submitting = $state(false);
@@ -669,7 +673,14 @@
 									<li class="flex items-center justify-between gap-2">
 										<span class="font-mono">{hp.name}</span>
 										{#if hp.found}
-											<span class="font-bold">{formatHours(hp.hours)}h</span>
+											<span class="font-bold">
+												{formatHours(hp.hours)}h
+												{#if hp.aiHours != null}
+													<span class="font-normal {hp.aiHours > 0 ? 'text-orange-600' : 'text-gray-500'}"
+														>({formatHours(hp.aiHours)}h ai)</span
+													>
+												{/if}
+											</span>
 										{:else}
 											<span class="text-red-600">not found on hackatime</span>
 										{/if}
@@ -681,6 +692,16 @@
 									<span>total</span>
 									<span>{formatHours(hackatimeProjects.reduce((s, h) => s + h.hours, 0))}h</span>
 								</li>
+								{#if aiHoursKnown}
+									<li
+										class="flex items-center justify-between gap-2 {aiHoursTotal > 0
+											? 'font-bold text-orange-600'
+											: 'text-gray-500'}"
+									>
+										<span>labeled as ai coding</span>
+										<span>{formatHours(aiHoursTotal)}h</span>
+									</li>
+								{/if}
 							</ul>
 						</div>
 					{/if}

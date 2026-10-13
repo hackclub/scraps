@@ -8,13 +8,18 @@ module HackatimeService
   CACHE_TTL = 90 # seconds
   @user_cache = {}
   @projects_cache = {}
+  @category_cache = {}
+  HEARTBEAT_PAGE = 5000
+  HEARTBEAT_MAX = 100_000
+  HEARTBEAT_TIMEOUT = 120
 
   class << self
-    attr_accessor :user_cache, :projects_cache
+    attr_accessor :user_cache, :projects_cache, :category_cache
 
     def clear_caches
       @user_cache = {}
       @projects_cache = {}
+      @category_cache = {}
     end
 
     def cache_get(store, key)
@@ -88,6 +93,39 @@ module HackatimeService
       rescue StandardError
         nil
       end
+    end
+
+    def fetch_category_seconds(user_id, project_name)
+      cache_key = "#{user_id}:#{project_name}"
+      if (hit = cache_get(@category_cache, cache_key))
+        return hit[:value]
+      end
+
+      heartbeats = []
+      offset = 0
+      loop do
+        resp = HTTParty.get(
+          "#{HACKATIME_API}/user/heartbeats",
+          headers: auth_headers,
+          query: { user_id: user_id, start_date: SCRAPS_START_DATE, project: project_name, limit: HEARTBEAT_PAGE, offset: offset }
+        )
+        return nil unless resp.success?
+        page = resp.parsed_response["heartbeats"] || []
+        heartbeats.concat(page.map { |hb| [hb["time"].to_f, hb["category"].to_s] })
+        offset += page.length
+        break if page.empty? || !resp.parsed_response["has_more"] || offset >= HEARTBEAT_MAX
+      end
+
+      totals = Hash.new(0.0)
+      heartbeats.sort_by!(&:first)
+      heartbeats.each_cons(2) { |(prev, _), (time, category)| totals[category] += [time - prev, HEARTBEAT_TIMEOUT].min }
+      cache_put(@category_cache, cache_key, totals)
+    rescue StandardError
+      nil
+    end
+
+    def ai_category?(category)
+      category.to_s.match?(/\bai\b/i)
     end
 
     def parse_hackatime_projects(hackatime_project)
