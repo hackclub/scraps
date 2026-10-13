@@ -14,7 +14,7 @@
     class: "AirtableSyncJob"
     active_job: true
     queue: default
-    description: "Sync shipped projects to Airtable every 5 minutes"
+    description: "Create Airtable rows for shipped projects that have none yet, every 5 minutes"
   hackatime_ban_sync:
     cron: "*/5 * * * *"
     class: "HackatimeBanSyncJob"

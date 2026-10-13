@@ -7,7 +7,8 @@ class AirtableSyncJob < ApplicationJob
   # (AIRTABLE_BASE_ID / AIRTABLE_PROJECTS_TABLE_ID): the grant-fulfillment pipeline.
   #
   # perform(project_id) syncs one project (called when a project passes review).
-  # perform      syncs every shipped project (the 5-minute cron backstop).
+  # perform      creates rows for shipped projects that have none yet (the
+  #              5-minute cron backstop); it never updates an existing row.
   def perform(project_id = nil)
     token = ENV["AIRTABLE_TOKEN"]
     base_id = ENV["AIRTABLE_BASE_ID"]
@@ -16,10 +17,10 @@ class AirtableSyncJob < ApplicationJob
 
     conn = ActiveRecord::Base.connection
     where = +"p.status = 'shipped' AND (p.deleted = 0 OR p.deleted IS NULL)"
-    where << " AND p.id = #{project_id.to_i}" if project_id
+    where << (project_id ? " AND p.id = #{project_id.to_i}" : " AND (p.airtable_id IS NULL OR p.airtable_id = '')")
 
     conn.select_all(<<~SQL).to_a.each do |project|
-      SELECT p.id, p.github_url, p.playable_url, p.description, p.image,
+      SELECT p.id, p.user_id, p.github_url, p.playable_url, p.description, p.image,
              p.hours, p.hours_override, p.airtable_id, p.hackatime_project, p.is_reship,
              u.first_name AS builder_first_name,
              (SELECT r.internal_justification FROM reviews r
@@ -49,7 +50,7 @@ class AirtableSyncJob < ApplicationJob
     SQL
       begin
         # Only hit the Hackatime + Lapse APIs on a targeted single-project sync
-        # (a fresh approval). The 5-min bulk backstop just keeps fields in sync.
+        # (a fresh approval), not on the 5-min bulk backstop.
         sync_project_to_airtable(token, base_id, table_id, project, conn, include_lapse: !project_id.nil?)
       rescue StandardError => e
         Rails.logger.error("[AirtableSyncJob] Failed for project #{project['id']}: #{e.message}")
@@ -95,6 +96,7 @@ class AirtableSyncJob < ApplicationJob
     fields["Screenshot"] = [{ url: img }] if img.start_with?("http")
 
     headers = { "Authorization" => "Bearer #{token}", "Content-Type" => "application/json" }
+    fill_from_previous_row(fields, headers, base_id, table_id, project, conn)
     body = { fields: fields, typecast: true }.to_json
 
     stored_id = project["airtable_id"].presence
@@ -120,6 +122,32 @@ class AirtableSyncJob < ApplicationJob
     else
       Rails.logger.warn("[AirtableSyncJob] POST failed for project #{project['id']}: #{resp.body}")
     end
+  end
+
+  PERSON_FIELDS = ["First Name", "Last Name", "Email", "Phone number", "Birthday"].freeze
+  ADDRESS_FIELDS = ["Address (Line 1)", "Address (Line 2)", "City", "State / Province", "Country", "ZIP / Postal Code"].freeze
+
+  def fill_from_previous_row(fields, headers, base_id, table_id, project, conn)
+    missing = PERSON_FIELDS - fields.keys
+    missing += ADDRESS_FIELDS if fields["Address (Line 1)"].blank?
+    return if missing.empty?
+
+    previous_id = conn.select_value(<<~SQL)
+      SELECT airtable_id FROM projects
+      WHERE user_id = #{project['user_id'].to_i} AND id <> #{project['id'].to_i}
+        AND airtable_id IS NOT NULL AND airtable_id <> ''
+      ORDER BY updated_at DESC
+      LIMIT 1
+    SQL
+    return if previous_id.blank?
+
+    resp = HTTParty.get("#{AIRTABLE_BASE_URL}/#{base_id}/#{table_id}/#{previous_id}", headers: headers)
+    return unless resp.success?
+
+    previous = resp.parsed_response["fields"] || {}
+    missing.each { |name| fields[name] = previous[name] if fields[name].blank? && previous[name].present? }
+  rescue StandardError => e
+    Rails.logger.warn("[AirtableSyncJob] Previous-row fallback failed for project #{project['id']}: #{e.message}")
   end
 
   # Start of the Hackatime tracking window for scraps (used as the "from" date on
