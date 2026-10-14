@@ -489,10 +489,12 @@ class AdminController < ApplicationController
     if action == "approved" && can_ship
       new_scraps = ScrapsService.calculate_scraps_from_score(grant_hours, reviewer_score)
       previously_shipped = conn.select_one("SELECT 1 FROM project_activity WHERE project_id = #{project_id} AND action = 'project_shipped' LIMIT 1")
-      scraps_awarded = (previously_shipped && project["scraps_awarded"].to_i > 0) ? [0, new_scraps - project["scraps_awarded"].to_i].max : new_scraps
-      set_parts << "scraps_awarded = #{new_scraps}"
+      previous_scraps = previously_shipped ? [project["scraps_awarded"].to_i, project["scraps_paid_amount"].to_i].max : 0
+      final_scraps = [new_scraps, previous_scraps].max
+      scraps_awarded = final_scraps - previous_scraps
+      set_parts << "scraps_awarded = #{final_scraps}"
       set_parts << "scraps_paid_at = NOW()"
-      set_parts << "scraps_paid_amount = #{new_scraps}"
+      set_parts << "scraps_paid_amount = #{final_scraps}"
     end
 
     conn.execute("UPDATE projects SET #{set_parts.join(', ')} WHERE id = #{project_id}")
@@ -528,7 +530,7 @@ class AdminController < ApplicationController
           project_name: project["name"],
           project_id: project_id,
           action: action,
-          feedback_for_author: action == "denied" ? feedback : nil,
+          feedback_for_author: action == "permanently_rejected" ? nil : feedback,
           rejection_reason: rejection_reason.presence,
           reviewer_slack_id: current_user.slack_id,
           admin_slack_ids: admin_slack_ids,

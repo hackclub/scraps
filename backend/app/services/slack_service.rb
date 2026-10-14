@@ -46,7 +46,10 @@ module SlackService
 
     if action == "approved"
       blocks = [
-        { type: "section", text: { type: "mrkdwn", text: ":tada: Your project *#{project_name}* was approved! Go check it out." } },
+        { type: "section", text: { type: "mrkdwn", text: ":tada: Your project *#{project_name}* was approved! Go check it out." } }
+      ]
+      blocks << { type: "section", text: { type: "mrkdwn", text: "*Feedback from reviewer:*\n#{feedback_for_author}" } } if feedback_for_author.present?
+      blocks += [
         { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Check it out" }, url: project_url, action_id: "view_project" }] }
       ]
       post(token, "chat.postMessage", { channel: user_slack_id, text: "Your project was approved!", blocks: blocks }) rescue nil
