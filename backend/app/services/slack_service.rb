@@ -82,7 +82,7 @@ module SlackService
     if user_slack_id.present?
       blocks = [
         { type: "section", text: { type: "mrkdwn", text: ":tada: *You won #{item_name} from the Scraps shop!*\nCheck your orders to set your shipping address." } },
-        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View Orders" }, url: "#{frontend_url}/shop/orders", action_id: "view_orders" }] }
+        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "View Orders" }, url: "#{frontend_url}/orders", action_id: "view_orders" }] }
       ]
       post(token, "chat.postMessage", { channel: user_slack_id, text: "You won #{item_name}!", blocks: blocks }) rescue nil
     end
