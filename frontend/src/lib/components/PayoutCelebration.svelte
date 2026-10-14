@@ -80,7 +80,7 @@
 	}
 
 	async function rollBonus() {
-		if (deciding || !payoutRoll) return;
+		if (deciding || !rollArmed || !payoutRoll) return;
 		deciding = true;
 		playButtonClickSound();
 		rolling = true;
@@ -93,7 +93,10 @@
 		clearInterval(spin);
 		rolling = false;
 		deciding = false;
-		if (ok) playBoxAppearSound();
+		if (ok) {
+			armRollButtons();
+			playBoxAppearSound();
+		}
 	}
 
 	async function keepPayout() {
@@ -220,7 +223,17 @@
 		requestAnimationFrame(frame);
 	}
 
+	let advancing = $state(false);
+	let rollArmed = $state(false);
+
+	function armRollButtons() {
+		rollArmed = false;
+		setTimeout(() => (rollArmed = true), 1500);
+	}
+
 	async function next() {
+		if (advancing) return;
+		advancing = true;
 		playButtonClickSound();
 		await sleep(1500);
 		if (stage === 'intro') stage = 'feedback';
@@ -228,7 +241,9 @@
 		else if (stage === 'multiplier') {
 			stage = 'calc';
 			animateTotal();
+			armRollButtons();
 		}
+		advancing = false;
 		playBoxAppearSound();
 	}
 
@@ -389,7 +404,7 @@
 										</button>
 										<button
 											onclick={rollBonus}
-											disabled={deciding}
+											disabled={deciding || !rollArmed}
 											class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-5 py-3 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
 										>
 											<Dices size={18} /> Roll for a bonus
@@ -406,7 +421,7 @@
 										</button>
 										<button
 											onclick={rollBonus}
-											disabled={deciding}
+											disabled={deciding || !rollArmed}
 											class="flex cursor-pointer items-center gap-2 rounded-full border-4 border-black bg-black px-5 py-3 font-bold text-white transition-all hover:bg-gray-800 disabled:opacity-50"
 										>
 											<RotateCcw size={18} /> Reroll (final)

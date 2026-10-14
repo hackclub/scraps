@@ -1,7 +1,6 @@
 module PayoutRollService
-  CENTER = 0.867
   SPREAD = 0.75
-  MIN_MULT = 0.5
+  MIN_MULT = 1.0
   MAX_MULT = 2.0
   EXPECTED_MULTIPLIER = 1.0
   BONUS_REASON = "payout_roll"
@@ -9,7 +8,7 @@ module PayoutRollService
   class RollError < StandardError; end
 
   def self.roll_value
-    (CENTER + (rand - rand) * SPREAD).clamp(MIN_MULT, MAX_MULT).round(2)
+    (MIN_MULT + (rand - rand).abs * SPREAD).clamp(MIN_MULT, MAX_MULT).round(2)
   end
 
   def self.open_for_approval(conn, project_id:, user_id:, base_scraps:)
@@ -94,7 +93,7 @@ module PayoutRollService
       final_multiplier: mult,
       final_scraps: mult ? (base * mult).floor : nil,
       min_multiplier: MIN_MULT,
-      max_multiplier: [CENTER + SPREAD, MAX_MULT].min.round(2)
+      max_multiplier: [MIN_MULT + SPREAD, MAX_MULT].min.round(2)
     }
   end
 end
