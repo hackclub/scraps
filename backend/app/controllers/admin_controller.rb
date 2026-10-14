@@ -569,11 +569,13 @@ class AdminController < ApplicationController
     rows = conn.select_all(<<~SQL).to_a
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
              so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at, so.size,
+             so.fulfilled_at, so.fulfilled_by_id, fu.username AS fulfilled_by_username,
              si.id AS item_id, si.name AS item_name, si.image AS item_image,
              u.id AS user_id, u.username, u.avatar AS user_avatar, u.slack_id, u.email AS user_email
       FROM shop_orders so
       INNER JOIN shop_items si ON si.id = so.shop_item_id
       INNER JOIN users u ON u.id = so.user_id
+      LEFT JOIN users fu ON fu.id = so.fulfilled_by_id
       #{where}
       ORDER BY so.created_at DESC
     SQL
@@ -592,7 +594,7 @@ class AdminController < ApplicationController
     end
 
     render_json(rows.map { |r|
-      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
+      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], fulfilled_at: r["fulfilled_at"], fulfilled_by_id: r["fulfilled_by_id"]&.to_i, fulfilled_by_username: r["fulfilled_by_username"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
     })
   end
 
@@ -601,11 +603,13 @@ class AdminController < ApplicationController
     r = conn.select_one(<<~SQL)
       SELECT so.id, so.quantity, so.price_per_item, so.total_price, so.status, so.order_type,
              so.notes, so.internal_notes, so.user_note, so.tracking_number, so.is_fulfilled, so.shipping_address, so.phone, so.created_at, so.size,
+             so.fulfilled_at, so.fulfilled_by_id, fu.username AS fulfilled_by_username,
              si.id AS item_id, si.name AS item_name, si.image AS item_image,
              u.id AS user_id, u.username, u.avatar AS user_avatar, u.slack_id, u.email AS user_email
       FROM shop_orders so
       INNER JOIN shop_items si ON si.id = so.shop_item_id
       INNER JOIN users u ON u.id = so.user_id
+      LEFT JOIN users fu ON fu.id = so.fulfilled_by_id
       WHERE so.id = #{params[:id].to_i}
     SQL
     return render_json({ error: "Not found" }, status: :not_found) unless r
@@ -621,7 +625,7 @@ class AdminController < ApplicationController
     render_json({
       id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i,
       status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"],
-      tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], shipping_address: r["shipping_address"], phone: r["phone"],
+      tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], fulfilled_at: r["fulfilled_at"], fulfilled_by_id: r["fulfilled_by_id"]&.to_i, fulfilled_by_username: r["fulfilled_by_username"], shipping_address: r["shipping_address"], phone: r["phone"],
       created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"],
       user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: hackatime_banned
     })
@@ -669,7 +673,10 @@ class AdminController < ApplicationController
     set_parts << "notes = #{conn.quote(params[:notes].to_s)}" if params.key?(:notes)
     set_parts << "user_note = #{conn.quote(params[:userNote].to_s)}" if params.key?(:userNote)
     set_parts << "tracking_number = #{conn.quote(params[:trackingNumber].to_s)}" if params.key?(:trackingNumber)
-    set_parts << "is_fulfilled = #{params[:isFulfilled] ? 'true' : 'false'}" if params.key?(:isFulfilled)
+    if params.key?(:isFulfilled)
+      set_parts << "is_fulfilled = #{params[:isFulfilled] ? 'true' : 'false'}"
+      set_parts << (params[:isFulfilled] ? "fulfilled_by_id = #{current_user.id}, fulfilled_at = NOW()" : "fulfilled_by_id = NULL, fulfilled_at = NULL")
+    end
 
     updated = conn.select_one("UPDATE shop_orders SET #{set_parts.join(', ')} WHERE id = #{order_id} RETURNING *")
     return render_json({ error: "Not found" }, status: :not_found) unless updated
@@ -681,7 +688,7 @@ class AdminController < ApplicationController
       end
     end
 
-    render_json({ id: updated["id"].to_i, status: updated["status"], order_type: updated["order_type"], notes: updated["notes"], user_note: updated["user_note"], tracking_number: updated["tracking_number"], is_fulfilled: updated["is_fulfilled"], shipping_address: updated["shipping_address"], created_at: updated["created_at"] })
+    render_json({ id: updated["id"].to_i, status: updated["status"], order_type: updated["order_type"], notes: updated["notes"], user_note: updated["user_note"], tracking_number: updated["tracking_number"], is_fulfilled: updated["is_fulfilled"], fulfilled_at: updated["fulfilled_at"], fulfilled_by_id: updated["fulfilled_by_id"]&.to_i, fulfilled_by_username: (current_user.username if updated["fulfilled_by_id"]), shipping_address: updated["shipping_address"], created_at: updated["created_at"] })
   end
 
   def delete_order

@@ -42,6 +42,8 @@
 		userNote: string | null;
 		trackingNumber: string | null;
 		isFulfilled: boolean;
+		fulfilledAt: string | null;
+		fulfilledByUsername: string | null;
 		shippingAddress: string | null;
 		phone: string | null;
 		email: string | null;
@@ -77,7 +79,7 @@
 	let user = $state<User | null>(null);
 	let orders = $state<Order[]>([]);
 	let loading = $state(true);
-	let filter = $state<'all' | 'pending' | 'fulfilled' | 'cancelled'>('all');
+	let filter = $state<'all' | 'pending' | 'fulfilled' | 'cancelled'>('pending');
 	let searchQuery = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
@@ -257,15 +259,6 @@
 	<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
 		<div class="flex gap-2">
 			<button
-				onclick={() => (filter = 'all')}
-				class="cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 {filter ===
-				'all'
-					? 'bg-black text-white'
-					: 'hover:border-dashed'}"
-			>
-				{$t.admin.all} ({activeOrders.length})
-			</button>
-			<button
 				onclick={() => (filter = 'pending')}
 				class="cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 {filter ===
 				'pending'
@@ -282,6 +275,15 @@
 					: 'hover:border-dashed'}"
 			>
 				{$t.admin.fulfilled} ({activeOrders.filter((o) => o.isFulfilled).length})
+			</button>
+			<button
+				onclick={() => (filter = 'all')}
+				class="cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 {filter ===
+				'all'
+					? 'bg-black text-white'
+					: 'hover:border-dashed'}"
+			>
+				{$t.admin.all} ({activeOrders.length})
 			</button>
 			{#if cancelledOrders.length > 0}
 				<button
@@ -466,6 +468,13 @@
 						<span class="text-xs text-gray-400"
 							>order #{order.id} • {formatDate(order.createdAt)}</span
 						>
+						{#if order.isFulfilled && (order.fulfilledByUsername || order.fulfilledAt)}
+							<span class="text-xs text-green-700"
+								>fulfilled{order.fulfilledByUsername
+									? ` by @${order.fulfilledByUsername}`
+									: ''}{order.fulfilledAt ? ` on ${formatDate(order.fulfilledAt)}` : ''}</span
+							>
+						{/if}
 					</div>
 				</button>
 			{/each}

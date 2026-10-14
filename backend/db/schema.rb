@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_13_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_14_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -286,6 +286,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_120000) do
 
   create_table "shop_orders", id: :serial, force: :cascade do |t|
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
+    t.datetime "fulfilled_at", precision: nil
+    t.integer "fulfilled_by_id"
     t.text "internal_notes"
     t.boolean "is_fulfilled", default: false, null: false
     t.text "notes"
@@ -416,6 +418,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_13_120000) do
   add_foreign_key "shop_hearts", "shop_items", name: "shop_hearts_shop_item_id_fkey"
   add_foreign_key "shop_hearts", "users", name: "shop_hearts_user_id_fkey"
   add_foreign_key "shop_orders", "shop_items", name: "shop_orders_shop_item_id_fkey"
+  add_foreign_key "shop_orders", "users", column: "fulfilled_by_id"
   add_foreign_key "shop_orders", "users", name: "shop_orders_user_id_fkey"
   add_foreign_key "shop_penalties", "shop_items", name: "shop_penalties_shop_item_id_fkey"
   add_foreign_key "shop_penalties", "users", name: "shop_penalties_user_id_fkey"

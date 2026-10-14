@@ -46,6 +46,8 @@
 		userNote: string | null;
 		trackingNumber: string | null;
 		isFulfilled: boolean;
+		fulfilledAt: string | null;
+		fulfilledByUsername: string | null;
 		shippingAddress: string | null;
 		phone: string | null;
 		email: string | null;
@@ -156,7 +158,10 @@
 			});
 			if (response.ok) {
 				const wasFulfilled = order.isFulfilled;
+				const data = await response.json().catch(() => ({}));
 				order.isFulfilled = !wasFulfilled;
+				order.fulfilledAt = data.fulfilledAt ?? null;
+				order.fulfilledByUsername = data.fulfilledByUsername ?? null;
 				if (!wasFulfilled) order.trackingNumber = trackingInput.trim() || null;
 				showToast(
 					wasFulfilled ? 'order marked as unfulfilled' : 'order marked as fulfilled',
@@ -395,7 +400,8 @@
 						{/if}
 						{#if order.size}
 							<span class="text-gray-400">•</span>
-							<span class="rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold text-black"
+							<span
+								class="rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold text-black"
 								>size {order.size}</span
 							>
 						{/if}
@@ -415,7 +421,9 @@
 							class="inline-flex items-center gap-1 rounded-full border-2 border-green-600 bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700"
 						>
 							<Check size={12} />
-							fulfilled
+							fulfilled{order.fulfilledByUsername
+								? ` by @${order.fulfilledByUsername}`
+								: ''}{order.fulfilledAt ? ` on ${formatDate(order.fulfilledAt)}` : ''}
 						</span>
 					{/if}
 					{#if order.hackatimeBanned}
@@ -446,59 +454,61 @@
 
 						{#if parseShippingAddress(order.shippingAddress)}
 							{@const addr = parseShippingAddress(order.shippingAddress)!}
-							<div class="group/addr rounded-xl border-2 border-gray-300 bg-white p-4">
-								<p class="mb-2 text-xs font-bold text-gray-500 uppercase">shipping address</p>
-								<div
-									class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 blur-sm transition-all duration-300 select-none group-hover/addr:blur-none group-hover/addr:select-auto"
-								>
+							<div class="rounded-xl border-2 border-gray-300 bg-white p-4">
+								<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
+									shipping address <span class="text-gray-400 normal-case"
+										>(double-click to copy)</span
+									>
+								</p>
+								<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
 									<span class="font-bold text-gray-500">name</span>
 									<span
-										class="cursor-pointer hover:underline"
-										onclick={() => copyField(formatName(addr))}>{formatName(addr)}</span
+										class="cursor-copy hover:underline"
+										ondblclick={() => copyField(formatName(addr))}>{formatName(addr)}</span
 									>
 									<span class="font-bold text-gray-500">address 1</span>
 									<span
-										class="cursor-pointer hover:underline"
-										onclick={() => copyField(addr.address1)}>{addr.address1}</span
+										class="cursor-copy hover:underline"
+										ondblclick={() => copyField(addr.address1)}>{addr.address1}</span
 									>
 									{#if addr.address2}
 										<span class="font-bold text-gray-500">address 2</span>
 										<span
-											class="cursor-pointer hover:underline"
-											onclick={() => copyField(addr.address2!)}>{addr.address2}</span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(addr.address2!)}>{addr.address2}</span
 										>
 									{/if}
 									<span class="font-bold text-gray-500">city</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.city)}
+									<span class="cursor-copy hover:underline" ondblclick={() => copyField(addr.city)}
 										>{addr.city}</span
 									>
 									<span class="font-bold text-gray-500">state</span>
-									<span class="cursor-pointer hover:underline" onclick={() => copyField(addr.state)}
+									<span class="cursor-copy hover:underline" ondblclick={() => copyField(addr.state)}
 										>{addr.state}</span
 									>
 									<span class="font-bold text-gray-500">zip</span>
 									<span
-										class="cursor-pointer hover:underline"
-										onclick={() => copyField(addr.postalCode)}>{addr.postalCode}</span
+										class="cursor-copy hover:underline"
+										ondblclick={() => copyField(addr.postalCode)}>{addr.postalCode}</span
 									>
 									<span class="font-bold text-gray-500">country</span>
 									<span
-										class="cursor-pointer hover:underline"
-										onclick={() => copyField(addr.country)}>{addr.country}</span
+										class="cursor-copy hover:underline"
+										ondblclick={() => copyField(addr.country)}>{addr.country}</span
 									>
 									{#if order.phone || addr.phone}
 										<span class="font-bold text-gray-500">phone</span>
 										<span
-											class="cursor-pointer hover:underline"
-											onclick={() => copyField((order?.phone || addr.phone)!)}
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField((order?.phone || addr.phone)!)}
 											>{order.phone || addr.phone}</span
 										>
 									{/if}
 									{#if order.email}
 										<span class="font-bold text-gray-500">email</span>
 										<span
-											class="cursor-pointer hover:underline"
-											onclick={() => copyField(order?.email!)}>{order.email}</span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(order?.email!)}>{order.email}</span
 										>
 									{/if}
 								</div>
@@ -514,15 +524,15 @@
 									{#if order.phone}
 										<span class="font-bold text-gray-500">phone</span>
 										<span
-											class="cursor-pointer hover:underline"
-											onclick={() => copyField(order?.phone!)}>{order.phone}</span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(order?.phone!)}>{order.phone}</span
 										>
 									{/if}
 									{#if order.email}
 										<span class="font-bold text-gray-500">email</span>
 										<span
-											class="cursor-pointer hover:underline"
-											onclick={() => copyField(order?.email!)}>{order.email}</span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(order?.email!)}>{order.email}</span
 										>
 									{/if}
 								</div>
@@ -720,7 +730,9 @@
 			</p>
 
 			{#if undoPreviewError}
-				<p class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm font-bold text-red-600">
+				<p
+					class="mb-4 rounded-lg border-2 border-red-600 bg-red-50 p-3 text-sm font-bold text-red-600"
+				>
 					{undoPreviewError}
 				</p>
 			{:else if !undoPreview}
@@ -742,8 +754,9 @@
 						<span class="font-bold">{undoPreview.totalRefund} scraps</span>
 					</div>
 					<p class="mt-2 text-gray-500">
-						{undoPreview.restock > 0 ? `+${undoPreview.restock} back into stock` : 'stock is unlimited, not changed'}{order.orderType ===
-						'luck_win'
+						{undoPreview.restock > 0
+							? `+${undoPreview.restock} back into stock`
+							: 'stock is unlimited, not changed'}{order.orderType === 'luck_win'
 							? ', roll price and odds reset to before this win'
 							: ''}
 					</p>
