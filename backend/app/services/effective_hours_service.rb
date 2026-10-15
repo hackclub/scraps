@@ -14,7 +14,7 @@ module EffectiveHoursService
 
     project_id = project["id"]
     user_id = project["user_id"] || project["userId"]
-    hackatime_names = hackatime_project.split(",").map(&:strip).reject(&:empty?)
+    hackatime_names = HackatimeService.split_project_list(hackatime_project)
     return { overlapping_projects: [], deducted_hours: 0, effective_hours: hours } if hackatime_names.empty?
 
     project_shipped_date = project_shipped_date(project_id) || Time.now.utc
@@ -49,7 +49,7 @@ module EffectiveHoursService
       next if op["hackatime_project"].blank?
       op_shipped_date = shipped_dates[op["id"].to_i]
       next unless op_shipped_date && op_shipped_date < deduct_before
-      op_names = op["hackatime_project"].split(",").map(&:strip).reject(&:empty?)
+      op_names = HackatimeService.split_project_list(op["hackatime_project"])
       next unless op_names.any? { |n| hackatime_names.include?(n) }
       op_hours = (op["hours_override"] || op["hours"] || 0).to_f
       overlapping << { id: op["id"].to_i, name: op["name"], hours: op_hours }

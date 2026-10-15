@@ -128,27 +128,40 @@ module HackatimeService
       category.to_s.match?(/\bai\b/i)
     end
 
-    def parse_hackatime_projects(hackatime_project)
+    def split_project_list(hackatime_project)
       return [] if hackatime_project.blank?
-      hackatime_project.split(",").map(&:strip).filter_map do |entry|
-        next nil if entry.blank?
-        parse_entry(entry)
+      hackatime_project.to_s.scan(/(?:\\[\\,]|[^,])+/)
+        .map { |entry| entry.strip.gsub(/\\([\\,])/, '\1') }
+        .reject(&:empty?)
+    end
+
+    def join_project_list(entries)
+      entries.map { |entry| entry.to_s.gsub(/[\\,]/) { |c| "\\#{c}" } }.join(",")
+    end
+
+    def parse_hackatime_projects(hackatime_project)
+      split_project_list(hackatime_project).map { |entry| parse_entry(entry) }
+    end
+
+    def strip_entry_id(entry)
+      entry = entry.to_s.strip
+      colon_idx = entry.index(":")
+      if colon_idx && !entry.start_with?("U")
+        entry[(colon_idx + 1)..]
+      elsif (slash_idx = entry.index("/")) && entry.start_with?("U")
+        entry[(slash_idx + 1)..]
+      else
+        entry
       end
+    end
+
+    def project_names(hackatime_project)
+      split_project_list(hackatime_project).map { |entry| strip_entry_id(entry) }
     end
 
     def strip_hackatime_ids(hackatime_project)
       return nil if hackatime_project.blank?
-      hackatime_project.split(",").map do |entry|
-        entry = entry.strip
-        colon_idx = entry.index(":")
-        if colon_idx && !entry.start_with?("U")
-          entry[(colon_idx + 1)..]
-        elsif (slash_idx = entry.index("/")) && entry.start_with?("U")
-          entry[(slash_idx + 1)..]
-        else
-          entry
-        end
-      end.join(",")
+      join_project_list(project_names(hackatime_project))
     end
 
     private

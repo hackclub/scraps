@@ -16,7 +16,13 @@
 	} from '@lucide/svelte';
 	import { getUser } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
-	import { formatHours, validateGithubUrl, validatePlayableUrl } from '$lib/utils';
+	import {
+		formatHours,
+		joinHackatimeProjectList,
+		parseHackatimeProjectNames,
+		validateGithubUrl,
+		validatePlayableUrl
+	} from '$lib/utils';
 	import { t } from '$lib/i18n';
 
 	let { data } = $props();
@@ -118,14 +124,7 @@
 			isShippedUpdate = project?.status === 'shipped';
 			reviewerNotes = project?.reviewerNotes || '';
 			if (project?.hackatimeProject) {
-				selectedHackatimeNames = project.hackatimeProject
-					.split(',')
-					.map((p: string) => {
-						const trimmed = p.trim();
-						const slashIndex = trimmed.indexOf('/');
-						return slashIndex !== -1 ? trimmed.substring(slashIndex + 1) : trimmed;
-					})
-					.filter((p: string) => p.length > 0);
+				selectedHackatimeNames = parseHackatimeProjectNames(project.hackatimeProject);
 			}
 			fetchHackatimeProjects();
 		} catch (e) {
@@ -238,9 +237,9 @@
 
 		const hackatimeValue =
 			selectedHackatimeNames.length > 0
-				? selectedHackatimeNames
-						.map((name) => (userSlackId ? `${userSlackId}/${name}` : name))
-						.join(',')
+				? joinHackatimeProjectList(
+						selectedHackatimeNames.map((name) => (userSlackId ? `${userSlackId}/${name}` : name))
+					)
 				: null;
 
 		try {

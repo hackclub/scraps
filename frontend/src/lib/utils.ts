@@ -69,10 +69,20 @@ export function parseHackatimeProjectName(entry: string): string {
  */
 export function parseHackatimeProjectNames(hackatimeProject: string | null): string[] {
 	if (!hackatimeProject) return [];
-	return hackatimeProject
-		.split(',')
+	return splitHackatimeProjectList(hackatimeProject)
 		.map((p) => parseHackatimeProjectName(p))
 		.filter((p) => p.length > 0);
+}
+
+export function splitHackatimeProjectList(hackatimeProject: string | null): string[] {
+	if (!hackatimeProject) return [];
+	return (hackatimeProject.match(/(?:\\[\\,]|[^,])+/g) ?? [])
+		.map((p) => p.trim().replace(/\\([\\,])/g, '$1'))
+		.filter((p) => p.length > 0);
+}
+
+export function joinHackatimeProjectList(entries: string[]): string {
+	return entries.map((p) => p.replace(/[\\,]/g, (c) => `\\${c}`)).join(',');
 }
 
 export function validateGithubUrl(url: string | null | undefined): {

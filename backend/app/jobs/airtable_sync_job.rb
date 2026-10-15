@@ -163,8 +163,7 @@ class AirtableSyncJob < ApplicationJob
     # HC Auth top-level first name (stable-ish preferred name), never the mutable
     # Slack display name for the person.
     builder = project["builder_first_name"].presence || project["username"].presence || "The builder"
-    ht_names_list = HackatimeService.strip_hackatime_ids(project["hackatime_project"]).to_s
-                                    .split(",").map(&:strip).reject(&:empty?)
+    ht_names_list = HackatimeService.project_names(project["hackatime_project"])
     ht_names = ht_names_list.join(", ")
     submit_t = parse_time(project["submitted_at"]) || Time.now.utc
     submit_d = submit_t.strftime("%Y-%m-%d")

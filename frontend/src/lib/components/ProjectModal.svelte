@@ -3,7 +3,7 @@
 	import { dropzone } from '$lib/dropzone';
 	import { X, ChevronDown, Upload, Check } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
-	import { formatHours, parseHackatimeProjectName } from '$lib/utils';
+	import { formatHours, joinHackatimeProjectList, parseHackatimeProjectNames } from '$lib/utils';
 
 	interface Project {
 		id: number;
@@ -88,7 +88,7 @@
 			imagePreview = project.image;
 			error = null;
 			selectedHackatimeName = project.hackatimeProject
-				? parseHackatimeProjectName(project.hackatimeProject)
+				? (parseHackatimeProjectNames(project.hackatimeProject)[0] ?? '')
 				: null;
 			fetchHackatimeProjects();
 		}
@@ -159,7 +159,9 @@
 		loading = true;
 		error = null;
 
-		const hackatimeValue = selectedHackatimeName || null;
+		const hackatimeValue = selectedHackatimeName
+			? joinHackatimeProjectList([selectedHackatimeName])
+			: null;
 
 		try {
 			const response = await fetch(`${API_URL}/projects/${editedProject.id}`, {

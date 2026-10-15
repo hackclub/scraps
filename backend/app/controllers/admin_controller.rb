@@ -398,10 +398,9 @@ class AdminController < ApplicationController
     ht_breakdown = []
     if ht_user_id && project["hackatime_project"].present?
       begin
-        target_names = HackatimeService.strip_hackatime_ids(project["hackatime_project"])
-          .to_s.split(",").map(&:strip).reject(&:empty?)
+        target_names = HackatimeService.project_names(project["hackatime_project"])
         by_name = (HackatimeService.fetch_user_projects(ht_user_id) || [])
-          .group_by { |p| HackatimeService.strip_hackatime_ids(p["name"]) }
+          .group_by { |p| HackatimeService.strip_entry_id(p["name"]) }
         ht_breakdown = target_names.map do |name|
           secs = (by_name[name] || []).sum { |p| p["total_duration"].to_f }
           categories = (by_name[name] || []).map { |p| HackatimeService.fetch_category_seconds(ht_user_id, p["name"]) }
@@ -1316,7 +1315,7 @@ class AdminController < ApplicationController
     SQL
 
     render_json(projects.map { |p|
-      ht_projects = p["hackatime_project"]&.split(",")&.map(&:strip)&.reject(&:empty?) || []
+      ht_projects = HackatimeService.split_project_list(p["hackatime_project"])
       { name: p["name"], code_link: p["github_url"] || "", demo_link: p["playable_url"] || "", submitter: { slack_id: p["slack_id"] || "" }, hackatime_projects: ht_projects }
     })
   end

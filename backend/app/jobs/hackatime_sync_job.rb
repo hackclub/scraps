@@ -22,11 +22,10 @@ class HackatimeSyncJob < ApplicationJob
 
     # hackatime_project_str is stored as "<ht_user_id>:<name>,U123/<name>,...": reduce
     # it to the bare project names so we can match against Hackatime's own names.
-    target_names = HackatimeService.strip_hackatime_ids(hackatime_project_str)
-      .to_s.split(",").map(&:strip).reject(&:empty?).to_set
+    target_names = HackatimeService.project_names(hackatime_project_str).to_set
 
     total_seconds = ht_projects
-      .select { |p| target_names.include?(HackatimeService.strip_hackatime_ids(p["name"])) }
+      .select { |p| target_names.include?(HackatimeService.strip_entry_id(p["name"])) }
       .sum { |p| p["total_duration"].to_f }
 
     hours = (total_seconds / 3600.0 * 100).round / 100.0

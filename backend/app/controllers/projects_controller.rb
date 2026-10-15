@@ -525,13 +525,12 @@ class ProjectsController < ApplicationController
 
   def parse_hackatime_projects(str)
     return nil if str.blank?
-    cleaned = str.split(",").map(&:strip).reject(&:empty?).join(",")
-    cleaned.presence
+    HackatimeService.join_project_list(HackatimeService.split_project_list(str)).presence
   end
 
   def prefix_hackatime_ids(hackatime_project, email, slack_id)
     return nil if hackatime_project.blank?
-    names = hackatime_project.split(",").map(&:strip).reject(&:empty?)
+    names = HackatimeService.split_project_list(hackatime_project)
     return hackatime_project if names.empty?
 
     already_prefixed = names.all? do |n|
@@ -552,7 +551,7 @@ class ProjectsController < ApplicationController
         bare_name = (slash_idx && name.start_with?("U")) ? name[(slash_idx + 1)..] : name
         "#{ht_user[:user_id]}:#{bare_name}"
       end
-    end.join(",")
+    end.then { |entries| HackatimeService.join_project_list(entries) }
   end
 
   def project_row_to_h(p, strip_ids: false)

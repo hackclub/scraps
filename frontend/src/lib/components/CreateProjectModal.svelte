@@ -3,7 +3,7 @@
 	import { dropzone } from '$lib/dropzone';
 	import { X, ChevronDown, Upload, Check } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
-	import { formatHours } from '$lib/utils';
+	import { formatHours, joinHackatimeProjectList } from '$lib/utils';
 	import { tutorialProjectIdStore, type Project } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { t } from '$lib/i18n';
@@ -179,7 +179,7 @@
 
 		const hackatimeValue =
 			selectedHackatimeProjects.length > 0
-				? selectedHackatimeProjects.map((p) => p.name).join(',')
+				? joinHackatimeProjectList(selectedHackatimeProjects.map((p) => p.name))
 				: null;
 		const finalGithubUrl = githubUrl.trim() || selectedHackatimeProjects[0]?.repoUrl || null;
 

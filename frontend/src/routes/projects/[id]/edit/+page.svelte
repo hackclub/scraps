@@ -19,7 +19,8 @@
 		formatHours,
 		validateGithubUrl,
 		validatePlayableUrl,
-		parseHackatimeProjectNames
+		parseHackatimeProjectNames,
+		joinHackatimeProjectList
 	} from '$lib/utils';
 	import { invalidateAllStores } from '$lib/stores';
 	import { t } from '$lib/i18n';
@@ -240,7 +241,7 @@
 		error = null;
 
 		const hackatimeValue =
-			selectedHackatimeNames.length > 0 ? selectedHackatimeNames.join(',') : null;
+			selectedHackatimeNames.length > 0 ? joinHackatimeProjectList(selectedHackatimeNames) : null;
 
 		try {
 			const response = await fetch(`${API_URL}/projects/${project.id}`, {
