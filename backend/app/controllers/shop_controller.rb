@@ -1052,6 +1052,8 @@ class ShopController < ApplicationController
   end
 
   def item_base_h(item)
+    sized = ShopSizeService.sized?(item["size_variants"])
+    count = sized ? ShopSizeService.in_stock(item["size_variants"]).sum { |v| v["count"].to_i } : item["count"].to_i
     {
       id: item["id"].to_i,
       name: item["name"],
@@ -1059,7 +1061,7 @@ class ShopController < ApplicationController
       description: item["description"],
       price: item["price"].to_i,
       category: item["category"],
-      count: item["count"].to_i,
+      count: count,
       base_probability: item["base_probability"].to_f,
       base_upgrade_cost: item["base_upgrade_cost"]&.to_i,
       boost_amount: item["boost_amount"].to_f,
@@ -1069,7 +1071,7 @@ class ShopController < ApplicationController
       gachapon_only: truthy?(item["gachapon_only"]),
       consolation_prize: truthy?(item["consolation_prize"]),
       size_variants: parse_size_variants(item["size_variants"]).select { |v| v["count"].to_i > 0 },
-      has_sizes: ShopSizeService.sized?(item["size_variants"]),
+      has_sizes: sized,
       created_at: item["created_at"],
       updated_at: item["updated_at"]
     }
