@@ -89,6 +89,7 @@
 	let order = $state<Order | null>(null);
 	let loading = $state(true);
 	let notFound = $state(false);
+	let ordersListUrl = $state('/admin/orders');
 	let actionLoading = $state(false);
 	let trackingInput = $state('');
 	let notesInput = $state('');
@@ -113,6 +114,9 @@
 	);
 
 	onMount(async () => {
+		try {
+			ordersListUrl = `/admin/orders${localStorage.getItem('admin-orders-query') ?? ''}`;
+		} catch {}
 		user = await getUser();
 		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
 			goto('/dashboard');
@@ -295,7 +299,7 @@
 			}
 			if (response.ok) {
 				showToast('order deleted', 'success');
-				goto('/admin/orders');
+				goto(ordersListUrl);
 			} else {
 				const err = (json && (json.error || json.message)) || text || 'failed to delete';
 				showToast(err, 'error');
@@ -360,7 +364,7 @@
 
 <div class="mx-auto max-w-3xl px-6 pt-24 pb-24 md:px-12">
 	<a
-		href="/admin/orders"
+		href={ordersListUrl}
 		class="mb-6 inline-flex items-center gap-2 font-bold text-gray-500 hover:underline"
 	>
 		<ArrowLeft size={18} />

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import {
 		Check,
 		X,
@@ -87,6 +88,62 @@
 	let filterUser = $state('');
 	let filterRegion = $state<'' | 'us' | 'intl'>('');
 	let hideConsolations = $state(false);
+	let urlReady = $state(false);
+	let userSearch = $state('');
+	let userDropdownOpen = $state(false);
+
+	const FILTERS_KEY = 'admin-orders-query';
+
+	function loadFiltersFromUrl() {
+		const p = page.url.searchParams;
+		const f = p.get('filter');
+		if (f === 'all' || f === 'pending' || f === 'fulfilled' || f === 'cancelled') filter = f;
+		searchQuery = p.get('q') ?? '';
+		dateFrom = p.get('from') ?? '';
+		dateTo = p.get('to') ?? '';
+		filterItem = p.get('item') ?? '';
+		filterUser = p.get('user') ?? '';
+		const r = p.get('region');
+		filterRegion = r === 'us' || r === 'intl' ? r : '';
+		hideConsolations = p.get('noConsolations') === '1';
+	}
+
+	$effect(() => {
+		const p = new URLSearchParams();
+		if (filter !== 'pending') p.set('filter', filter);
+		if (searchQuery) p.set('q', searchQuery);
+		if (dateFrom) p.set('from', dateFrom);
+		if (dateTo) p.set('to', dateTo);
+		if (filterItem) p.set('item', filterItem);
+		if (filterUser) p.set('user', filterUser);
+		if (filterRegion) p.set('region', filterRegion);
+		if (hideConsolations) p.set('noConsolations', '1');
+		if (!urlReady) return;
+		const qs = p.toString();
+		const search = qs ? `?${qs}` : '';
+		try {
+			localStorage.setItem(FILTERS_KEY, search);
+		} catch {}
+		if (search !== page.url.search) {
+			replaceState(`${page.url.pathname}${search}`, page.state);
+		}
+	});
+
+	function openOrder(e: MouseEvent, id: number) {
+		const url = `/admin/orders/${id}`;
+		if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) {
+			e.preventDefault();
+			window.open(url, '_blank');
+			return;
+		}
+		if (e.button === 0) goto(url);
+	}
+
+	function selectUser(username: string) {
+		filterUser = username;
+		userSearch = '';
+		userDropdownOpen = false;
+	}
 
 	let uniqueItems = $derived(
 		[...new Map(orders.map((o) => [o.itemName, o.itemName])).values()].sort()
@@ -94,6 +151,11 @@
 	let uniqueUsers = $derived(
 		[...new Map(orders.map((o) => [o.userId, o.username])).values()].sort()
 	);
+	let matchingUsers = $derived.by(() => {
+		const q = userSearch.trim().toLowerCase().replace(/^@/, '');
+		const list = q ? uniqueUsers.filter((u) => u.toLowerCase().includes(q)) : uniqueUsers;
+		return list.slice(0, 50);
+	});
 
 	function isInactive(o: Order) {
 		return o.status === 'cancelled' || o.status === 'deleted';
@@ -173,6 +235,8 @@
 	let bannedOrders = $derived(filteredOrders.filter((o) => o.hackatimeBanned));
 
 	onMount(async () => {
+		loadFiltersFromUrl();
+		urlReady = true;
 		user = await getUser();
 		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
 			goto('/dashboard');
@@ -326,18 +390,50 @@
 			</div>
 			<div class="flex flex-col">
 				<label for="filter-user" class="mb-1 text-xs font-bold text-gray-500 uppercase">user</label>
-				<select
-					id="filter-user"
-					bind:value={filterUser}
-					class="cursor-pointer rounded-xl border-4 border-black px-3 py-2 font-bold transition-all duration-200 focus:border-dashed focus:outline-none {filterUser
-						? 'bg-black text-white'
-						: ''}"
-				>
-					<option value="">all users</option>
-					{#each uniqueUsers as username}
-						<option value={username}>@{username}</option>
-					{/each}
-				</select>
+				<div class="relative">
+					{#if filterUser}
+						<button
+							onclick={() => selectUser('')}
+							class="flex cursor-pointer items-center gap-2 rounded-xl border-4 border-black bg-black px-3 py-2 font-bold text-white"
+							title="clear user"
+						>
+							@{filterUser}
+							<X size={16} />
+						</button>
+					{:else}
+						<input
+							id="filter-user"
+							type="text"
+							placeholder="all users"
+							autocomplete="off"
+							bind:value={userSearch}
+							onfocus={() => (userDropdownOpen = true)}
+							onblur={() => setTimeout(() => (userDropdownOpen = false), 150)}
+							onkeydown={(e) => {
+								if (e.key === 'Enter' && matchingUsers.length > 0) selectUser(matchingUsers[0]);
+								if (e.key === 'Escape') userDropdownOpen = false;
+							}}
+							class="w-40 rounded-xl border-4 border-black px-3 py-2 font-bold transition-all duration-200 placeholder:text-gray-400 focus:border-dashed focus:outline-none"
+						/>
+						{#if userDropdownOpen}
+							<div
+								class="absolute top-full left-0 z-20 mt-1 max-h-64 w-56 overflow-y-auto rounded-xl border-4 border-black bg-white"
+							>
+								{#each matchingUsers as username}
+									<button
+										onmousedown={(e) => e.preventDefault()}
+										onclick={() => selectUser(username)}
+										class="block w-full cursor-pointer truncate px-3 py-1.5 text-left font-bold hover:bg-black/5"
+									>
+										@{username}
+									</button>
+								{:else}
+									<p class="px-3 py-1.5 text-sm text-gray-400">no users found</p>
+								{/each}
+							</div>
+						{/if}
+					{/if}
+				</div>
 			</div>
 			<div class="flex flex-col">
 				<label for="filter-region" class="mb-1 text-xs font-bold text-gray-500 uppercase"
@@ -411,7 +507,8 @@
 			{#each mainOrders as order}
 				{@const StatusIcon = getStatusIcon(order.status)}
 				<button
-					onclick={() => goto(`/admin/orders/${order.id}`)}
+					onclick={(e) => openOrder(e, order.id)}
+					onauxclick={(e) => openOrder(e, order.id)}
 					class="flex w-full cursor-pointer items-center gap-4 rounded-2xl border-4 border-black p-4 text-left transition-colors hover:bg-black/5 {order.isFulfilled
 						? 'bg-green-50'
 						: 'bg-white'}"
@@ -439,6 +536,7 @@
 							<a
 								href="/admin/users/{order.userId}"
 								onclick={(e) => e.stopPropagation()}
+								onauxclick={(e) => e.stopPropagation()}
 								class="truncate hover:text-black hover:underline"
 							>
 								@{order.username}
@@ -497,7 +595,8 @@
 				<div class="flex flex-col gap-3">
 					{#each bannedOrders as order}
 						<button
-							onclick={() => goto(`/admin/orders/${order.id}`)}
+							onclick={(e) => openOrder(e, order.id)}
+							onauxclick={(e) => openOrder(e, order.id)}
 							class="flex w-full cursor-pointer items-center gap-4 rounded-2xl border-4 border-red-400 bg-red-50 p-4 text-left hover:bg-red-100"
 						>
 							<img
@@ -521,6 +620,7 @@
 									<a
 										href="/admin/users/{order.userId}"
 										onclick={(e) => e.stopPropagation()}
+										onauxclick={(e) => e.stopPropagation()}
 										class="truncate hover:text-red-900 hover:underline"
 									>
 										@{order.username}
