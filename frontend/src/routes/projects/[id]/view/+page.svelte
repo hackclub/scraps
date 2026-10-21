@@ -13,7 +13,7 @@
 	} from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
 	import { formatHours } from '$lib/utils';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
 	import { t } from '$lib/i18n';
@@ -49,7 +49,7 @@
 	onMount(async () => {
 		const user = await getUser();
 		if (!user) {
-			window.location.href = '/';
+			requireLogin();
 			return;
 		}
 

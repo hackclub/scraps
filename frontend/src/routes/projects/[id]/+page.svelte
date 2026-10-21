@@ -22,7 +22,7 @@
 		Trash2,
 		Bot
 	} from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { formatHours } from '$lib/utils';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
@@ -90,7 +90,7 @@
 	onMount(async () => {
 		const user = await getUser();
 		if (!user) {
-			goto('/');
+			requireLogin();
 			return;
 		}
 		actuallyAdmin = user.role === 'admin' || user.role === 'creator';

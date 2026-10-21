@@ -17,6 +17,26 @@ export const userScrapsStore = writable<number>(0);
 let cachedUser: User | null | undefined = undefined;
 let fetchPromise: Promise<User | null> | null = null;
 
+export function safeNextPath(raw: string | null | undefined): string | null {
+	if (!raw || !raw.startsWith('/') || raw.startsWith('//')) return null;
+	if (/[\p{Cc}\\]/u.test(raw) || raw.startsWith('/auth/')) return null;
+	return raw;
+}
+
+export function getNextPath(): string | null {
+	try {
+		return safeNextPath(new URLSearchParams(window.location.search).get('next'));
+	} catch {
+		return null;
+	}
+}
+
+export function requireLogin() {
+	const here = window.location.pathname + window.location.search + window.location.hash;
+	const next = safeNextPath(here);
+	window.location.replace(next && next !== '/' ? `/?next=${encodeURIComponent(next)}` : '/');
+}
+
 export function login() {
 	let ref: string | null = null;
 	let source: string | null = null;
@@ -31,6 +51,8 @@ export function login() {
 	const qs = new URLSearchParams();
 	if (ref) qs.set('r', ref);
 	if (source) qs.set('s', source);
+	const next = getNextPath();
+	if (next) qs.set('next', next);
 	const query = qs.toString();
 	window.location.href = `${API_URL}/auth/login${query ? `?${query}` : ''}`;
 }

@@ -21,7 +21,7 @@
 	} from '@lucide/svelte';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 	import Markdown from '$lib/components/Markdown.svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { formatHours, reviewerScoreMultiplier } from '$lib/utils';
 	import { t } from '$lib/i18n';
@@ -233,7 +233,11 @@
 
 	onMount(async () => {
 		user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if ((user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
 			goto('/dashboard');
 			return;
 		}
@@ -323,16 +327,20 @@
 			error = 'Reviewer score must be between 1 and 3';
 			return;
 		}
-		confirmAction = action;
+		if (action === 'permanently_rejected') {
+			confirmAction = action;
+			return;
+		}
+		submitReview(action);
 	}
 
 	function cancelConfirmation() {
 		confirmAction = null;
 	}
 
-	async function submitReview() {
-		if (!confirmAction) return;
-		if (!feedbackForAuthor.trim() && confirmAction !== 'permanently_rejected') {
+	async function submitReview(action = confirmAction) {
+		if (!action) return;
+		if (!feedbackForAuthor.trim() && action !== 'permanently_rejected') {
 			error = 'Feedback for author is required';
 			return;
 		}
@@ -340,7 +348,7 @@
 			error = 'Internal justification is required';
 			return;
 		}
-		if (confirmAction === 'permanently_rejected' && !rejectionReason.trim()) {
+		if (action === 'permanently_rejected' && !rejectionReason.trim()) {
 			error = 'Reason shown to user is required for permanent rejection';
 			return;
 		}
@@ -354,16 +362,16 @@
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
 				body: JSON.stringify({
-					decision: confirmAction,
+					decision: action,
 					feedbackForAuthor,
 					internalJustification: internalJustification || undefined,
 					hoursOverride: hoursOverride !== undefined ? hoursOverride : undefined,
-					reviewerScore: confirmAction === 'approved' ? reviewerScore : undefined,
+					reviewerScore: action === 'approved' ? reviewerScore : undefined,
 					isReship,
 					userInternalNotes: userInternalNotes || undefined,
 					projectInternalNotes: projectInternalNotes,
 					rejectionReason:
-						confirmAction === 'permanently_rejected' && rejectionReason.trim()
+						action === 'permanently_rejected' && rejectionReason.trim()
 							? rejectionReason.trim()
 							: undefined
 				})
@@ -1215,7 +1223,7 @@
 					{$t.common.cancel}
 				</button>
 				<button
-					onclick={submitReview}
+					onclick={() => submitReview()}
 					disabled={submitting ||
 						(confirmAction === 'permanently_rejected' && !rejectionReason.trim())}
 					class="flex-1 cursor-pointer rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50 {confirmAction ===

@@ -19,7 +19,7 @@
 		MessageSquare,
 		Link
 	} from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { t } from '$lib/i18n';
 	import { formatHours } from '$lib/utils';
@@ -223,7 +223,11 @@
 
 	onMount(async () => {
 		const user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if ((user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
 			blocked = true;
 			return;
 		}

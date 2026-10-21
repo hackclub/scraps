@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import {
 		ArrowLeft,
 		Package,
@@ -12,7 +11,7 @@
 		Spool
 	} from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
 
@@ -106,7 +105,7 @@
 	onMount(async () => {
 		const user = await getUser();
 		if (!user) {
-			goto('/');
+			requireLogin();
 			return;
 		}
 		await fetchOrders();

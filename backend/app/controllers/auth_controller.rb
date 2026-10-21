@@ -17,6 +17,7 @@ class AuthController < ApplicationController
   end
 
   OAUTH_STATE_COOKIE = "oauth_state"
+  POST_LOGIN_REDIRECT_COOKIE = "post_login_redirect"
 
   def login
     nonce = SecureRandom.hex(16)
@@ -28,6 +29,19 @@ class AuthController < ApplicationController
       path: "/",
       expires: 10.minutes.from_now
     }
+    next_path = safe_next_path(params[:next])
+    if next_path
+      cookies[POST_LOGIN_REDIRECT_COOKIE] = {
+        value: next_path,
+        httponly: true,
+        secure: !Rails.env.development?,
+        same_site: :lax,
+        path: "/",
+        expires: 10.minutes.from_now
+      }
+    else
+      cookies.delete(POST_LOGIN_REDIRECT_COOKIE, path: "/")
+    end
     redirect_to authorization_url(nonce, params[:r], params[:s]), allow_other_host: true
   end
 
@@ -37,6 +51,8 @@ class AuthController < ApplicationController
 
     expected_nonce = cookies[OAUTH_STATE_COOKIE].to_s
     cookies.delete(OAUTH_STATE_COOKIE, path: "/")
+    next_path = safe_next_path(cookies[POST_LOGIN_REDIRECT_COOKIE])
+    cookies.delete(POST_LOGIN_REDIRECT_COOKIE, path: "/")
     state_nonce, state_rest = params[:state].to_s.split(".", 2)
     unless expected_nonce.present? && state_nonce.present? && ActiveSupport::SecurityUtils.secure_compare(expected_nonce, state_nonce)
       return redirect_to "#{frontend_url}/auth/error?reason=auth-failed", allow_other_host: true
@@ -137,7 +153,7 @@ class AuthController < ApplicationController
     cookie_opts[:secure] = true unless is_dev
     cookies["session"] = cookie_opts
 
-    redirect_url = "#{frontend_url}/dashboard"
+    redirect_url = ERB::Util.html_escape("#{frontend_url}#{next_path || '/dashboard'}")
     render html: "<!DOCTYPE html><html><head><meta http-equiv='refresh' content='0;url=#{redirect_url}'></head><body>Redirecting...</body></html>".html_safe,
            content_type: "text/html"
   end
@@ -180,6 +196,14 @@ class AuthController < ApplicationController
   end
 
   private
+
+  def safe_next_path(raw)
+    path = raw.to_s
+    return nil if path.length > 2000
+    return nil unless path.start_with?("/") && !path.start_with?("//")
+    return nil if path.match?(/[\x00-\x1f\\]/) || path.start_with?("/auth/")
+    path
+  end
 
   def authorization_url(nonce, referral_code = nil, signup_source = nil)
     query = {

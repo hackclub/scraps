@@ -621,7 +621,21 @@ class AdminController < ApplicationController
       hackatime_banned = false
     end
 
+    other_orders = conn.select_all(<<~SQL).to_a
+      SELECT so.id, so.quantity, so.total_price, so.status, so.order_type, so.size, so.is_fulfilled,
+             so.tracking_number, so.shipping_address, so.created_at,
+             si.name AS item_name, si.image AS item_image
+      FROM shop_orders so
+      INNER JOIN shop_items si ON si.id = so.shop_item_id
+      WHERE so.user_id = #{r['user_id'].to_i} AND so.id <> #{r['id'].to_i}
+        AND so.status NOT IN ('unclaimed', 'deleted')
+      ORDER BY so.is_fulfilled ASC, so.created_at DESC
+    SQL
+
     render_json({
+      other_orders: other_orders.map { |o|
+        { id: o["id"].to_i, quantity: o["quantity"].to_i, total_price: o["total_price"].to_i, status: o["status"], order_type: o["order_type"], size: o["size"], is_fulfilled: o["is_fulfilled"], tracking_number: o["tracking_number"], shipping_address: o["shipping_address"], created_at: o["created_at"], item_name: o["item_name"], item_image: o["item_image"] }
+      },
       id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i,
       status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"],
       tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], fulfilled_at: r["fulfilled_at"], fulfilled_by_id: r["fulfilled_by_id"]&.to_i, fulfilled_by_username: r["fulfilled_by_username"], shipping_address: r["shipping_address"], phone: r["phone"],

@@ -20,7 +20,7 @@
 		EyeOff,
 		Link
 	} from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { t } from '$lib/i18n';
 	import { isInfiniteStock, stockLabel, computeRollThreshold } from '$lib/utils';
@@ -499,7 +499,11 @@
 
 	onMount(async () => {
 		user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if ((user.role !== 'admin' && user.role !== 'creator')) {
 			goto('/dashboard');
 			return;
 		}

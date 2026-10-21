@@ -13,7 +13,7 @@
 		Search,
 		ShieldAlert
 	} from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { showToast } from '$lib/stores';
 	import { t } from '$lib/i18n';
@@ -238,7 +238,11 @@
 		loadFiltersFromUrl();
 		urlReady = true;
 		user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if ((user.role !== 'admin' && user.role !== 'creator')) {
 			goto('/dashboard');
 			return;
 		}

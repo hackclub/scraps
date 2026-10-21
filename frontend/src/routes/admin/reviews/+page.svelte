@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { ChevronLeft, ChevronRight, ArrowUpDown, ArrowLeft } from '@lucide/svelte';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { formatHours } from '$lib/utils';
 	import { t } from '$lib/i18n';
@@ -67,7 +67,11 @@
 
 	onMount(async () => {
 		user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if ((user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
 			goto('/dashboard');
 			return;
 		}

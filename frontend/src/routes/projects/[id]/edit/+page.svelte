@@ -13,7 +13,7 @@
 		Trash2,
 		MessageSquare
 	} from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import {
 		formatHours,
@@ -105,7 +105,7 @@
 	onMount(async () => {
 		const user = await getUser();
 		if (!user) {
-			goto('/');
+			requireLogin();
 			return;
 		}
 

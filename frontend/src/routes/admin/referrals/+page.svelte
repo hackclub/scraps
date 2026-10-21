@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ArrowRight } from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 
 	interface Person {
@@ -28,7 +28,11 @@
 
 	onMount(async () => {
 		const user = await getUser();
-		if (!user || !['reviewer', 'admin', 'creator'].includes(user.role)) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if (!['reviewer', 'admin', 'creator'].includes(user.role)) {
 			goto('/dashboard');
 			return;
 		}

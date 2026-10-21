@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { Origami, Pause, Play } from '@lucide/svelte';
 	import Superscript from '$lib/components/Superscript.svelte';
-	import { login, getUser, captureReferralCode } from '$lib/auth-client';
+	import { login, getUser, captureReferralCode, getNextPath } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 	import { formatHours } from '$lib/utils';
 	import { t } from '$lib/i18n';
@@ -21,7 +21,7 @@
 
 	async function handleLogin() {
 		if (isLoggedIn) {
-			goto('/dashboard');
+			goto(getNextPath() ?? '/dashboard');
 			return;
 		}
 

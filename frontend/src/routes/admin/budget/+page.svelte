@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { RefreshCw } from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
 
 	interface Route {
@@ -68,7 +68,11 @@
 
 	onMount(async () => {
 		const user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if ((user.role !== 'admin' && user.role !== 'creator')) {
 			goto('/dashboard');
 			return;
 		}

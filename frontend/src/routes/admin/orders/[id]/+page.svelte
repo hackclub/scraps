@@ -16,7 +16,7 @@
 		Mail,
 		Undo2
 	} from '@lucide/svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL } from '$lib/config';
 	import { showToast } from '$lib/stores';
 	import { t } from '$lib/i18n';
@@ -59,6 +59,22 @@
 		username: string;
 		slackId: string | null;
 		hackatimeBanned: boolean;
+		otherOrders: OtherOrder[];
+	}
+
+	interface OtherOrder {
+		id: number;
+		quantity: number;
+		totalPrice: number;
+		status: string;
+		orderType: string;
+		size: string | null;
+		isFulfilled: boolean;
+		trackingNumber: string | null;
+		shippingAddress: string | null;
+		createdAt: string;
+		itemName: string;
+		itemImage: string;
 	}
 
 	function parseShippingAddress(addr: string | null): ShippingAddress | null {
@@ -68,6 +84,14 @@
 		} catch {
 			return null;
 		}
+	}
+
+	function addressKey(raw: string | null): string {
+		const a = parseShippingAddress(raw);
+		if (!a) return '';
+		return [a.address1, a.address2, a.city, a.state, a.postalCode, a.country]
+			.map((v) => (v ?? '').trim().toLowerCase())
+			.join('|');
 	}
 
 	function formatName(addr: ShippingAddress): string {
@@ -112,23 +136,90 @@
 	let canUndo = $derived(
 		!!order && ['purchase', 'luck_win'].includes(order.orderType) && !isInactive
 	);
+	let authorized = $state(false);
+	let bulkLoading = $state(false);
+	let fulfillingId = $state<number | null>(null);
+
+	function isOpen(o: { isFulfilled: boolean; status: string }) {
+		return !o.isFulfilled && !['cancelled', 'deleted'].includes(o.status);
+	}
+
+	let openOthers = $derived(order ? order.otherOrders.filter(isOpen) : []);
+	let openCount = $derived(openOthers.length + (order && isOpen(order) ? 1 : 0));
 
 	onMount(async () => {
 		try {
 			ordersListUrl = `/admin/orders${localStorage.getItem('admin-orders-query') ?? ''}`;
 		} catch {}
 		user = await getUser();
-		if (!user || (user.role !== 'admin' && user.role !== 'creator')) {
+		if (!user) {
+			requireLogin();
+			return;
+		}
+		if (user.role !== 'admin' && user.role !== 'creator') {
 			goto('/dashboard');
 			return;
 		}
-		await fetchOrder();
+		authorized = true;
 	});
 
-	async function fetchOrder() {
-		loading = true;
+	$effect(() => {
+		if (authorized && orderId) fetchOrder(orderId);
+	});
+
+	async function fulfillOther(other: OtherOrder) {
+		const response = await fetch(`${API_URL}/admin/orders/${other.id}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			credentials: 'include',
+			body: JSON.stringify({ isFulfilled: true, trackingNumber: trackingInput.trim() || null })
+		});
+		if (!response.ok) {
+			const data = await response.json().catch(() => ({}));
+			throw new Error(data.error || `failed to fulfill order #${other.id}`);
+		}
+		other.isFulfilled = true;
+		other.trackingNumber = trackingInput.trim() || null;
+	}
+
+	async function fulfillOne(other: OtherOrder) {
+		fulfillingId = other.id;
 		try {
-			const response = await fetch(`${API_URL}/admin/orders/${orderId}`, {
+			await fulfillOther(other);
+			showToast(`order #${other.id} marked as fulfilled`, 'success');
+		} catch (e) {
+			showToast((e as Error).message, 'error');
+		} finally {
+			fulfillingId = null;
+		}
+	}
+
+	async function fulfillAll() {
+		if (!order) return;
+		bulkLoading = true;
+		let done = 0;
+		try {
+			if (isOpen(order)) {
+				await toggleFulfilled();
+				if (order.isFulfilled) done++;
+			}
+			for (const other of openOthers) {
+				await fulfillOther(other);
+				done++;
+			}
+			showToast(`fulfilled ${done} order${done === 1 ? '' : 's'}`, 'success');
+		} catch (e) {
+			showToast(`${(e as Error).message} (${done} fulfilled before that)`, 'error');
+		} finally {
+			bulkLoading = false;
+		}
+	}
+
+	async function fetchOrder(id: string) {
+		loading = true;
+		notFound = false;
+		try {
+			const response = await fetch(`${API_URL}/admin/orders/${id}`, {
 				credentials: 'include'
 			});
 			if (response.ok) {
@@ -269,7 +360,7 @@
 					'success'
 				);
 				closeUndo();
-				await fetchOrder();
+				await fetchOrder(String(order.id));
 			} else {
 				showToast(json?.error || 'failed to undo', 'error');
 			}
@@ -362,7 +453,7 @@
 	<title>order #{orderId} - {$t.nav.admin} - scraps</title>
 </svelte:head>
 
-<div class="mx-auto max-w-3xl px-6 pt-24 pb-24 md:px-12">
+<div class="mx-auto max-w-6xl px-6 pt-24 pb-24 md:px-12">
 	<a
 		href={ordersListUrl}
 		class="mb-6 inline-flex items-center gap-2 font-bold text-gray-500 hover:underline"
@@ -377,6 +468,7 @@
 		<div class="py-12 text-center text-gray-500">order not found</div>
 	{:else}
 		{@const StatusIcon = getStatusIcon(order.status)}
+		<div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
 		<div
 			class="overflow-hidden rounded-3xl border-4 {order.hackatimeBanned
 				? 'border-red-500 bg-red-50'
@@ -652,6 +744,92 @@
 					</div>
 				</div>
 			</div>
+		</div>
+
+		<aside
+			class="rounded-3xl border-4 border-black bg-white p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] lg:sticky lg:top-24"
+		>
+			<h2 class="mb-1 text-lg font-bold">other orders from @{order.username}</h2>
+			<p class="mb-3 text-xs text-gray-500">
+				{openCount} unfulfilled in total, including this one{trackingInput.trim()
+					? `. fulfilling uses tracking # ${trackingInput.trim()}`
+					: ''}
+			</p>
+			{#if openCount > 1}
+				<button
+					onclick={fulfillAll}
+					disabled={bulkLoading || actionLoading}
+					class="mb-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-green-500 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					<Check size={16} />
+					{bulkLoading ? 'fulfilling...' : `fulfill all ${openCount}`}
+				</button>
+			{/if}
+			{#if order.otherOrders.length === 0}
+				<p class="text-sm text-gray-400">no other orders</p>
+			{:else}
+				<ul class="flex flex-col gap-2">
+					{#each order.otherOrders as other (other.id)}
+						{@const OtherIcon = getStatusIcon(other.status)}
+						<li
+							class="rounded-xl border-2 p-2 {isOpen(other)
+								? 'border-black'
+								: 'border-gray-200 opacity-60'}"
+						>
+							<div class="flex items-center gap-2">
+								<img
+									src={other.itemImage}
+									alt={other.itemName}
+									class="h-10 w-10 shrink-0 rounded-lg border-2 border-black object-cover"
+								/>
+								<a href="/admin/orders/{other.id}" class="min-w-0 flex-1 hover:underline">
+									<p class="truncate text-sm font-bold">{other.itemName}</p>
+									<p class="text-xs text-gray-500">
+										#{other.id}{other.quantity > 1 ? ` • ×${other.quantity}` : ''}{other.size
+											? ` • size ${other.size}`
+											: ''}
+									</p>
+								</a>
+							</div>
+							<div class="mt-2 flex flex-wrap items-center gap-1">
+								<span
+									class="inline-flex items-center gap-1 rounded-full border-2 px-2 py-0.5 text-xs font-bold {getStatusColor(
+										other.status
+									)}"
+								>
+									<OtherIcon size={12} />
+									{other.status}
+								</span>
+								{#if other.isFulfilled}
+									<span
+										class="inline-flex items-center gap-1 rounded-full border-2 border-green-600 bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700"
+									>
+										<Check size={12} />
+										fulfilled
+									</span>
+								{/if}
+								{#if isOpen(other) && addressKey(other.shippingAddress) !== addressKey(order.shippingAddress)}
+									<span
+										class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-700"
+									>
+										different address
+									</span>
+								{/if}
+								{#if isOpen(other)}
+									<button
+										onclick={() => fulfillOne(other)}
+										disabled={bulkLoading || fulfillingId === other.id}
+										class="ml-auto cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										{fulfillingId === other.id ? '...' : $t.admin.fulfill}
+									</button>
+								{/if}
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</aside>
 		</div>
 	{/if}
 </div>

@@ -4,7 +4,7 @@
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
 	import NewsCarousel from '$lib/components/NewsCarousel.svelte';
 	import CreateProjectModal from '$lib/components/CreateProjectModal.svelte';
-	import { getUser } from '$lib/auth-client';
+	import { getUser, requireLogin } from '$lib/auth-client';
 	import { projectsStore, fetchProjects, addProject } from '$lib/stores';
 	import { formatHours } from '$lib/utils';
 	import { t } from '$lib/i18n';
@@ -30,7 +30,7 @@
 	onMount(async () => {
 		const userData = await getUser();
 		if (!userData) {
-			goto('/');
+			requireLogin();
 			return;
 		}
 		user = userData;
