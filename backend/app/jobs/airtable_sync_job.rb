@@ -175,6 +175,7 @@ class AirtableSyncJob < ApplicationJob
       end
     prior_t = parse_time(project["prior_reviewed_at"])
     prior_d = prior_t&.strftime("%Y-%m-%d")
+    program_start = HackatimeService::START_DATE_OVERRIDES[project["slack_id"]] || PROGRAM_START
 
     time_summary =
       if (raw - approved).abs < 0.05
@@ -190,11 +191,11 @@ class AirtableSyncJob < ApplicationJob
     elsif reship
       submission_line = "Reshipped on #{submit_d}."
       range_line = "This ship covers work up to #{submit_d}."
-      range_start = Time.parse("#{PROGRAM_START}T00:00:00Z")
+      range_start = Time.parse("#{program_start}T00:00:00Z")
     else
       submission_line = "Submitted on #{submit_d}."
-      range_line = "This covers work from #{PROGRAM_START} to #{submit_d}."
-      range_start = Time.parse("#{PROGRAM_START}T00:00:00Z")
+      range_line = "This covers work from #{program_start} to #{submit_d}."
+      range_start = Time.parse("#{program_start}T00:00:00Z")
     end
 
     ht_line = ht_names.present? ? "Hackatime projects submitted: #{ht_names}. #{range_line}" : range_line

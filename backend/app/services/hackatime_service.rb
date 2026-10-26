@@ -1,6 +1,7 @@
 module HackatimeService
   HACKATIME_API = "https://hackatime.hackclub.com/api/admin/v1"
   SCRAPS_START_DATE = "2026-08-01"
+  START_DATE_OVERRIDES = { "U09KEHH8LCV" => "2026-05-01" }.freeze
 
   # In-memory caches shared across every request/job in the process. Entries
   # expire after CACHE_TTL so a batch pass stays warm (jobs run within seconds of
@@ -9,12 +10,13 @@ module HackatimeService
   @user_cache = {}
   @projects_cache = {}
   @category_cache = {}
+  @override_ids = {}
   HEARTBEAT_PAGE = 5000
   HEARTBEAT_MAX = 100_000
   HEARTBEAT_TIMEOUT = 120
 
   class << self
-    attr_accessor :user_cache, :projects_cache, :category_cache
+    attr_accessor :user_cache, :projects_cache, :category_cache, :override_ids
 
     def clear_caches
       @user_cache = {}
@@ -78,6 +80,13 @@ module HackatimeService
       fetch_user_info(hackatime_user_id.to_i)
     end
 
+    def start_date_for(user_id)
+      START_DATE_OVERRIDES.each do |slack_id, date|
+        return date if override_hackatime_id(slack_id) == user_id.to_i
+      end
+      SCRAPS_START_DATE
+    end
+
     def fetch_user_projects(user_id)
       if (hit = cache_get(@projects_cache, user_id))
         return hit[:value]
@@ -85,7 +94,7 @@ module HackatimeService
 
       begin
         resp = HTTParty.get(
-          "#{HACKATIME_API}/user/projects?user_id=#{user_id}&start_date=#{SCRAPS_START_DATE}",
+          "#{HACKATIME_API}/user/projects?user_id=#{user_id}&start_date=#{start_date_for(user_id)}",
           headers: auth_headers
         )
         return nil unless resp.success?
@@ -107,7 +116,7 @@ module HackatimeService
         resp = HTTParty.get(
           "#{HACKATIME_API}/user/heartbeats",
           headers: auth_headers,
-          query: { user_id: user_id, start_date: SCRAPS_START_DATE, project: project_name, limit: HEARTBEAT_PAGE, offset: offset }
+          query: { user_id: user_id, start_date: start_date_for(user_id), project: project_name, limit: HEARTBEAT_PAGE, offset: offset }
         )
         return nil unless resp.success?
         page = resp.parsed_response["heartbeats"] || []
@@ -172,6 +181,23 @@ module HackatimeService
         "Content-Type" => "application/json",
         "Accept" => "application/json"
       }
+    end
+
+    def override_hackatime_id(slack_id)
+      return @override_ids[slack_id] if @override_ids[slack_id]
+      id = ActiveRecord::Base.connection.select_value(
+        "SELECT hackatime_user_id FROM users WHERE slack_id = #{ActiveRecord::Base.connection.quote(slack_id)} AND hackatime_user_id IS NOT NULL LIMIT 1"
+      )&.to_i
+      if id.nil?
+        resp = HTTParty.post("#{HACKATIME_API}/user/search_fuzzy", headers: auth_headers, body: { query: slack_id }.to_json)
+        users = resp.success? ? (resp.parsed_response["users"] || []) : []
+        id = users[0]["id"]&.to_i if users.length == 1
+      end
+      @override_ids[slack_id] = id if id
+      id
+    rescue StandardError => e
+      Rails.logger.warn("[HACKATIME] override lookup failed: #{e.message}")
+      nil
     end
 
     def fetch_user_info(user_id)
