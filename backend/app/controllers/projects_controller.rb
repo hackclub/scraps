@@ -1,8 +1,7 @@
 class ProjectsController < ApplicationController
   ALLOWED_IMAGE_DOMAIN = "cdn.hackclub.com"
 
-  # Admin-gated for now: see routes.rb / Navbar.svelte for the matching frontend gate.
-  before_action :require_admin_role, only: [:explore]
+  before_action :require_auth, :require_explore_enabled, only: [:explore]
 
   def explore
     page = [params[:page].to_i, 1].max
@@ -582,5 +581,11 @@ class ProjectsController < ApplicationController
       created_at: p["created_at"],
       updated_at: p["updated_at"]
     }
+  end
+
+  def require_explore_enabled
+    return if SiteSetting.enabled?(:explore)
+    return if %w[admin creator].include?(current_user&.role)
+    render_json({ error: "Explore is not available yet" }, status: :forbidden)
   end
 end

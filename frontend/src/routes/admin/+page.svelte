@@ -17,7 +17,8 @@
 		Calculator,
 		SearchCheck,
 		MessageSquare,
-		Link
+		Link,
+		Compass
 	} from '@lucide/svelte';
 	import { getUser, requireLogin } from '$lib/auth-client';
 	import { API_URL, serverConfig } from '$lib/config';
@@ -89,6 +90,44 @@
 	let dupChecking = $state(false);
 	let dupResult = $state<UnifiedDuplicatesResult | null>(null);
 	let dupError = $state<string | null>(null);
+
+	let exploreEnabled = $state(false);
+	let exploreSaving = $state(false);
+	let exploreError = $state<string | null>(null);
+
+	async function loadSiteSettings() {
+		try {
+			const res = await fetch(`${API_URL}/admin/site-settings`, { credentials: 'include' });
+			if (!res.ok) return;
+			const data = await res.json();
+			exploreEnabled = data.explore === true;
+		} catch {
+			exploreError = 'Failed to load site settings';
+		}
+	}
+
+	async function toggleExplore() {
+		exploreSaving = true;
+		exploreError = null;
+		try {
+			const res = await fetch(`${API_URL}/admin/site-settings/explore`, {
+				method: 'PUT',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ enabled: !exploreEnabled })
+			});
+			const data = await res.json();
+			if (data.error) {
+				exploreError = data.error;
+			} else {
+				exploreEnabled = data.explore === true;
+			}
+		} catch {
+			exploreError = 'Failed to update explore setting';
+		} finally {
+			exploreSaving = false;
+		}
+	}
 
 	async function fixNegativeBalances() {
 		fixingBalances = true;
@@ -232,6 +271,7 @@
 			return;
 		}
 		isAdmin = user.role === 'admin' || user.role === 'creator';
+		if (isAdmin) loadSiteSettings();
 
 		try {
 			const response = await fetch(`${API_URL}/admin/stats`, {
@@ -488,6 +528,41 @@
 	{#if isAdmin}
 		<div class="mx-auto max-w-4xl px-6 pb-24 md:px-12">
 			<h2 class="mb-4 text-2xl font-bold">admin actions</h2>
+
+			<div class="mb-6 rounded-2xl border-4 border-black p-6">
+				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<h3 class="flex items-center gap-2 text-lg font-bold">
+							<Compass size={20} />
+							explore page
+						</h3>
+						<p class="text-sm text-gray-500">
+							{exploreEnabled
+								? 'on: everyone can browse shipped and in-review projects'
+								: 'off: only admins can see explore'}
+						</p>
+					</div>
+					<button
+						onclick={toggleExplore}
+						disabled={exploreSaving}
+						role="switch"
+						aria-checked={exploreEnabled}
+						aria-label="toggle explore page"
+						class="relative h-9 w-16 shrink-0 cursor-pointer rounded-full border-4 border-black transition-all disabled:opacity-50 {exploreEnabled
+							? 'bg-black'
+							: 'bg-white'}"
+					>
+						<span
+							class="absolute top-0.5 h-5 w-5 rounded-full transition-all {exploreEnabled
+								? 'left-8 bg-white'
+								: 'left-0.5 bg-black'}"
+						></span>
+					</button>
+				</div>
+				{#if exploreError}
+					<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{exploreError}</div>
+				{/if}
+			</div>
 
 			<a
 				href="/admin/budget"

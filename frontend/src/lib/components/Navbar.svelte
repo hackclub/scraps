@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import {
+		Compass,
 		Home,
 		Package,
 		Info,
@@ -38,6 +39,7 @@
 		slackId: string | null;
 		scraps: number;
 		role?: string;
+		exploreEnabled?: boolean;
 	}
 
 	let user = $state<User | null>(null);
@@ -58,6 +60,7 @@
 		user?.role === 'admin' || user?.role === 'reviewer' || user?.role === 'creator'
 	);
 	let isAdminOnly = $derived(user?.role === 'admin' || user?.role === 'creator');
+	let showExplore = $derived(user?.exploreEnabled === true || isAdminOnly);
 	let isInAdminSection = $derived(currentPath.startsWith('/admin'));
 	let dashboardMoreActive = $derived(
 		currentPath === '/shop' ||
@@ -414,6 +417,19 @@
 				<LayoutDashboard size={18} />
 				<span class="text-lg font-bold">{$t.nav.dashboard}</span>
 			</a>
+
+			{#if showExplore}
+				<a
+					href="/explore"
+					class="flex cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 {currentPath ===
+					'/explore'
+						? 'border-black bg-black text-white'
+						: 'border-black hover:border-dashed'}"
+				>
+					<Compass size={18} />
+					<span class="text-lg font-bold">{$t.nav.explore}</span>
+				</a>
+			{/if}
 
 			<!-- Visible on xl+ only -->
 			<a
@@ -820,6 +836,20 @@
 					<LayoutDashboard size={20} />
 					<span class="text-lg font-bold">{$t.nav.dashboard}</span>
 				</a>
+
+				{#if showExplore}
+					<a
+						href="/explore"
+						onclick={handleMobileNavClick}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 px-4 py-3 transition-all duration-300 {currentPath ===
+						'/explore'
+							? 'border-black bg-black text-white'
+							: 'border-black hover:border-dashed'}"
+					>
+						<Compass size={20} />
+						<span class="text-lg font-bold">{$t.nav.explore}</span>
+					</a>
+				{/if}
 
 				<a
 					href="/shop"

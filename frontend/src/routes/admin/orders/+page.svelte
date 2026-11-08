@@ -80,7 +80,7 @@
 	let user = $state<User | null>(null);
 	let orders = $state<Order[]>([]);
 	let loading = $state(true);
-	let filter = $state<'all' | 'pending' | 'fulfilled' | 'cancelled'>('pending');
+	let filter = $state<'all' | 'pending' | 'fulfilled' | 'cancelled' | 'banned'>('pending');
 	let searchQuery = $state('');
 	let dateFrom = $state('');
 	let dateTo = $state('');
@@ -97,7 +97,8 @@
 	function loadFiltersFromUrl() {
 		const p = page.url.searchParams;
 		const f = p.get('filter');
-		if (f === 'all' || f === 'pending' || f === 'fulfilled' || f === 'cancelled') filter = f;
+		if (f === 'all' || f === 'pending' || f === 'fulfilled' || f === 'cancelled' || f === 'banned')
+			filter = f;
 		searchQuery = p.get('q') ?? '';
 		dateFrom = p.get('from') ?? '';
 		dateTo = p.get('to') ?? '';
@@ -161,18 +162,21 @@
 		return o.status === 'cancelled' || o.status === 'deleted';
 	}
 
-	let activeOrders = $derived(orders.filter((o) => !isInactive(o)));
+	let activeOrders = $derived(orders.filter((o) => !isInactive(o) && !o.hackatimeBanned));
+	let bannedOrders = $derived(orders.filter((o) => !isInactive(o) && o.hackatimeBanned));
 	let cancelledOrders = $derived(orders.filter(isInactive));
 
 	let filteredOrders = $derived.by(() => {
 		let result =
 			filter === 'cancelled'
 				? cancelledOrders
-				: filter === 'all'
-					? activeOrders
-					: filter === 'pending'
-						? activeOrders.filter((o) => !o.isFulfilled)
-						: activeOrders.filter((o) => o.isFulfilled);
+				: filter === 'banned'
+					? bannedOrders
+					: filter === 'all'
+						? activeOrders
+						: filter === 'pending'
+							? activeOrders.filter((o) => !o.isFulfilled)
+							: activeOrders.filter((o) => o.isFulfilled);
 
 		if (filterItem) {
 			result = result.filter((o) => o.itemName === filterItem);
@@ -231,9 +235,6 @@
 		);
 	});
 
-	let mainOrders = $derived(filteredOrders.filter((o) => !o.hackatimeBanned));
-	let bannedOrders = $derived(filteredOrders.filter((o) => o.hackatimeBanned));
-
 	onMount(async () => {
 		loadFiltersFromUrl();
 		urlReady = true;
@@ -242,7 +243,7 @@
 			requireLogin();
 			return;
 		}
-		if ((user.role !== 'admin' && user.role !== 'creator')) {
+		if (user.role !== 'admin' && user.role !== 'creator') {
 			goto('/dashboard');
 			return;
 		}
@@ -362,6 +363,18 @@
 						: 'hover:border-dashed'}"
 				>
 					cancelled ({cancelledOrders.length})
+				</button>
+			{/if}
+			{#if bannedOrders.length > 0}
+				<button
+					onclick={() => (filter = 'banned')}
+					class="flex cursor-pointer items-center gap-1.5 rounded-full border-4 border-red-600 px-4 py-2 font-bold text-red-700 transition-all duration-200 {filter ===
+					'banned'
+						? 'bg-red-600 text-white'
+						: 'hover:border-dashed'}"
+				>
+					<ShieldAlert size={16} />
+					ht banned ({bannedOrders.length})
 				</button>
 			{/if}
 		</div>
@@ -504,11 +517,11 @@
 
 	{#if loading}
 		<div class="py-12 text-center text-gray-500">{$t.common.loading}</div>
-	{:else if mainOrders.length === 0 && bannedOrders.length === 0}
+	{:else if filteredOrders.length === 0}
 		<div class="py-12 text-center text-gray-500">no orders found</div>
-	{:else}
+	{:else if filter !== 'banned'}
 		<div class="flex flex-col gap-3">
-			{#each mainOrders as order}
+			{#each filteredOrders as order}
 				{@const StatusIcon = getStatusIcon(order.status)}
 				<button
 					onclick={(e) => openOrder(e, order.id)}
@@ -581,73 +594,63 @@
 				</button>
 			{/each}
 		</div>
-
-		{#if bannedOrders.length > 0}
-			<div class="mt-12">
-				<div class="mb-4 flex items-center gap-3">
-					<ShieldAlert size={24} class="text-red-600" />
-					<h2 class="text-2xl font-bold text-red-700">hackatime banned orders</h2>
-					<span
-						class="rounded-full border-2 border-red-600 bg-red-100 px-3 py-0.5 text-sm font-bold text-red-700"
+	{:else}
+		<div>
+			<p class="mb-6 flex items-center gap-2 text-sm text-red-700">
+				<ShieldAlert size={16} />
+				these orders belong to users who are banned on hackatime: do not fulfill
+			</p>
+			<div class="flex flex-col gap-3">
+				{#each filteredOrders as order}
+					<button
+						onclick={(e) => openOrder(e, order.id)}
+						onauxclick={(e) => openOrder(e, order.id)}
+						class="flex w-full cursor-pointer items-center gap-4 rounded-2xl border-4 border-red-400 bg-red-50 p-4 text-left hover:bg-red-100"
 					>
-						{bannedOrders.length}
-					</span>
-				</div>
-				<p class="mb-6 text-sm text-gray-500">
-					these orders belong to users who are banned on hackatime: do not fulfill
-				</p>
-				<div class="flex flex-col gap-3">
-					{#each bannedOrders as order}
-						<button
-							onclick={(e) => openOrder(e, order.id)}
-							onauxclick={(e) => openOrder(e, order.id)}
-							class="flex w-full cursor-pointer items-center gap-4 rounded-2xl border-4 border-red-400 bg-red-50 p-4 text-left hover:bg-red-100"
-						>
-							<img
-								src={order.itemImage}
-								alt={order.itemName}
-								class="h-14 w-14 shrink-0 rounded-lg border-2 border-red-400 object-cover"
-							/>
+						<img
+							src={order.itemImage}
+							alt={order.itemName}
+							class="h-14 w-14 shrink-0 rounded-lg border-2 border-red-400 object-cover"
+						/>
 
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-lg font-bold text-red-800">{order.itemName}</p>
-								<div class="flex items-center gap-1.5 text-sm text-red-500">
-									{#if order.userAvatar}
-										<img src={order.userAvatar} alt="" class="h-5 w-5 rounded-full object-cover" />
-									{:else}
-										<div
-											class="flex h-5 w-5 items-center justify-center rounded-full bg-red-200 text-[10px] font-bold text-red-600"
-										>
-											{order.username[0]?.toUpperCase()}
-										</div>
-									{/if}
-									<a
-										href="/admin/users/{order.userId}"
-										onclick={(e) => e.stopPropagation()}
-										onauxclick={(e) => e.stopPropagation()}
-										class="truncate hover:text-red-900 hover:underline"
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-lg font-bold text-red-800">{order.itemName}</p>
+							<div class="flex items-center gap-1.5 text-sm text-red-500">
+								{#if order.userAvatar}
+									<img src={order.userAvatar} alt="" class="h-5 w-5 rounded-full object-cover" />
+								{:else}
+									<div
+										class="flex h-5 w-5 items-center justify-center rounded-full bg-red-200 text-[10px] font-bold text-red-600"
 									>
-										@{order.username}
-									</a>
-								</div>
+										{order.username[0]?.toUpperCase()}
+									</div>
+								{/if}
+								<a
+									href="/admin/users/{order.userId}"
+									onclick={(e) => e.stopPropagation()}
+									onauxclick={(e) => e.stopPropagation()}
+									class="truncate hover:text-red-900 hover:underline"
+								>
+									@{order.username}
+								</a>
 							</div>
+						</div>
 
-							<div class="flex shrink-0 flex-col items-end gap-1.5">
-								<span
-									class="inline-flex items-center gap-1 rounded-full border-2 border-red-600 bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700"
-								>
-									<ShieldAlert size={12} />
-									ht banned
-								</span>
-								<span class="text-xs text-red-400"
-									>order #{order.id} • {formatDate(order.createdAt)}</span
-								>
-							</div>
-						</button>
-					{/each}
-				</div>
+						<div class="flex shrink-0 flex-col items-end gap-1.5">
+							<span
+								class="inline-flex items-center gap-1 rounded-full border-2 border-red-600 bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700"
+							>
+								<ShieldAlert size={12} />
+								ht banned
+							</span>
+							<span class="text-xs text-red-400"
+								>order #{order.id} • {formatDate(order.createdAt)}</span
+							>
+						</div>
+					</button>
+				{/each}
 			</div>
-		{/if}
+		</div>
 	{/if}
 </div>
 

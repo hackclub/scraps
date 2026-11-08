@@ -65,13 +65,12 @@
 	}
 
 	onMount(async () => {
-		// Admin-gated for now: see projects_controller.rb / Navbar.svelte for the matching backend gate.
 		const user = await getUser();
 		if (!user) {
 			requireLogin();
 			return;
 		}
-		if ((user.role !== 'admin' && user.role !== 'creator')) {
+		if (!user.exploreEnabled && user.role !== 'admin' && user.role !== 'creator') {
 			goto('/dashboard');
 			return;
 		}

@@ -733,11 +733,12 @@ class ShopController < ApplicationController
     SQL
 
     render_json(rows.map { |r|
+      hide_price = r["order_type"] == "consolation"
       {
         id: r["id"].to_i,
         quantity: r["quantity"].to_i,
-        price_per_item: r["price_per_item"].to_i,
-        total_price: r["total_price"].to_i,
+        price_per_item: hide_price ? nil : r["price_per_item"].to_i,
+        total_price: hide_price ? nil : r["total_price"].to_i,
         status: r["status"],
         order_type: r["order_type"],
         shipping_address: r["shipping_address"],
@@ -768,7 +769,8 @@ class ShopController < ApplicationController
     SQL
 
     render_json(rows.map { |r|
-      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"] }
+      hide_price = r["order_type"] == "consolation"
+      { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: hide_price ? nil : r["price_per_item"].to_i, total_price: hide_price ? nil : r["total_price"].to_i, status: r["status"], order_type: r["order_type"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"] }
     })
   end
 

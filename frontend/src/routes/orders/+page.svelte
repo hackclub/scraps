@@ -18,8 +18,8 @@
 	interface Order {
 		id: number;
 		quantity: number;
-		pricePerItem: number;
-		totalPrice: number;
+		pricePerItem: number | null;
+		totalPrice: number | null;
 		status: string;
 		orderType: string;
 		shippingAddress: string | null;
@@ -309,10 +309,12 @@
 							</div>
 
 							<div class="mt-3 flex flex-wrap gap-4 text-sm">
-								<span class="flex items-center gap-1 font-bold text-gray-600">
-									<Spool size={16} />
-									{order.totalPrice}
-								</span>
+								{#if order.orderType !== 'consolation' && order.totalPrice !== null}
+									<span class="flex items-center gap-1 font-bold text-gray-600">
+										<Spool size={16} />
+										{order.totalPrice}
+									</span>
+								{/if}
 								{#if order.quantity > 1}
 									<span class="text-gray-600">{$t.orders.qty}: {order.quantity}</span>
 								{/if}

@@ -10,6 +10,7 @@ export interface User {
 	scraps: number;
 	role: string;
 	tutorialCompleted: boolean;
+	exploreEnabled?: boolean;
 }
 
 export const userScrapsStore = writable<number>(0);

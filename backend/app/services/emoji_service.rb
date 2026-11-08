@@ -69,8 +69,19 @@ module EmojiService
       custom.each do |e|
         name = e["name"].to_s
         next if name.empty? || next_map.key?(name)
-        next_map[name] = { name: name, image_url: e["imageUrl"], standard: false }
+        next_map[name] = { name: name, image_url: e["imageUrl"].to_s, standard: false }
       end
+
+      next_map.each_value do |e|
+        url = e[:image_url]
+        hops = 0
+        while url.start_with?("alias:") && hops < 5
+          url = next_map[url.delete_prefix("alias:")]&.dig(:image_url).to_s
+          hops += 1
+        end
+        e[:image_url] = url
+      end
+      next_map.reject! { |_, e| e[:image_url].empty? || e[:image_url].start_with?("alias:") }
 
       @by_name = next_map
       @emojis = next_map.values.sort_by { |e| e[:name] }

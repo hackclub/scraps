@@ -179,7 +179,8 @@ class AuthController < ApplicationController
         slack_id: current_user.slack_id,
         scraps: balance[:balance],
         role: current_user.role,
-        tutorial_completed: current_user.tutorial_completed
+        tutorial_completed: current_user.tutorial_completed,
+        explore_enabled: SiteSetting.enabled?(:explore)
       }
     })
   end

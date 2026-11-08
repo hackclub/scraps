@@ -2,8 +2,20 @@ class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
   before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
+
+  def site_settings
+    render_json(SiteSetting.all_flags)
+  end
+
+  def update_site_setting
+    key = params[:key].to_s
+    return render_json({ error: "Unknown setting" }, status: :not_found) unless SiteSetting::KEYS.include?(key)
+
+    SiteSetting.set!(key, ActiveModel::Type::Boolean.new.cast(params[:enabled]) ? true : false)
+    render_json(SiteSetting.all_flags)
+  end
 
   def stats
     conn = ActiveRecord::Base.connection
