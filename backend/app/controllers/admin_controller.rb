@@ -1670,6 +1670,73 @@ class AdminController < ApplicationController
 
   private
 
+  def perform_undo_order(conn, order_id, message: nil, action_label: "purchase undone")
+    order = conn.select_one("SELECT so.*, si.name AS item_name, u.slack_id FROM shop_orders so INNER JOIN shop_items si ON si.id = so.shop_item_id INNER JOIN users u ON u.id = so.user_id WHERE so.id = #{order_id} FOR UPDATE OF so")
+    raise ActiveRecord::RecordNotFound unless order
+
+    plan = undo_order_plan(conn, order)
+    return { error: plan[:error] } if plan[:error]
+
+    uid = order["user_id"].to_i
+    iid = order["shop_item_id"].to_i
+    total_refund = plan[:roll_refund] + plan[:upgrade_refund]
+    note = "[#{Time.now.utc.strftime('%Y-%m-%d')}] #{action_label} by @#{current_user.username}: refunded #{total_refund} scraps"
+    note += " (#{plan[:upgrade_refund]} from upgrades)" if plan[:upgrade_refund] > 0
+    note += ". Message: #{message}" if message
+
+    conn.execute(<<~SQL)
+      UPDATE shop_orders
+      SET status = 'cancelled',
+          internal_notes = CONCAT_WS(E'\\n', NULLIF(internal_notes, ''), #{conn.quote(note)}),
+          updated_at = NOW()
+      WHERE id = #{order_id}
+    SQL
+
+    conn.execute("UPDATE shop_items SET count = count + #{plan[:restock]}, updated_at = NOW() WHERE id = #{iid}") if plan[:restock] > 0
+    ShopSizeService.adjust(conn, iid, order["size"], order["quantity"].to_i)
+
+    if order["order_type"] == "luck_win"
+      conn.execute("DELETE FROM shop_rolls WHERE id = #{plan[:roll_id].to_i}") if plan[:roll_id]
+      conn.execute("DELETE FROM refinery_spending_history WHERE id IN (#{plan[:history_ids].join(',')})") if plan[:history_ids].any?
+
+      penalty = conn.select_one("SELECT probability_multiplier FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id = #{iid}")
+      if penalty
+        restored = [100, penalty["probability_multiplier"].to_f * 2].min
+        if restored >= 100
+          conn.execute("DELETE FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id = #{iid}")
+        else
+          conn.execute("UPDATE shop_penalties SET probability_multiplier = #{restored}, updated_at = NOW() WHERE user_id = #{uid} AND shop_item_id = #{iid}")
+        end
+      end
+    end
+
+    { success: true, total_refund: total_refund, slack_id: order["slack_id"], item_name: order["item_name"] }
+  end
+
+  def perform_cancel_consolation(conn, order_id, message: nil, action_label: "rejected")
+    order = conn.select_one("SELECT so.*, si.name AS item_name, u.slack_id FROM shop_orders so INNER JOIN shop_items si ON si.id = so.shop_item_id INNER JOIN users u ON u.id = so.user_id WHERE so.id = #{order_id} FOR UPDATE OF so")
+    raise ActiveRecord::RecordNotFound unless order
+    return { error: "Order is already cancelled" } if %w[cancelled deleted].include?(order["status"])
+
+    note = "[#{Time.now.utc.strftime('%Y-%m-%d')}] #{action_label} by @#{current_user.username}"
+    note += ". Message: #{message}" if message
+
+    conn.execute(<<~SQL)
+      UPDATE shop_orders
+      SET status = 'cancelled',
+          internal_notes = CONCAT_WS(E'\\n', NULLIF(internal_notes, ''), #{conn.quote(note)}),
+          updated_at = NOW()
+      WHERE id = #{order_id}
+    SQL
+
+    qty = order["quantity"].to_i
+    iid = order["shop_item_id"].to_i
+    conn.execute("UPDATE shop_items SET count = count + #{qty}, updated_at = NOW() WHERE id = #{iid}") if order["status"] != "unclaimed"
+    ShopSizeService.adjust(conn, iid, order["size"], qty)
+
+    { success: true, total_refund: order["total_price"].to_i, slack_id: order["slack_id"], item_name: order["item_name"] }
+  end
+
   def undo_order_plan(conn, order)
     return { error: "Only purchases and won items can be undone" } unless %w[purchase luck_win].include?(order["order_type"])
     return { error: "Order is already cancelled" } if %w[cancelled deleted].include?(order["status"])
