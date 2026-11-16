@@ -93,6 +93,12 @@ class ReferralsController < ApplicationController
   # GET /referrals/leaderboard: public. Top referrers by verified invitees.
   def leaderboard
     conn = ActiveRecord::Base.connection
+    from = (Date.parse(params[:from].to_s) rescue nil) || Time.now.utc.to_date.beginning_of_month
+    to = (Date.parse(params[:to].to_s) rescue nil)
+    limit = params[:limit].to_i.clamp(1, 20)
+    limit = 20 if params[:limit].blank?
+    range = "AND r.created_at >= #{conn.quote(from.to_s)}"
+    range += " AND r.created_at < #{conn.quote(to.to_s)}" if to
     rows = conn.select_all(<<~SQL).to_a
       SELECT ref.id, ref.username, ref.avatar,
         COUNT(r.id) AS total,
@@ -100,11 +106,11 @@ class ReferralsController < ApplicationController
       FROM referrals r
       JOIN users ref ON ref.id = r.referrer_id
       JOIN users ru  ON ru.id = r.referred_user_id
-      WHERE ref.role != 'banned'
+      WHERE ref.role != 'banned' #{range}
       GROUP BY ref.id, ref.username, ref.avatar
       HAVING COUNT(*) FILTER (WHERE ru.verification_status = 'verified') > 0
       ORDER BY verified_count DESC, total DESC, ref.id ASC
-      LIMIT 20
+      LIMIT #{limit}
     SQL
 
     render_json(rows.each_with_index.map do |r, i|

@@ -153,7 +153,6 @@ Rails.application.routes.draw do
     delete "users/:id",                       to: "admin#delete_user"
     put    "users/:id/role",                  to: "admin#update_role"
     put    "users/:id/notes",                 to: "admin#update_notes"
-    post   "users/:id/bonus",                 to: "admin#create_bonus"
     get    "users/:id/bonuses",               to: "admin#user_bonuses"
     get    "users/:id/timeline",              to: "admin#user_timeline"
     post   "users/:id/reject-all-orders",     to: "admin#reject_all_orders"
@@ -201,9 +200,6 @@ Rails.application.routes.draw do
     post   "projects/:id/unship",             to: "admin#unship_project"
     put    "projects/:id/notes",              to: "admin#update_project_notes"
 
-    # Exports
-    get    "export/review-csv",               to: "admin#export_review_csv"
-    get    "export/review-json",              to: "admin#export_review_json"
   end
 
   # Serves the SvelteKit SPA for any route not matched above, so client-side routing

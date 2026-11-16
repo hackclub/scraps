@@ -1,8 +1,8 @@
 class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
-  before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review sync_hours]
+  before_action :authenticate_admin, only: %i[update_role user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def site_settings
@@ -315,25 +315,6 @@ class AdminController < ApplicationController
     render_json({ success: true })
   end
 
-  def create_bonus
-    amount = params[:amount].to_i
-    reason = params[:reason].to_s.strip
-    return render_json({ error: "Amount is required and must be a non-zero integer" }, status: :bad_request) if amount == 0
-    return render_json({ error: "Reason is required" }, status: :bad_request) if reason.blank?
-    return render_json({ error: "Reason is too long (max 500 characters)" }, status: :bad_request) if reason.length > 500
-
-    conn = ActiveRecord::Base.connection
-    target = conn.select_one("SELECT id FROM users WHERE id = #{params[:id].to_i}")
-    return render_json({ error: "User not found" }, status: :not_found) unless target
-
-    bonus = conn.select_one(<<~SQL)
-      INSERT INTO user_bonuses (user_id, amount, reason, given_by, created_at)
-      VALUES (#{params[:id].to_i}, #{amount}, #{conn.quote(reason)}, #{current_user.id}, NOW())
-      RETURNING *
-    SQL
-    render_json({ id: bonus["id"].to_i, amount: bonus["amount"].to_i, reason: bonus["reason"], given_by: bonus["given_by"]&.to_i, created_at: bonus["created_at"] })
-  end
-
   def user_bonuses
     rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
       SELECT ub.id, ub.amount, ub.reason, ub.given_by, u.username AS given_by_username, ub.created_at
@@ -617,16 +598,22 @@ class AdminController < ApplicationController
     rows = rows.reject { |r| r["status"] == "unclaimed" } unless status_filter == "unclaimed"
 
     emails = rows.map { |r| r["user_email"] }.compact.uniq
-    ban_map = {}
+    ban_map = Concurrent::Hash.new
     slack_map = rows.each_with_object({}) { |r, h| h[r["user_email"]] = r["slack_id"] if r["user_email"] }
-    emails.each do |email|
-      begin
-        ht = HackatimeService.get_user(email, slack_map[email])
-        ban_map[email] = ht&.dig(:banned) || false
-      rescue StandardError
-        ban_map[email] = false
+    queue = Queue.new
+    emails.each { |email| queue << email }
+    Array.new([emails.size, 16].min) do
+      Thread.new do
+        while (email = (queue.pop(true) rescue nil))
+          begin
+            ht = HackatimeService.get_user(email, slack_map[email])
+            ban_map[email] = ht&.dig(:banned) || false
+          rescue StandardError
+            ban_map[email] = false
+          end
+        end
       end
-    end
+    end.each(&:join)
 
     render_json(rows.map { |r|
       { id: r["id"].to_i, quantity: r["quantity"].to_i, price_per_item: r["price_per_item"].to_i, total_price: r["total_price"].to_i, status: r["status"], order_type: r["order_type"], size: r["size"], notes: r["notes"], internal_notes: r["internal_notes"], user_note: r["user_note"], tracking_number: r["tracking_number"], is_fulfilled: r["is_fulfilled"], fulfilled_at: r["fulfilled_at"], fulfilled_by_id: r["fulfilled_by_id"]&.to_i, fulfilled_by_username: r["fulfilled_by_username"], shipping_address: r["shipping_address"], phone: r["phone"], created_at: r["created_at"], item_id: r["item_id"].to_i, item_name: r["item_name"], item_image: r["item_image"], user_id: r["user_id"].to_i, username: r["username"], user_avatar: r["user_avatar"], slack_id: r["slack_id"], email: r["user_email"], hackatime_banned: ban_map[r["user_email"]] || false }
@@ -1386,45 +1373,6 @@ class AdminController < ApplicationController
 
     result = HackatimeSyncJob.perform_now(project_id)
     render_json({ hours: result[:hours], updated: result[:updated] })
-  end
-
-  def export_review_csv
-    conn = ActiveRecord::Base.connection
-    projects = conn.select_all(<<~SQL).to_a
-      SELECT p.name, p.github_url, p.playable_url, p.hackatime_project, u.slack_id
-      FROM projects p
-      INNER JOIN users u ON u.id = p.user_id
-      WHERE (p.status = 'waiting_for_review' OR p.status = 'pending_admin_approval')
-        AND (p.deleted = 0 OR p.deleted IS NULL)
-      ORDER BY p.updated_at DESC
-    SQL
-
-    def escape_csv(val)
-      return "" if val.nil? || val.empty?
-      val.include?(",") || val.include?('"') || val.include?("\n") ? "\"#{val.gsub('"', '""')}\"" : val
-    end
-
-    rows = ["name,code_link,demo_link,slack_id,hackatime_projects"]
-    projects.each do |p|
-      rows << [escape_csv(p["name"]), escape_csv(p["github_url"]), escape_csv(p["playable_url"]), escape_csv(p["slack_id"]), escape_csv(p["hackatime_project"])].join(",")
-    end
-
-    send_data rows.join("\n"), type: "text/csv; charset=utf-8", filename: "scraps-review-projects.csv"
-  end
-
-  def export_review_json
-    conn = ActiveRecord::Base.connection
-    projects = conn.select_all(<<~SQL).to_a
-      SELECT p.name, p.github_url, p.playable_url, p.hackatime_project, u.slack_id
-      FROM projects p INNER JOIN users u ON u.id = p.user_id
-      WHERE (p.status = 'waiting_for_review' OR p.status = 'pending_admin_approval') AND (p.deleted = 0 OR p.deleted IS NULL)
-      ORDER BY p.updated_at DESC
-    SQL
-
-    render_json(projects.map { |p|
-      ht_projects = HackatimeService.split_project_list(p["hackatime_project"])
-      { name: p["name"], code_link: p["github_url"] || "", demo_link: p["playable_url"] || "", submitter: { slack_id: p["slack_id"] || "" }, hackatime_projects: ht_projects }
-    })
   end
 
   def sync_airtable

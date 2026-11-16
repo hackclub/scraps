@@ -51,6 +51,15 @@
 	let loggedIn = $state(false);
 	let loading = $state(true);
 	let leaderboard = $state<LeaderRow[]>([]);
+	let lastMonth = $state<LeaderRow[]>([]);
+
+	const now = new Date();
+	const lastMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+	const thisMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const lastMonthName = lastMonthStart
+		.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })
+		.toLowerCase();
+	const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 	let mine = $state<MyReferrals | null>(null);
 	let copied = $state(false);
 	let claiming = $state<string | null>(null);
@@ -103,8 +112,16 @@
 		const user = await getUser();
 		loggedIn = !!user;
 
-		const [lb, me] = await Promise.all([
-			fetch(`${API_URL}/referrals/leaderboard`).then((r) => (r.ok ? r.json() : [])),
+		const [lb, oct, me] = await Promise.all([
+			fetch(`${API_URL}/referrals/leaderboard`, { credentials: 'include' }).then((r) =>
+				r.ok ? r.json() : []
+			),
+			fetch(
+				`${API_URL}/referrals/leaderboard?from=${isoDate(lastMonthStart)}&to=${isoDate(thisMonthStart)}&limit=3`,
+				{
+					credentials: 'include'
+				}
+			).then((r) => (r.ok ? r.json() : [])),
 			loggedIn
 				? fetch(`${API_URL}/referrals/me`, { credentials: 'include' }).then((r) =>
 						r.ok ? r.json() : null
@@ -112,6 +129,7 @@
 				: Promise.resolve(null)
 		]);
 		leaderboard = lb;
+		lastMonth = oct;
 		mine = me;
 		loading = false;
 	});
@@ -128,7 +146,7 @@
 	<title>referrals - scraps</title>
 </svelte:head>
 
-<div class="mx-auto max-w-6xl px-6 pt-24 pb-24 md:px-12">
+<div class="mx-auto max-w-6xl px-6 pt-24 pb-24 md:px-12 md:pt-32">
 	<h1 class="mb-2 text-4xl font-bold md:text-5xl">invite friends</h1>
 	<p class="mb-8 text-lg text-gray-600">
 		Check the link below and get other people to join with it! Once they sign up and get verified,
@@ -322,7 +340,7 @@
 						<Crown size={18} class="text-yellow-500" /> grand prize
 					</p>
 					<p class="text-sm text-gray-700">
-						The person with the most verified referrals of all time gets a <strong>BLÅHAJ</strong>!
+						The person with the most verified referrals this month gets a <strong>BLÅHAJ</strong>!
 					</p>
 				</div>
 			</div>
@@ -341,7 +359,7 @@
 								: 'border-2 border-black bg-white'}"
 						>
 							{#if row.rank === 1}
-								<span class="flex w-6 justify-center" title="#1 of all time">
+								<span class="flex w-6 justify-center" title="#1 this month">
 									<Crown size={22} class="fill-yellow-400 text-yellow-600" />
 								</span>
 							{:else}
@@ -357,6 +375,30 @@
 							<span class="text-sm text-gray-500"
 								>verified{row.total > row.verifiedCount ? ` (${row.total} total)` : ''}</span
 							>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
+			{#if lastMonth.length}
+				<h3 class="mt-8 mb-3 flex items-center gap-2 text-lg font-bold">
+					<Trophy size={18} />
+					{lastMonthName} top 3
+				</h3>
+				<ul class="flex flex-col gap-2">
+					{#each lastMonth as row (row.rank)}
+						<li
+							class="flex items-center gap-3 rounded-xl border-2 border-gray-300 bg-white px-4 py-2"
+						>
+							<span class="w-6 text-center font-mono font-bold">{row.rank}</span>
+							{#if row.avatar}
+								<img src={row.avatar} alt="" class="h-8 w-8 rounded-full" />
+							{:else}
+								<div class="h-8 w-8 rounded-full bg-gray-200"></div>
+							{/if}
+							<span class="flex-1 truncate font-bold">{row.username || 'someone'}</span>
+							<span class="font-bold">{row.verifiedCount}</span>
+							<span class="text-sm text-gray-500">verified</span>
 						</li>
 					{/each}
 				</ul>

@@ -63,10 +63,7 @@
 	let showExplore = $derived(user?.exploreEnabled === true || isAdminOnly);
 	let isInAdminSection = $derived(currentPath.startsWith('/admin'));
 	let dashboardMoreActive = $derived(
-		currentPath === '/shop' ||
-			currentPath === '/refinery' ||
-			currentPath === '/referrals' ||
-			currentPath === '/faq'
+		currentPath === '/shop' || currentPath === '/refinery' || currentPath === '/faq'
 	);
 	let adminMoreActive = $derived(
 		currentPath.startsWith('/admin/shop') ||
@@ -455,17 +452,6 @@
 			</a>
 
 			<a
-				href="/referrals"
-				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
-				'/referrals'
-					? 'border-black bg-black text-white'
-					: 'border-black hover:border-dashed'}"
-			>
-				<Users size={18} />
-				<span class="text-lg font-bold">{$t.nav.referrals}</span>
-			</a>
-
-			<a
 				href="/faq"
 				class="hidden cursor-pointer items-center gap-2 rounded-full border-4 px-6 py-2 transition-all duration-300 xl:flex {currentPath ===
 				'/faq'
@@ -515,17 +501,6 @@
 						>
 							<Flame size={18} />
 							<span class="font-bold">{$t.nav.refinery}</span>
-						</a>
-						<a
-							href="/referrals"
-							onclick={closeMoreMenu}
-							class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-gray-100 {currentPath ===
-							'/referrals'
-								? 'bg-gray-100 font-bold'
-								: ''}"
-						>
-							<Users size={18} />
-							<span class="font-bold">{$t.nav.referrals}</span>
 						</a>
 						<a
 							href="/faq"
@@ -594,6 +569,17 @@
 								<p class="truncate font-bold">{user.username || 'user'}</p>
 								<p class="truncate text-sm text-gray-500">{user.email}</p>
 							</div>
+							<a
+								href="/referrals"
+								onclick={closeProfileMenu}
+								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100 {currentPath ===
+								'/referrals'
+									? 'bg-gray-100'
+									: ''}"
+							>
+								<Users size={18} />
+								<span class="font-bold">{$t.nav.referrals}</span>
+							</a>
 							<button
 								onclick={() => {
 									showSettings = true;
