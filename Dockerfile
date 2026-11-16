@@ -11,7 +11,7 @@
 ARG RUBY_VERSION=3.4.7
 
 # ---- Frontend build ----
-FROM oven/bun:1 AS frontend
+FROM oven/bun:1.3.8 AS frontend
 
 WORKDIR /app
 COPY frontend/package.json frontend/bun.lock ./
