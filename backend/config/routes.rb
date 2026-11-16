@@ -11,6 +11,7 @@ Rails.application.routes.draw do
     get    "callback",       to: "auth#callback"
     get    "me",             to: "auth#me"
     post   "logout",         to: "auth#logout"
+    get    "dev-login",      to: "auth#dev_login" if Rails.env.development?
   end
 
   scope :admin do
@@ -155,6 +156,8 @@ Rails.application.routes.draw do
     post   "users/:id/bonus",                 to: "admin#create_bonus"
     get    "users/:id/bonuses",               to: "admin#user_bonuses"
     get    "users/:id/timeline",              to: "admin#user_timeline"
+    post   "users/:id/reject-all-orders",     to: "admin#reject_all_orders"
+    post   "users/:id/adjust-balance",        to: "admin#adjust_balance"
     delete "bonuses/:id",                     to: "admin#delete_bonus"
 
     # Reviews

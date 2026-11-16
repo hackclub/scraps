@@ -120,7 +120,37 @@ module SlackService
     false
   end
 
-  ROLE_CHANGE_ALERT_SLACK_IDS = %w[U0828FYS2UC].freeze
+  def self.notify_orders_rejected(token:, user_slack_id:, item_names:, refund:, message:)
+    return false unless token.present? && user_slack_id.present?
+
+    items = item_names.map { |n| "• #{n}" }.join("\n")
+    text = ":x: *Your #{item_names.length == 1 ? 'order was' : "#{item_names.length} orders were"} rejected.*#{refund > 0 ? " #{refund} scraps have been returned to your balance." : ''}\n#{items}"
+    text += "\n*Reason:* #{message}" if message.present?
+
+    resp = post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] })
+    resp.parsed_response.is_a?(Hash) && resp.parsed_response["ok"] == true
+  rescue StandardError
+    false
+  end
+
+  def self.notify_balance_adjusted(token:, user_slack_id:, amount:, new_balance:, message:)
+    return false unless token.present? && user_slack_id.present?
+
+    text = if amount.positive?
+      ":moneybag: *#{amount} scraps were added to your balance.*"
+    else
+      ":money_with_wings: *#{amount.abs} scraps were removed from your balance.*"
+    end
+    text += " Your new balance is #{new_balance} scraps."
+    text += "\n*Reason:* #{message}" if message.present?
+
+    resp = post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] })
+    resp.parsed_response.is_a?(Hash) && resp.parsed_response["ok"] == true
+  rescue StandardError
+    false
+  end
+
+  ROLE_CHANGE_ALERT_SLACK_IDS =%w[U0828FYS2UC].freeze
 
   def self.notify_role_change(token:, target_id:, target_username:, target_slack_id:, old_role:, new_role:, changed_by_username:, changed_by_slack_id:)
     return unless token.present?

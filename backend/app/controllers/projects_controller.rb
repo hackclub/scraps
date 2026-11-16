@@ -252,10 +252,13 @@ class ProjectsController < ApplicationController
     return render_json({ error: github_err }, status: :unprocessable_entity) if github_err
 
     parsed_ht = parse_hackatime_projects(params[:hackatimeProject].to_s.presence)
+    conn = ActiveRecord::Base.connection
+    taken_err = hackatime_taken_error(conn, parsed_ht, nil)
+    return render_json({ error: taken_err, message: taken_err }, status: :unprocessable_entity) if taken_err
+
     prefixed_ht = prefix_hackatime_ids(parsed_ht, current_user.email, current_user.slack_id)
     tier = [[params[:tier].to_i.nonzero? || 1, 1].max, 4].min
 
-    conn = ActiveRecord::Base.connection
     result = conn.select_one(<<~SQL)
       INSERT INTO projects (user_id, name, description, image, github_url, hackatime_project, hours, tier, update_description, is_reship, ai_description, status, deleted, views, created_at, updated_at)
       VALUES (
@@ -314,6 +317,11 @@ class ProjectsController < ApplicationController
     end
 
     ht_raw = params.key?(:hackatimeProject) ? params[:hackatimeProject].to_s.presence : :not_set
+    if ht_raw != :not_set
+      taken_err = hackatime_taken_error(conn, parse_hackatime_projects(ht_raw), existing["id"].to_i,
+        already_attached: HackatimeService.project_names(existing["hackatime_project"]))
+      return render_json({ error: taken_err, message: taken_err }, status: :unprocessable_entity) if taken_err
+    end
     prefixed_ht = if ht_raw != :not_set
       prefix_hackatime_ids(parse_hackatime_projects(ht_raw), current_user.email, current_user.slack_id)
     else
@@ -525,6 +533,25 @@ class ProjectsController < ApplicationController
   def parse_hackatime_projects(str)
     return nil if str.blank?
     HackatimeService.join_project_list(HackatimeService.split_project_list(str)).presence
+  end
+
+  def hackatime_taken_error(conn, hackatime_project, exclude_project_id, already_attached: [])
+    wanted = HackatimeService.project_names(hackatime_project).map(&:downcase).uniq - already_attached.map(&:downcase)
+    return nil if wanted.empty?
+
+    others = conn.select_all(<<~SQL).to_a
+      SELECT id, name, hackatime_project FROM projects
+      WHERE user_id = #{current_user.id}
+        AND (deleted = 0 OR deleted IS NULL)
+        AND hackatime_project IS NOT NULL AND hackatime_project <> ''
+        #{exclude_project_id ? "AND id <> #{exclude_project_id.to_i}" : ''}
+    SQL
+
+    others.each do |p|
+      clash = HackatimeService.project_names(p["hackatime_project"]).find { |n| wanted.include?(n.downcase) }
+      return "Hackatime project \"#{clash}\" is already attached to your project \"#{p['name']}\". Each Hackatime project can only be used on one project." if clash
+    end
+    nil
   end
 
   def prefix_hackatime_ids(hackatime_project, email, slack_id)

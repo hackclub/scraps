@@ -6,8 +6,8 @@
 
 The v2 of the original #scraps ysws! 
 
-Originally run by Nathan and Santi (gleeb glorb), v2 run by Iamalive and mihi!
+V1 run by Nathan and Santi, V2 run by Iamalive and mihi!
 
 A ysws about ~~gambling~~ making cool projects and roll for prizes.
 
-Runs from September to Nov 31st 2026!
+Runs from September '26 to Dec '26! 

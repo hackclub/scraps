@@ -45,6 +45,37 @@ class AuthController < ApplicationController
     redirect_to authorization_url(nonce, params[:r], params[:s]), allow_other_host: true
   end
 
+  def dev_login
+    return head :not_found unless Rails.env.development?
+    db_host = ActiveRecord::Base.connection_db_config.configuration_hash[:host].to_s
+    return render plain: "dev-login is disabled when not on a local database", status: :forbidden unless %w[localhost 127.0.0.1 ::1].include?(db_host)
+
+    username = params[:username].to_s.gsub(/[^a-zA-Z0-9_\-]/, "").presence || "dev_admin"
+    role = %w[member reviewer admin creator].include?(params[:role]) ? params[:role] : "admin"
+    conn = ActiveRecord::Base.connection
+    sub = conn.quote("dev:#{username}")
+
+    user_id = conn.select_value("SELECT id FROM users WHERE sub = #{sub}")
+    user_id ||= conn.select_value(<<~SQL)
+      INSERT INTO users (sub, username, email, role, has_been_onboarded, tutorial_completed, slack_id, created_at, updated_at)
+      VALUES (#{sub}, #{conn.quote(username)}, #{conn.quote("#{username}@dev.local")}, #{conn.quote(role)}, true, true, #{conn.quote(params[:slack_id].presence)}, NOW(), NOW())
+      RETURNING id
+    SQL
+    conn.execute("UPDATE users SET role = #{conn.quote(role)}, updated_at = NOW() WHERE id = #{user_id.to_i}")
+
+    token = SecureRandom.uuid
+    expires_at = 7.days.from_now
+    conn.execute(
+      ActiveRecord::Base.sanitize_sql_array(
+        ["INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, NOW())",
+         Session.hash_token(token), user_id.to_i, expires_at.utc.iso8601]
+      )
+    )
+    cookies["session"] = { value: token, httponly: true, path: "/", expires: expires_at, same_site: :lax }
+
+    redirect_to "#{ENV.fetch('FRONTEND_URL') { 'http://localhost:5173' }}/admin", allow_other_host: true
+  end
+
   def callback
     code = params[:code]
     frontend_url = ENV.fetch("FRONTEND_URL") { "http://localhost:5173" }

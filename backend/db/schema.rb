@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_31_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_15_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -222,6 +222,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_120000) do
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
     t.text "feedback_for_author"
     t.text "internal_justification"
+    t.float "logged_hours"
     t.integer "project_id", null: false
     t.integer "reviewer_id", null: false
     t.float "reviewer_score"

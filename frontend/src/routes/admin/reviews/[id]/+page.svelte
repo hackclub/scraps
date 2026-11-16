@@ -121,6 +121,20 @@
 	let reviewerScore = $state(2);
 	let isReship = $state(false);
 
+	interface PreviousShip {
+		approvedAt: string | null;
+		reviewerName: string | null;
+		reviewerScore: number | null;
+		feedback: string | null;
+		internalNote: string | null;
+		approvedHours: number;
+		scrapsAwarded: number;
+		loggedHoursThen: number | null;
+		loggedHoursNow: number;
+		newHours: number | null;
+	}
+	let previousShip = $state<PreviousShip | null>(null);
+
 	let deductedHours = $derived(
 		overlappingProjects.reduce((sum: number, op: OverlappingProject) => sum + op.hours, 0)
 	);
@@ -257,6 +271,7 @@
 				}
 				project = data.project;
 				isReship = data.project?.isReship ?? false;
+				previousShip = data.previousShip ?? null;
 				projectUser = data.user;
 				reviews = data.reviews || [];
 				overlappingProjects = data.overlappingProjects || [];
@@ -761,6 +776,60 @@
 								this is an updated project. previously awarded scraps will be subtracted from the
 								new total.
 							</p>
+							{#if previousShip}
+								<div class="mb-3 rounded-lg border-2 border-blue-600 bg-white p-3 text-sm text-blue-900">
+									<p class="mb-2 font-bold">
+										last approved
+										{#if previousShip.approvedAt}
+											{new Date(previousShip.approvedAt).toLocaleString()}
+										{/if}
+										{#if previousShip.reviewerName}
+											by {previousShip.reviewerName}
+										{/if}
+									</p>
+									<div class="mb-2 flex flex-wrap gap-2 font-bold">
+										<span class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1">
+											approved: {formatHours(previousShip.approvedHours)}h
+										</span>
+										<span class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1">
+											earned: {previousShip.scrapsAwarded} scraps
+										</span>
+										{#if previousShip.reviewerScore != null}
+											<span class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1">
+												score: {previousShip.reviewerScore.toFixed(1)}
+											</span>
+										{/if}
+										{#if previousShip.loggedHoursThen != null && previousShip.newHours != null}
+											<span class="rounded-full border-2 border-black bg-blue-200 px-3 py-1 text-black">
+												logged: {formatHours(previousShip.loggedHoursThen)}h → {formatHours(
+													previousShip.loggedHoursNow
+												)}h ({previousShip.newHours >= 0 ? '+' : ''}{formatHours(
+													previousShip.newHours
+												)}h new)
+											</span>
+										{:else}
+											<span
+												class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-3 py-1 text-yellow-800"
+											>
+												logged at approval: unknown (now {formatHours(previousShip.loggedHoursNow)}h).
+												check the last internal note for cuts
+											</span>
+										{/if}
+									</div>
+									{#if previousShip.feedback}
+										<p class="mb-1 text-blue-800">
+											<strong>approval message:</strong>
+											{previousShip.feedback}
+										</p>
+									{/if}
+									{#if previousShip.internalNote}
+										<p class="text-gray-600">
+											<strong>internal note:</strong>
+											{previousShip.internalNote}
+										</p>
+									{/if}
+								</div>
+							{/if}
 							<div class="flex flex-wrap gap-3 text-sm font-bold">
 								<span
 									class="rounded-full border-2 border-blue-600 bg-blue-100 px-3 py-1 text-blue-800"

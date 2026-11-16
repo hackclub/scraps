@@ -2,7 +2,7 @@ class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
   before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review export_review_csv export_review_json sync_hours]
-  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role create_bonus user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def site_settings
@@ -162,26 +162,28 @@ class AdminController < ApplicationController
       items: retained_items.map { |i| { id: i["id"].to_i, name: i["name"], image: i["image"], count: i["count"].to_i } }
     }
 
-    pending_orders = conn.select_all(<<~SQL).to_a
+    all_orders = conn.select_all(<<~SQL).to_a
       SELECT so.id, so.quantity, so.total_price, so.status, so.order_type, so.size, so.created_at,
-             si.name AS item_name, si.image AS item_image
+             so.is_fulfilled, si.name AS item_name, si.image AS item_image
       FROM shop_orders so
       LEFT JOIN shop_items si ON si.id = so.shop_item_id
-      WHERE so.user_id = #{target_id} AND so.is_fulfilled = false
-        AND so.status NOT IN ('cancelled', 'deleted')
+      WHERE so.user_id = #{target_id}
       ORDER BY so.created_at DESC
     SQL
 
     balance = ScrapsService.get_user_scraps_balance(target_id)
     ht_suspected = false
     ht_banned = false
+    ht_user_id = nil
     if target["email"].present?
       begin
         ht = HackatimeService.get_user(target["email"], target["slack_id"])
+        ht_user_id = ht[:user_id]
         ht_suspected = ht[:suspected] || false
         ht_banned = ht[:banned] || false
       rescue StandardError; end
     end
+    ht_user_id ||= conn.select_value("SELECT hackatime_user_id FROM users WHERE id = #{target_id}")&.to_i
 
     is_admin_user = %w[admin creator].include?(current_user.role)
     render_json({
@@ -201,14 +203,16 @@ class AdminController < ApplicationController
       },
       hackatime_suspected: ht_suspected,
       hackatime_banned: ht_banned,
+      hackatime_user_id: ht_user_id,
       projects: projects,
       stats: stats,
       retained_shop: retained_shop,
-      pending_orders: (is_admin_user ? pending_orders : []).map do |o|
+      orders: (is_admin_user ? all_orders : []).map do |o|
         {
           id: o["id"].to_i, item_name: o["item_name"], item_image: o["item_image"],
           quantity: o["quantity"].to_i, total_price: o["total_price"].to_i, status: o["status"],
-          order_type: o["order_type"], size: o["size"], created_at: o["created_at"]
+          order_type: o["order_type"], size: o["size"], created_at: o["created_at"],
+          is_fulfilled: o["is_fulfilled"] == true || o["is_fulfilled"] == "t"
         }
       end
     })
@@ -406,6 +410,25 @@ class AdminController < ApplicationController
 
     eff = EffectiveHoursService.compute_for_project(project)
 
+    previous_ship = nil
+    if project["scraps_awarded"].to_i > 0
+      last_approved = reviews_rows.select { |r| r["action"] == "approved" }.max_by { |r| r["created_at"].to_s }
+      approved_hours = (project["hours_override"] || project["hours"]).to_f
+      logged_then = last_approved&.dig("logged_hours")&.to_f
+      previous_ship = {
+        approved_at: last_approved&.dig("created_at"),
+        reviewer_name: last_approved && reviewers[last_approved["reviewer_id"].to_i]&.dig("username"),
+        reviewer_score: last_approved&.dig("reviewer_score")&.to_f,
+        feedback: last_approved&.dig("feedback_for_author"),
+        internal_note: last_approved&.dig("internal_justification"),
+        approved_hours: approved_hours,
+        scraps_awarded: project["scraps_awarded"].to_i,
+        logged_hours_then: logged_then,
+        logged_hours_now: project["hours"].to_f,
+        new_hours: logged_then ? (project["hours"].to_f - logged_then).round(2) : nil
+      }
+    end
+
     # Per-Hackatime-project hour breakdown for the project(s) attached to this submission.
     ht_breakdown = []
     if ht_user_id && project["hackatime_project"].present?
@@ -436,7 +459,8 @@ class AdminController < ApplicationController
       user: project_user ? { id: project_user["id"].to_i, username: project_user["username"], email: is_admin_user ? project_user["email"] : nil, avatar: project_user["avatar"], internal_notes: project_user["internal_notes"] } : nil,
       reviews: visible_reviews.map { |r| r.merge("reviewer_name" => reviewers[r["reviewer_id"].to_i]&.dig("username"), "reviewer_avatar" => reviewers[r["reviewer_id"].to_i]&.dig("avatar")) },
       effective_hours: eff[:effective_hours],
-      deducted_hours: eff[:deducted_hours]
+      deducted_hours: eff[:deducted_hours],
+      previous_ship: previous_ship
     })
   end
 
@@ -471,8 +495,8 @@ class AdminController < ApplicationController
     end
 
     conn.execute(<<~SQL)
-      INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, internal_justification, reviewer_score, created_at)
-      VALUES (#{project_id}, #{current_user.id}, #{conn.quote(action)}, #{conn.quote(feedback)}, #{conn.quote(params[:internalJustification].to_s.presence)}, #{action == "approved" ? reviewer_score : "NULL"}, NOW())
+      INSERT INTO reviews (project_id, reviewer_id, action, feedback_for_author, internal_justification, reviewer_score, logged_hours, created_at)
+      VALUES (#{project_id}, #{current_user.id}, #{conn.quote(action)}, #{conn.quote(feedback)}, #{conn.quote(params[:internalJustification].to_s.presence)}, #{action == "approved" ? reviewer_score : "NULL"}, #{project["hours"].to_f}, NOW())
     SQL
 
     can_ship = true
@@ -792,49 +816,8 @@ class AdminController < ApplicationController
 
     result = nil
     ActiveRecord::Base.transaction do
-      order = conn.select_one("SELECT so.*, si.name AS item_name, u.slack_id FROM shop_orders so INNER JOIN shop_items si ON si.id = so.shop_item_id INNER JOIN users u ON u.id = so.user_id WHERE so.id = #{order_id} FOR UPDATE OF so")
-      raise ActiveRecord::RecordNotFound unless order
-
-      plan = undo_order_plan(conn, order)
-      if plan[:error]
-        result = { error: plan[:error] }
-        raise ActiveRecord::Rollback
-      end
-
-      uid = order["user_id"].to_i
-      iid = order["shop_item_id"].to_i
-      total_refund = plan[:roll_refund] + plan[:upgrade_refund]
-      note = "[#{Time.now.utc.strftime('%Y-%m-%d')}] purchase undone by @#{current_user.username}: refunded #{total_refund} scraps"
-      note += " (#{plan[:upgrade_refund]} from upgrades)" if plan[:upgrade_refund] > 0
-      note += ". Message: #{message}" if message
-
-      conn.execute(<<~SQL)
-        UPDATE shop_orders
-        SET status = 'cancelled',
-            internal_notes = CONCAT_WS(E'\\n', NULLIF(internal_notes, ''), #{conn.quote(note)}),
-            updated_at = NOW()
-        WHERE id = #{order_id}
-      SQL
-
-      conn.execute("UPDATE shop_items SET count = count + #{plan[:restock]}, updated_at = NOW() WHERE id = #{iid}") if plan[:restock] > 0
-      ShopSizeService.adjust(conn, iid, order["size"], order["quantity"].to_i)
-
-      if order["order_type"] == "luck_win"
-        conn.execute("DELETE FROM shop_rolls WHERE id = #{plan[:roll_id].to_i}") if plan[:roll_id]
-        conn.execute("DELETE FROM refinery_spending_history WHERE id IN (#{plan[:history_ids].join(',')})") if plan[:history_ids].any?
-
-        penalty = conn.select_one("SELECT probability_multiplier FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id = #{iid}")
-        if penalty
-          restored = [100, penalty["probability_multiplier"].to_f * 2].min
-          if restored >= 100
-            conn.execute("DELETE FROM shop_penalties WHERE user_id = #{uid} AND shop_item_id = #{iid}")
-          else
-            conn.execute("UPDATE shop_penalties SET probability_multiplier = #{restored}, updated_at = NOW() WHERE user_id = #{uid} AND shop_item_id = #{iid}")
-          end
-        end
-      end
-
-      result = { success: true, total_refund: total_refund, slack_id: order["slack_id"], item_name: order["item_name"] }
+      result = perform_undo_order(conn, order_id, message: message)
+      raise ActiveRecord::Rollback if result[:error]
     end
 
     return render_json({ error: result[:error] }, status: :unprocessable_entity) if result[:error]
@@ -855,6 +838,104 @@ class AdminController < ApplicationController
     render_json({ error: "Order not found" }, status: :not_found)
   rescue StandardError => e
     render_json({ error: "Failed to undo order: #{e.message}" }, status: :internal_server_error)
+  end
+
+  def reject_all_orders
+    internal_reason = params[:internalReason].to_s.strip
+    user_reason = params[:userReason].to_s.strip
+    return render_json({ error: "Internal reason is required" }, status: :bad_request) if internal_reason.length < 3
+    return render_json({ error: "Reason to user is required" }, status: :bad_request) if user_reason.length < 3
+    return render_json({ error: "Reasons are too long (max 1000 characters)" }, status: :bad_request) if internal_reason.length > 1000 || user_reason.length > 1000
+
+    conn = ActiveRecord::Base.connection
+    target = conn.select_one("SELECT id, slack_id FROM users WHERE id = #{params[:id].to_i}")
+    return render_json({ error: "User not found" }, status: :not_found) unless target
+
+    refund = params.key?(:refund) ? ActiveModel::Type::Boolean.new.cast(params[:refund]) : true
+    label = refund ? "rejected (reject all)" : "rejected (reject all, no refund)"
+    rejected = []
+    skipped = []
+    clawback = 0
+    ActiveRecord::Base.transaction do
+      orders = conn.select_rows(<<~SQL).map { |id, type| [id.to_i, type] }
+        SELECT id, order_type FROM shop_orders
+        WHERE user_id = #{target['id'].to_i} AND is_fulfilled = false
+          AND status NOT IN ('cancelled', 'deleted')
+        ORDER BY created_at DESC
+      SQL
+      orders.each do |oid, type|
+        r = if type == "consolation"
+          perform_cancel_consolation(conn, oid, message: internal_reason, action_label: "rejected (reject all, no refund)")
+        else
+          perform_undo_order(conn, oid, message: internal_reason, action_label: label)
+        end
+        if r[:error]
+          skipped << { id: oid, error: r[:error] }
+          next
+        end
+        kept = type == "consolation" || !refund
+        clawback += r[:total_refund] if kept
+        rejected << { id: oid, item_name: r[:item_name], refund: kept ? 0 : r[:total_refund] }
+      end
+
+      if clawback > 0
+        conn.execute(<<~SQL)
+          INSERT INTO user_bonuses (user_id, amount, reason, given_by, created_at)
+          VALUES (#{target['id'].to_i}, #{-clawback}, #{conn.quote("reject all orders, scraps not refunded: #{internal_reason}"[0, 500])}, #{current_user.id}, NOW())
+        SQL
+      end
+    end
+
+    total_refund = rejected.sum { |r| r[:refund] }
+    dm_sent = false
+    if rejected.any? && ENV["SLACK_BOT_TOKEN"].present?
+      dm_sent = SlackService.notify_orders_rejected(
+        token: ENV["SLACK_BOT_TOKEN"],
+        user_slack_id: target["slack_id"],
+        item_names: rejected.map { |r| r[:item_name] },
+        refund: total_refund,
+        message: user_reason
+      )
+    end
+
+    render_json({ success: true, rejected: rejected, skipped: skipped, total_refund: total_refund, withheld: clawback, dm_sent: dm_sent })
+  rescue StandardError => e
+    render_json({ error: "Failed to reject orders: #{e.message}" }, status: :internal_server_error)
+  end
+
+  def adjust_balance
+    amount = params[:amount].to_i
+    internal_reason = params[:internalReason].to_s.strip
+    user_reason = params[:userReason].to_s.strip
+    return render_json({ error: "Amount must be a non-zero integer" }, status: :bad_request) if amount == 0
+    return render_json({ error: "Internal reason is required" }, status: :bad_request) if internal_reason.length < 3
+    return render_json({ error: "Reason to user is required" }, status: :bad_request) if user_reason.length < 3
+    return render_json({ error: "Internal reason is too long (max 500 characters)" }, status: :bad_request) if internal_reason.length > 500
+    return render_json({ error: "Reason to user is too long (max 1000 characters)" }, status: :bad_request) if user_reason.length > 1000
+
+    conn = ActiveRecord::Base.connection
+    target = conn.select_one("SELECT id, slack_id FROM users WHERE id = #{params[:id].to_i}")
+    return render_json({ error: "User not found" }, status: :not_found) unless target
+
+    bonus = conn.select_one(<<~SQL)
+      INSERT INTO user_bonuses (user_id, amount, reason, given_by, created_at)
+      VALUES (#{target['id'].to_i}, #{amount}, #{conn.quote(internal_reason)}, #{current_user.id}, NOW())
+      RETURNING *
+    SQL
+
+    new_balance = ScrapsService.get_user_scraps_balance(target["id"].to_i)[:balance]
+    dm_sent = false
+    if ENV["SLACK_BOT_TOKEN"].present?
+      dm_sent = SlackService.notify_balance_adjusted(
+        token: ENV["SLACK_BOT_TOKEN"],
+        user_slack_id: target["slack_id"],
+        amount: amount,
+        new_balance: new_balance,
+        message: user_reason
+      )
+    end
+
+    render_json({ success: true, id: bonus["id"].to_i, amount: amount, new_balance: new_balance, dm_sent: dm_sent })
   end
 
   def restore_order
@@ -1251,7 +1332,7 @@ class AdminController < ApplicationController
     conn = ActiveRecord::Base.connection
 
     paid_projects = conn.select_all("SELECT id, name, scraps_awarded, scraps_paid_at, status, created_at FROM projects WHERE user_id = #{target_id} AND scraps_awarded > 0").to_a
-    bonuses = conn.select_all("SELECT id, amount, reason, given_by, created_at FROM user_bonuses WHERE user_id = #{target_id}").to_a
+    bonuses = conn.select_all("SELECT ub.id, ub.amount, ub.reason, ub.created_at, u.username AS given_by_username FROM user_bonuses ub LEFT JOIN users u ON u.id = ub.given_by WHERE ub.user_id = #{target_id}").to_a
     shop_orders = conn.select_all("SELECT so.id, so.shop_item_id, so.total_price, so.order_type, so.status, so.created_at, si.name AS item_name FROM shop_orders so INNER JOIN shop_items si ON si.id = so.shop_item_id WHERE so.user_id = #{target_id}").to_a
     refinery_rows = conn.select_all("SELECT ro.id, ro.shop_item_id, ro.cost, ro.boost_amount, ro.created_at, si.name AS item_name FROM refinery_orders ro INNER JOIN shop_items si ON si.id = ro.shop_item_id WHERE ro.user_id = #{target_id}").to_a
     refinery_history = conn.select_all("SELECT rsh.id, rsh.shop_item_id, rsh.cost, rsh.created_at, si.name AS item_name FROM refinery_spending_history rsh INNER JOIN shop_items si ON si.id = rsh.shop_item_id WHERE rsh.user_id = #{target_id}").to_a
@@ -1267,7 +1348,7 @@ class AdminController < ApplicationController
 
     timeline = []
     paid_projects.each { |p| timeline << { type: "earned", amount: p["scraps_awarded"].to_i, description: "project \"#{p['name']}\"", date: (p["scraps_paid_at"] || p["created_at"]).to_s, paid: !p["scraps_paid_at"].nil? } }
-    bonuses.each { |b| timeline << { type: "bonus", amount: b["amount"].to_i, description: b["reason"], date: b["created_at"].to_s, bonus_id: b["id"].to_i } }
+    bonuses.each { |b| timeline << { type: "bonus", amount: b["amount"].to_i, description: [b["reason"], (b["given_by_username"] && "(by @#{b['given_by_username']})")].compact.join(" "), date: b["created_at"].to_s, bonus_id: b["id"].to_i } }
     shop_orders.each { |o| timeline << { type: "shop_#{o['order_type']}", amount: -o["total_price"].to_i, description: o["item_name"], date: o["created_at"].to_s, item_name: o["item_name"], order_id: o["id"].to_i } }
 
     refinery_rows.each do |r|
