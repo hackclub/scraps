@@ -108,6 +108,21 @@ module SlackService
     post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] }) rescue nil
   end
 
+  def self.notify_orders_fulfilled(user_slack_id:, item_names:, tracking_number: nil, user_note: nil, token:)
+    return false unless token.present? && user_slack_id.present? && item_names.any?
+
+    verb = tracking_number.present? ? "shipped" : "fulfilled"
+    items = item_names.map { |n| "• #{n}" }.join("\n")
+    text = ":package: *Your #{item_names.length == 1 ? 'order has' : 'orders have'} been #{verb}!*\n#{items}"
+    text += "\nTracking: `#{tracking_number}`" if tracking_number.present?
+    text += "\nHere's a note from the team: #{user_note}" if user_note.present?
+
+    resp = post(token, "chat.postMessage", { channel: user_slack_id, text: text, blocks: [{ type: "section", text: { type: "mrkdwn", text: text } }] })
+    resp.parsed_response.is_a?(Hash) && resp.parsed_response["ok"] == true
+  rescue StandardError
+    false
+  end
+
   def self.notify_order_undone(token:, user_slack_id:, item_name:, refund:, message: nil)
     return false unless token.present? && user_slack_id.present?
 

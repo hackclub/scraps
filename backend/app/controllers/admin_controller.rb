@@ -2,7 +2,7 @@ class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
   before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review sync_hours]
-  before_action :authenticate_admin, only: %i[update_role user_bonuses delete_bonus orders orders_needs_info_count show_order update_order update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist]
+  before_action :authenticate_admin, only: %i[update_role user_bonuses delete_bonus orders orders_needs_info_count show_order update_order fulfill_orders update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist raffle_tickets item_suggestions delete_item_suggestion]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def site_settings
@@ -490,9 +490,6 @@ class AdminController < ApplicationController
     set_parts = ["status = '#{new_status}'", "updated_at = NOW()"]
     set_parts << "is_reship = #{reship_flag ? 'true' : 'false'}" unless reship_flag.nil?
 
-    # On approval the reviewer's "hours to approve" value is final: store it as
-    # hours_override and grant on it directly (deductions were already shown in
-    # the review UI to inform the number, not re-applied here).
     grant_hours =
       if approved_hours
         approved_hours
@@ -725,6 +722,44 @@ class AdminController < ApplicationController
     end
 
     render_json({ id: updated["id"].to_i, status: updated["status"], order_type: updated["order_type"], notes: updated["notes"], user_note: updated["user_note"], tracking_number: updated["tracking_number"], is_fulfilled: updated["is_fulfilled"], fulfilled_at: updated["fulfilled_at"], fulfilled_by_id: updated["fulfilled_by_id"]&.to_i, fulfilled_by_username: (current_user.username if updated["fulfilled_by_id"]), shipping_address: updated["shipping_address"], created_at: updated["created_at"] })
+  end
+
+  def fulfill_orders
+    ids = Array(params[:orderIds]).map(&:to_i).select(&:positive?).uniq
+    return render_json({ error: "No orders given" }, status: :bad_request) if ids.empty?
+    return render_json({ error: "Too many orders (max 50)" }, status: :bad_request) if ids.size > 50
+
+    tracking = params[:trackingNumber].to_s.strip.presence
+    conn = ActiveRecord::Base.connection
+    rows = nil
+    error = nil
+
+    ActiveRecord::Base.transaction do
+      rows = conn.select_all(<<~SQL).to_a
+        SELECT so.id, so.user_id, so.status, so.is_fulfilled, so.user_note, si.name AS item_name, so.size, so.quantity
+        FROM shop_orders so INNER JOIN shop_items si ON si.id = so.shop_item_id
+        WHERE so.id IN (#{ids.join(',')}) ORDER BY so.id FOR UPDATE OF so
+      SQL
+      error = if rows.size != ids.size then "Some orders were not found"
+      elsif rows.map { |r| r["user_id"] }.uniq.size > 1 then "Orders belong to different users"
+      elsif (bad = rows.find { |r| ActiveModel::Type::Boolean.new.cast(r["is_fulfilled"]) || %w[cancelled deleted].include?(r["status"]) }) then "Order ##{bad['id']} is already fulfilled or cancelled"
+      end
+      raise ActiveRecord::Rollback if error
+
+      tracking_sql = tracking ? ", tracking_number = #{conn.quote(tracking)}" : ""
+      conn.execute("UPDATE shop_orders SET is_fulfilled = true, fulfilled_by_id = #{current_user.id}, fulfilled_at = NOW(), updated_at = NOW()#{tracking_sql} WHERE id IN (#{ids.join(',')})")
+    end
+    return render_json({ error: error }, status: :unprocessable_entity) if error
+
+    dm_sent = false
+    if ENV["SLACK_BOT_TOKEN"].present?
+      slack_id = conn.select_value("SELECT slack_id FROM users WHERE id = #{rows.first['user_id'].to_i}")
+      main = rows.find { |r| r["id"].to_i == params[:mainOrderId].to_i } || rows.first
+      names = rows.map { |r| [r["item_name"], r["size"].presence && "(#{r['size']})", r["quantity"].to_i > 1 ? "×#{r['quantity']}" : nil].compact.join(" ") }
+      dm_sent = SlackService.notify_orders_fulfilled(user_slack_id: slack_id, item_names: names, tracking_number: tracking, user_note: main["user_note"], token: ENV["SLACK_BOT_TOKEN"])
+    end
+
+    render_json({ fulfilled_ids: ids, tracking_number: tracking, fulfilled_by_username: current_user.username, dm_sent: dm_sent })
   end
 
   def delete_order
@@ -1063,6 +1098,15 @@ class AdminController < ApplicationController
     conn = ActiveRecord::Base.connection
     conn.execute("DELETE FROM shop_hearts WHERE shop_item_id = #{item_id}")
     conn.execute("DELETE FROM shop_rolls WHERE shop_item_id = #{item_id}")
+    conn.select_all("SELECT user_id, cost FROM refinery_orders WHERE shop_item_id = #{item_id}").each do |ro|
+      conn.execute(<<~SQL)
+        DELETE FROM refinery_spending_history WHERE id = (
+          SELECT id FROM refinery_spending_history
+          WHERE user_id = #{ro['user_id'].to_i} AND shop_item_id = #{item_id} AND cost = #{ro['cost'].to_i}
+          ORDER BY created_at DESC LIMIT 1
+        )
+      SQL
+    end
     conn.execute("DELETE FROM refinery_orders WHERE shop_item_id = #{item_id}")
     conn.execute("DELETE FROM shop_penalties WHERE shop_item_id = #{item_id}")
     conn.execute("DELETE FROM shop_orders WHERE shop_item_id = #{item_id}")
@@ -1467,6 +1511,35 @@ class AdminController < ApplicationController
     return render_json({ error: "Not found" }, status: :not_found) unless entry
     entry.destroy
     render_json({ success: true })
+  end
+
+  def item_suggestions
+    rows = ActiveRecord::Base.connection.select_all(<<~SQL).to_a
+      SELECT s.id, s.name, s.image, s.description, s.vendor_url, s.created_at, s.user_id, u.username
+      FROM item_suggestions s LEFT JOIN users u ON u.id = s.user_id
+      ORDER BY s.created_at DESC LIMIT 200
+    SQL
+    render_json(rows.map { |r|
+      {
+        id: r["id"].to_i, name: r["name"], image: r["image"], description: r["description"],
+        vendor_url: r["vendor_url"], created_at: r["created_at"], user_id: r["user_id"].to_i, username: r["username"]
+      }
+    })
+  end
+
+  def delete_item_suggestion
+    ActiveRecord::Base.connection.execute("DELETE FROM item_suggestions WHERE id = #{params[:id].to_i}")
+    render_json({ success: true })
+  end
+
+  def raffle_tickets
+    rows = ActiveRecord::Base.connection.select_all(
+      "SELECT id, username, avatar, raffle_tickets FROM users WHERE raffle_tickets > 0 ORDER BY raffle_tickets DESC, id ASC"
+    ).to_a
+    render_json({
+      total: rows.sum { |r| r["raffle_tickets"].to_i },
+      users: rows.map { |r| { id: r["id"].to_i, username: r["username"], avatar: r["avatar"], tickets: r["raffle_tickets"].to_i } }
+    })
   end
 
   def unified_duplicates

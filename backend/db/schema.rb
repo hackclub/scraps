@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_15_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_17_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -349,6 +349,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_120000) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "streak_reward_claims", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.date "day", null: false
+    t.text "detail"
+    t.text "kind", null: false
+    t.integer "tickets", default: 0, null: false
+    t.integer "user_id", null: false
+    t.index ["user_id", "day", "kind"], name: "index_streak_reward_claims_on_user_id_and_day_and_kind", unique: true
+  end
+
   create_table "user_activity", id: :serial, force: :cascade do |t|
     t.text "action", null: false
     t.datetime "created_at", precision: nil, default: -> { "now()" }, null: false
@@ -365,6 +375,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_120000) do
     t.text "reason", null: false
     t.integer "user_id", null: false
     t.index ["user_id"], name: "index_user_bonuses_on_user_id"
+  end
+
+  create_table "user_daily_minutes", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.date "day", null: false
+    t.integer "seconds", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.integer "user_id", null: false
+    t.index ["user_id", "day"], name: "index_user_daily_minutes_on_user_id_and_day", unique: true
   end
 
   create_table "users", id: :serial, force: :cascade do |t|
@@ -392,6 +411,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_120000) do
     t.text "legal_last_name"
     t.text "phone"
     t.text "preferred_name"
+    t.integer "raffle_tickets", default: 0, null: false
     t.text "referral_code"
     t.text "refresh_token"
     t.integer "retained_cap_bonus", default: 0, null: false
@@ -399,6 +419,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_15_120000) do
     t.text "role", default: "member", null: false
     t.text "signup_source"
     t.text "slack_id"
+    t.datetime "streak_synced_at"
     t.text "sub", null: false
     t.boolean "tutorial_completed", default: false, null: false
     t.datetime "updated_at", precision: nil, default: -> { "now()" }, null: false

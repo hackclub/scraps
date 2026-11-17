@@ -146,6 +146,17 @@
 
 	let openOthers = $derived(order ? order.otherOrders.filter(isOpen) : []);
 	let openCount = $derived(openOthers.length + (order && isOpen(order) ? 1 : 0));
+	let sameAddressOthers = $derived(
+		order
+			? openOthers.filter((o) => addressKey(o.shippingAddress) === addressKey(order!.shippingAddress))
+			: []
+	);
+	let differentAddressOthers = $derived(
+		order
+			? openOthers.filter((o) => addressKey(o.shippingAddress) !== addressKey(order!.shippingAddress))
+			: []
+	);
+	let bulkCount = $derived(sameAddressOthers.length + (order && isOpen(order) ? 1 : 0));
 
 	onMount(async () => {
 		try {
@@ -196,20 +207,37 @@
 
 	async function fulfillAll() {
 		if (!order) return;
+		const batch = [...(isOpen(order) ? [order.id] : []), ...sameAddressOthers.map((o) => o.id)];
+		if (batch.length === 0) return;
 		bulkLoading = true;
-		let done = 0;
+		const tracking = trackingInput.trim() || null;
 		try {
-			if (isOpen(order)) {
-				await toggleFulfilled();
-				if (order.isFulfilled) done++;
+			const response = await fetch(`${API_URL}/admin/orders/fulfill`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ orderIds: batch, trackingNumber: tracking, mainOrderId: order.id })
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok || data.error) throw new Error(data.error || 'failed to fulfill orders');
+			if (batch.includes(order.id)) {
+				order.isFulfilled = true;
+				order.fulfilledAt = new Date().toISOString();
+				order.fulfilledByUsername = data.fulfilledByUsername ?? null;
+				if (tracking) order.trackingNumber = tracking;
 			}
-			for (const other of openOthers) {
-				await fulfillOther(other);
-				done++;
+			for (const other of order.otherOrders) {
+				if (batch.includes(other.id)) {
+					other.isFulfilled = true;
+					if (tracking) other.trackingNumber = tracking;
+				}
 			}
-			showToast(`fulfilled ${done} order${done === 1 ? '' : 's'}`, 'success');
+			showToast(
+				`fulfilled ${batch.length} order${batch.length === 1 ? '' : 's'}${data.dmSent ? ', sent 1 DM' : ', DM not sent'}`,
+				data.dmSent ? 'success' : 'error'
+			);
 		} catch (e) {
-			showToast(`${(e as Error).message} (${done} fulfilled before that)`, 'error');
+			showToast((e as Error).message, 'error');
 		} finally {
 			bulkLoading = false;
 		}
@@ -755,14 +783,30 @@
 					? `. fulfilling uses tracking # ${trackingInput.trim()}`
 					: ''}
 			</p>
-			{#if openCount > 1}
+			{#if differentAddressOthers.length > 0}
+				<div class="mb-3 rounded-xl border-2 border-yellow-600 bg-yellow-50 p-2 text-xs text-yellow-800">
+					<p class="mb-1 font-bold">
+						{differentAddressOthers.length} ship{differentAddressOthers.length === 1 ? 's' : ''} to a
+						different address, not included in fulfill all:
+					</p>
+					<ul class="flex flex-col gap-0.5">
+						{#each differentAddressOthers as d (d.id)}
+							<li>
+								<a href="/admin/orders/{d.id}" class="font-bold hover:underline">#{d.id}</a>
+								{d.itemName}{d.size ? ` (${d.size})` : ''}
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+			{#if bulkCount > 1}
 				<button
 					onclick={fulfillAll}
 					disabled={bulkLoading || actionLoading}
 					class="mb-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-green-500 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					<Check size={16} />
-					{bulkLoading ? 'fulfilling...' : `fulfill all ${openCount}`}
+					{bulkLoading ? 'fulfilling...' : `fulfill all ${bulkCount} (1 DM)`}
 				</button>
 			{/if}
 			{#if order.otherOrders.length === 0}

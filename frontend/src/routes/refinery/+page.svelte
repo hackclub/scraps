@@ -11,7 +11,10 @@
 	let shopSelectionLoading = $state(true);
 	let dailyRevealed = $state(true);
 	let probabilityItems = $derived(
-		$shopItemsStore.filter((item) => item.baseProbability > 0 && myShopIds.has(item.id))
+		$shopItemsStore.filter(
+			(item) =>
+				item.baseProbability > 0 && (myShopIds.has(item.id) || item.userBoostPercent > 0)
+		)
 	);
 	let upgrading = $state<number | null>(null);
 	let undoing = $state<number | null>(null);
@@ -200,7 +203,8 @@
 			{#each probabilityItems as item (item.id)}
 				{@const nextCost = item.nextUpgradeCost}
 				{@const maxed = item.effectiveProbability >= 100 || nextCost === null}
-				{@const soldOut = item.count === 0}
+				{@const notInShop = !myShopIds.has(item.id)}
+				{@const soldOut = item.count === 0 || notInShop}
 				<div
 					class="rounded-2xl border-4 border-black p-4 transition-all hover:border-dashed sm:p-6 {soldOut
 						? 'bg-gray-100'
@@ -230,7 +234,7 @@
 									<h3 class="truncate text-lg font-bold sm:text-xl">{item.name}</h3>
 									{#if soldOut}
 										<span class="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-600"
-											>{$t.shop.soldOut}</span
+											>{notInShop ? $t.refinery.notInShop : $t.shop.soldOut}</span
 										>
 									{/if}
 								</div>
@@ -269,7 +273,7 @@
 									</button>
 								{/if}
 								<span class="rounded-full bg-gray-200 px-4 py-2 font-bold text-gray-600"
-									>{$t.shop.soldOut}</span
+									>{notInShop ? $t.refinery.notInShop : $t.shop.soldOut}</span
 								>
 							{:else}
 								{#if item.userBoostPercent > 0}

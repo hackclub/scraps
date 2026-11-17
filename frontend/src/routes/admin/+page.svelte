@@ -241,18 +241,65 @@
 		}
 	}
 
+	let raffle = $state<{
+		total: number;
+		users: { id: number; username: string | null; avatar: string | null; tickets: number }[];
+	} | null>(null);
+
+	type Suggestion = {
+		id: number;
+		name: string;
+		image: string | null;
+		description: string | null;
+		vendorUrl: string;
+		createdAt: string;
+		userId: number;
+		username: string | null;
+	};
+	let suggestions = $state<Suggestion[] | null>(null);
+
+	async function loadSuggestions() {
+		try {
+			const res = await fetch(`${API_URL}/admin/item-suggestions`, { credentials: 'include' });
+			if (res.ok) suggestions = await res.json();
+		} catch {
+			suggestions = null;
+		}
+	}
+
+	async function dismissSuggestion(id: number) {
+		const res = await fetch(`${API_URL}/admin/item-suggestions/${id}`, {
+			method: 'DELETE',
+			credentials: 'include'
+		});
+		if (res.ok && suggestions) suggestions = suggestions.filter((x) => x.id !== id);
+	}
+
+	async function loadRaffleTickets() {
+		try {
+			const res = await fetch(`${API_URL}/admin/raffle-tickets`, { credentials: 'include' });
+			if (res.ok) raffle = await res.json();
+		} catch {
+			raffle = null;
+		}
+	}
+
 	onMount(async () => {
 		const user = await getUser();
 		if (!user) {
 			requireLogin();
 			return;
 		}
-		if ((user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator')) {
+		if (user.role !== 'admin' && user.role !== 'reviewer' && user.role !== 'creator') {
 			blocked = true;
 			return;
 		}
 		isAdmin = user.role === 'admin' || user.role === 'creator';
-		if (isAdmin) loadSiteSettings();
+		if (isAdmin) {
+			loadSiteSettings();
+			loadRaffleTickets();
+			loadSuggestions();
+		}
 
 		try {
 			const response = await fetch(`${API_URL}/admin/stats`, {
@@ -478,6 +525,99 @@
 	{#if isAdmin}
 		<div class="mx-auto max-w-4xl px-6 pb-24 md:px-12">
 			<h2 class="mb-4 text-2xl font-bold">admin actions</h2>
+
+			<div class="mb-6 rounded-2xl border-4 border-black p-6">
+				<div class="mb-3 flex items-center justify-between">
+					<h3 class="text-lg font-bold">item suggestions</h3>
+					<span class="text-sm text-gray-500"
+						>{suggestions ? `${suggestions.length} total` : ''}</span
+					>
+				</div>
+				{#if !suggestions}
+					<p class="text-sm text-gray-500">loading...</p>
+				{:else if suggestions.length === 0}
+					<p class="text-sm text-gray-500">no suggestions yet</p>
+				{:else}
+					<div class="flex max-h-96 flex-col gap-3 overflow-y-auto">
+						{#each suggestions as sg (sg.id)}
+							<div class="flex gap-3 rounded-xl border-2 border-black p-3">
+								{#if sg.image}
+									<img
+										src={safeUrl(sg.image)}
+										alt=""
+										class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
+									/>
+								{/if}
+								<div class="min-w-0 flex-1">
+									<div class="flex items-start justify-between gap-2">
+										<p class="font-bold break-words">{sg.name}</p>
+										<button
+											onclick={() => dismissSuggestion(sg.id)}
+											class="shrink-0 cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold hover:bg-gray-100"
+											>dismiss</button
+										>
+									</div>
+									{#if sg.description}
+										<p class="text-sm break-words whitespace-pre-line text-gray-600">
+											{sg.description}
+										</p>
+									{/if}
+									<a
+										href={safeUrl(sg.vendorUrl)}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="block truncate text-sm underline">{sg.vendorUrl}</a
+									>
+									<p class="mt-1 text-xs text-gray-400">
+										<a href="/admin/users/{sg.userId}" class="hover:underline"
+											>{sg.username ?? `user #${sg.userId}`}</a
+										>
+										· {new Date(sg.createdAt).toLocaleDateString('en-US', {
+											month: 'short',
+											day: 'numeric'
+										})}
+									</p>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<div class="mb-6 rounded-2xl border-4 border-black p-6">
+				<div class="mb-3 flex items-center justify-between">
+					<h3 class="text-lg font-bold">raffle tickets</h3>
+					<span class="text-sm text-gray-500">{raffle ? `${raffle.total} total` : ''}</span>
+				</div>
+				{#if !raffle}
+					<p class="text-sm text-gray-500">loading...</p>
+				{:else if raffle.users.length === 0}
+					<p class="text-sm text-gray-500">nobody has tickets yet</p>
+				{:else}
+					<div class="max-h-80 overflow-y-auto">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="border-b-2 border-black text-left">
+									<th class="py-1">user</th>
+									<th class="py-1 text-right">tickets</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each raffle.users as u (u.id)}
+									<tr class="border-b border-gray-200">
+										<td class="py-1">
+											<a href="/admin/users/{u.id}" class="hover:underline"
+												>{u.username ?? `user #${u.id}`}</a
+											>
+										</td>
+										<td class="py-1 text-right font-bold">{u.tickets}</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</div>
 
 			<div class="mb-6 rounded-2xl border-4 border-black p-6">
 				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

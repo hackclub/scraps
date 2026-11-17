@@ -50,13 +50,6 @@ class UserController < ApplicationController
     conn = ActiveRecord::Base.connection
     set_parts = ["updated_at = NOW()"]
     set_parts << "preferred_name = #{conn.quote(params[:preferredName].to_s.strip.presence)}" if params.key?(:preferredName)
-    set_parts << "phone = #{conn.quote(params[:phone].to_s.strip.presence)}" if params.key?(:phone)
-    set_parts << "address_line1 = #{conn.quote(params[:addressLine1].to_s.strip.presence)}" if params.key?(:addressLine1)
-    set_parts << "address_line2 = #{conn.quote(params[:addressLine2].to_s.strip.presence)}" if params.key?(:addressLine2)
-    set_parts << "address_city = #{conn.quote(params[:addressCity].to_s.strip.presence)}" if params.key?(:addressCity)
-    set_parts << "address_state = #{conn.quote(params[:addressState].to_s.strip.presence)}" if params.key?(:addressState)
-    set_parts << "address_postal_code = #{conn.quote(params[:addressPostalCode].to_s.strip.presence)}" if params.key?(:addressPostalCode)
-    set_parts << "address_country = #{conn.quote(params[:addressCountry].to_s.strip.presence)}" if params.key?(:addressCountry)
 
     conn.execute("UPDATE users SET #{set_parts.join(', ')} WHERE id = #{current_user.id}")
     render_json({ success: true })
@@ -185,6 +178,7 @@ class UserController < ApplicationController
     end
 
     balance = ScrapsService.get_user_scraps_balance(params[:id].to_i)
+    queue = ReviewQueueService.positions(conn, visible.select { |p| p["status"] == "waiting_for_review" }.map { |p| p["id"] })
 
     refinements_rows = conn.select_all(<<~SQL).to_a
       SELECT ro.shop_item_id, si.name AS item_name, si.image AS item_image,
@@ -215,6 +209,8 @@ class UserController < ApplicationController
           github_url: p["github_url"],
           hours: (p["hours_override"] || p["hours"]).to_f,
           status: p["status"],
+          queue_position: queue.dig(p["id"].to_i, :position),
+          queue_total: queue.dig(p["id"].to_i, :total),
           created_at: p["created_at"]
         }
       },

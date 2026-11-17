@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { safeUrl } from '$lib/safeUrl';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import {
 		ArrowLeft,
 		Pencil,
@@ -52,6 +52,8 @@
 		deductedHours: number;
 		createdAt: string;
 		updatedAt: string;
+		queuePosition: number | null;
+		queueTotal: number | null;
 	}
 
 	interface Owner {
@@ -85,6 +87,7 @@
 	let showUnsubmitConfirm = $state(false);
 	let unsubmitting = $state(false);
 	let showDeleteConfirm = $state(false);
+	let showSubmittedModal = $state(false);
 	let deleting = $state(false);
 
 	onMount(async () => {
@@ -113,6 +116,12 @@
 			isOwner = result.isOwner;
 			canDelete = result.canDelete;
 			activity = result.activity || [];
+			const url = new URL(window.location.href);
+			if (url.searchParams.has('submitted')) {
+				url.searchParams.delete('submitted');
+				replaceState(url, {});
+				if (project?.status === 'waiting_for_review') showSubmittedModal = true;
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load project';
 		} finally {
@@ -325,6 +334,10 @@
 						>
 							<Clock size={14} />
 							{$t.project.awaitingReview}
+							{#if project.queuePosition && project.queueTotal}
+								<span class="mx-1 h-4 border-l-2 border-yellow-600"></span>
+								#{project.queuePosition} of {project.queueTotal} in queue
+							{/if}
 						</span>
 					{:else}
 						<span
@@ -669,6 +682,37 @@
 		</div>
 	{/if}
 </div>
+
+{#if showSubmittedModal && project}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+		onclick={(e) => e.target === e.currentTarget && (showSubmittedModal = false)}
+		onkeydown={(e) => e.key === 'Escape' && (showSubmittedModal = false)}
+		role="dialog"
+		tabindex="-1"
+	>
+		<div class="w-full max-w-md rounded-2xl border-4 border-black bg-white p-6 text-center">
+			<Send size={40} class="mx-auto mb-3" />
+			<h2 class="mb-2 text-2xl font-bold">submitted for review!</h2>
+			{#if project.queuePosition && project.queueTotal}
+				<p class="mb-1 text-gray-700">you're in the review queue at</p>
+				<p class="mb-1 text-5xl font-bold">#{project.queuePosition}</p>
+				<p class="mb-6 text-gray-500">out of {project.queueTotal} projects waiting</p>
+			{:else}
+				<p class="mb-6 text-gray-700">you're in the review queue.</p>
+			{/if}
+			<p class="mb-6 text-sm text-gray-500">
+				you'll get a slack dm when a reviewer looks at <span class="font-bold">{project.name}</span>.
+			</p>
+			<button
+				onclick={() => (showSubmittedModal = false)}
+				class="w-full cursor-pointer rounded-full border-4 border-black bg-black px-4 py-3 font-bold text-white transition-all duration-200 hover:border-dashed hover:bg-white hover:text-black"
+			>
+				got it
+			</button>
+		</div>
+	</div>
+{/if}
 
 <!-- Unsubmit Confirmation Modal -->
 {#if showUnsubmitConfirm && project}

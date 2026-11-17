@@ -173,6 +173,27 @@ module HackatimeService
       join_project_list(project_names(hackatime_project))
     end
 
+    def fetch_heartbeat_times(user_id, start_date, project)
+      times = []
+      offset = 0
+      loop do
+        resp = HTTParty.get(
+          "#{HACKATIME_API}/user/heartbeats",
+          headers: auth_headers,
+          query: { user_id: user_id, start_date: start_date, project: project, limit: HEARTBEAT_PAGE, offset: offset }
+        )
+        return nil unless resp.success?
+        page = resp.parsed_response["heartbeats"] || []
+        times.concat(page.map { |hb| hb["time"].to_f })
+        offset += page.length
+        break if page.empty? || !resp.parsed_response["has_more"] || offset >= HEARTBEAT_MAX
+      end
+      times
+    rescue StandardError => e
+      Rails.logger.warn("[HACKATIME] heartbeat fetch failed: #{e.message}")
+      nil
+    end
+
     private
 
     def auth_headers

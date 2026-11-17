@@ -4,6 +4,7 @@ class ShopController < ApplicationController
   RETAINED_ITEMS_CAP_BASE = 2
   DAILY_PICKS_BASE = 5
   DAILY_PICKS_REFERRAL_BONUS = 2
+  MISSING_SHIPPING_ERROR = "Add your legal name, address and phone number on auth.hackclub.com, then log out and back in before getting items".freeze
 
   def self.retained_items_cap_for(user)
     return RETAINED_ITEMS_CAP_BASE unless user
@@ -89,6 +90,39 @@ class ShopController < ApplicationController
     render_json({ success: true })
   end
 
+  SUGGESTIONS_PER_DAY = 10
+
+  def suggest_item
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    name = params[:name].to_s.strip
+    description = params[:description].to_s.strip
+    vendor_url = params[:vendor_url].to_s.strip
+    image = params[:image].to_s.strip
+
+    return render_json({ error: "Give the item a name" }, status: :unprocessable_entity) if name.empty?
+    return render_json({ error: "Name is too long" }, status: :unprocessable_entity) if name.length > 120
+    return render_json({ error: "Description is too long" }, status: :unprocessable_entity) if description.length > 1000
+    unless vendor_url.match?(%r{\Ahttps?://\S+\z}i) && vendor_url.length <= 1000
+      return render_json({ error: "Add a valid link to where it's sold (starting with http)" }, status: :unprocessable_entity)
+    end
+    if image.present? && !(image.match?(%r{\Ahttps://\S+\z}i) && image.length <= 1000)
+      return render_json({ error: "Invalid image" }, status: :unprocessable_entity)
+    end
+
+    conn = ActiveRecord::Base.connection
+    recent = conn.select_value("SELECT COUNT(*) FROM item_suggestions WHERE user_id = #{current_user.id.to_i} AND created_at > NOW() - INTERVAL '1 day'").to_i
+    if recent >= SUGGESTIONS_PER_DAY
+      return render_json({ error: "You've sent a lot of suggestions today, try again tomorrow" }, status: :too_many_requests)
+    end
+
+    conn.execute(<<~SQL)
+      INSERT INTO item_suggestions (user_id, name, image, description, vendor_url, created_at)
+      VALUES (#{current_user.id.to_i}, #{conn.quote(name)}, #{conn.quote(image.presence)}, #{conn.quote(description.presence)}, #{conn.quote(vendor_url)}, NOW())
+    SQL
+    render_json({ success: true })
+  end
+
   def unretain_item
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
@@ -158,7 +192,10 @@ class ShopController < ApplicationController
     return render_json({ error: "Not found" }, status: :not_found) unless gachapon
 
     price = gachapon["price"].to_i
-    phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
+    shipping_user = AccountAddressService.user_row(conn, current_user.id)
+    return render_json({ error: MISSING_SHIPPING_ERROR, code: "missing_shipping_info" }, status: :unprocessable_entity) if AccountAddressService.missing?(shipping_user)
+    phone = shipping_user["phone"]
+    shipping_json = AccountAddressService.shipping_json(shipping_user)
 
     begin
       order_row = ActiveRecord::Base.transaction do
@@ -179,7 +216,7 @@ class ShopController < ApplicationController
 
         order = conn.select_one(<<~SQL)
           INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, created_at, updated_at)
-          VALUES (#{current_user.id}, #{won_item_id}, 1, #{price}, #{price}, NULL, #{conn.quote(phone)}, 'pending', 'gachapon', NOW(), NOW())
+          VALUES (#{current_user.id}, #{won_item_id}, 1, #{price}, #{price}, #{conn.quote(shipping_json)}, #{conn.quote(phone)}, 'pending', 'gachapon', NOW(), NOW())
           RETURNING *
         SQL
 
@@ -308,7 +345,10 @@ class ShopController < ApplicationController
     return render_json({ error: size_error }, status: :unprocessable_entity) if size_error
 
     total_price = item["price"].to_i * quantity
-    phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
+    shipping_user = AccountAddressService.user_row(conn, current_user.id)
+    return render_json({ error: MISSING_SHIPPING_ERROR, code: "missing_shipping_info" }, status: :unprocessable_entity) if AccountAddressService.missing?(shipping_user)
+    phone = shipping_user["phone"]
+    shipping_json = AccountAddressService.shipping_json(shipping_user)
 
     begin
       order_row = ActiveRecord::Base.transaction do
@@ -348,7 +388,7 @@ class ShopController < ApplicationController
         else
           conn.select_one(<<~SQL)
             INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, size, created_at, updated_at)
-            VALUES (#{current_user.id}, #{item_id}, #{quantity}, #{item['price'].to_i}, #{total_price}, NULL, #{conn.quote(phone)}, 'pending', 'purchase', #{conn.quote(size)}, NOW(), NOW())
+            VALUES (#{current_user.id}, #{item_id}, #{quantity}, #{item['price'].to_i}, #{total_price}, #{conn.quote(shipping_json)}, #{conn.quote(phone)}, 'pending', 'purchase', #{conn.quote(size)}, NOW(), NOW())
             RETURNING *
           SQL
         end
@@ -391,7 +431,10 @@ class ShopController < ApplicationController
     size, size_error = requested_size(item, 1)
     return render_json({ error: size_error }, status: :unprocessable_entity) if size_error
 
-    phone = conn.select_one("SELECT phone FROM users WHERE id = #{current_user.id}")&.dig("phone")
+    shipping_user = AccountAddressService.user_row(conn, current_user.id)
+    return render_json({ error: MISSING_SHIPPING_ERROR, code: "missing_shipping_info" }, status: :unprocessable_entity) if AccountAddressService.missing?(shipping_user)
+    phone = shipping_user["phone"]
+    shipping_json = AccountAddressService.shipping_json(shipping_user)
 
     begin
       roll_result = ActiveRecord::Base.transaction do
@@ -444,7 +487,7 @@ class ShopController < ApplicationController
 
           order_row = conn.select_one(<<~SQL)
             INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, size, created_at, updated_at)
-            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, NULL, #{conn.quote(phone)}, 'pending', 'luck_win', #{conn.quote(size)}, NOW(), NOW())
+            VALUES (#{current_user.id}, #{item_id}, 1, #{roll_cost}, #{roll_cost}, #{conn.quote(shipping_json)}, #{conn.quote(phone)}, 'pending', 'luck_win', #{conn.quote(size)}, NOW(), NOW())
             RETURNING id
           SQL
 
@@ -690,32 +733,23 @@ class ShopController < ApplicationController
   def addresses
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
-    conn = ActiveRecord::Base.connection
-    u = conn.select_one(<<~SQL)
-      SELECT first_name, legal_first_name, legal_last_name, phone,
-             address_line1, address_line2, address_city, address_state,
-             address_postal_code, address_country
-      FROM users WHERE id = #{current_user.id}
-    SQL
-    return render_json([]) unless u
-    return render_json([]) if u["address_line1"].blank? && u["address_city"].blank?
-
-    render_json([{
-      id: "account",
-      first_name: u["legal_first_name"].presence || u["first_name"],
-      last_name: u["legal_last_name"],
-      line_1: u["address_line1"],
-      line_2: u["address_line2"],
-      city: u["address_city"],
-      state: u["address_state"],
-      postal_code: u["address_postal_code"],
-      country: u["address_country"],
-      phone_number: u["phone"],
-      primary: true
-    }])
+    render_json(account_addresses_payload)
   rescue StandardError => e
     Rails.logger.error("[SHOP/addresses] #{e.message}")
     render_json([])
+  end
+
+  def resync_addresses
+    return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
+
+    result = AccountAddressService.resync!(current_user)
+    if result == :reauth_required
+      return render_json({ error: "Couldn't reach Hack Club Auth with your login. Log out and back in, then try again.", code: "reauth_required" }, status: :unprocessable_entity)
+    end
+    render_json(account_addresses_payload)
+  rescue StandardError => e
+    Rails.logger.error("[SHOP/resync_addresses] #{e.message}")
+    render_json({ error: "Failed to resync address" }, status: :internal_server_error)
   end
 
   def orders
@@ -778,13 +812,14 @@ class ShopController < ApplicationController
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless current_user
 
     order_id = params[:id].to_i
-    shipping_address = params[:shippingAddress].to_s.strip
-    return render_json({ error: "Shipping address is required" }, status: :unprocessable_entity) if shipping_address.blank?
-
     conn = ActiveRecord::Base.connection
     order = conn.select_one("SELECT user_id FROM shop_orders WHERE id = #{order_id}")
     return render_json({ error: "Order not found" }, status: :not_found) unless order
     return render_json({ error: "Unauthorized" }, status: :unauthorized) unless order["user_id"].to_i == current_user.id
+
+    account = AccountAddressService.user_row(conn, current_user.id)
+    return render_json({ error: MISSING_SHIPPING_ERROR, code: "missing_shipping_info" }, status: :unprocessable_entity) if AccountAddressService.missing?(account)
+    shipping_address = AccountAddressService.shipping_json(account)
 
     conn.execute("UPDATE shop_orders SET shipping_address = #{conn.quote(shipping_address)}, updated_at = NOW() WHERE id = #{order_id}")
     render_json({ success: true })
@@ -960,6 +995,25 @@ class ShopController < ApplicationController
     val == true || val == "t" || val == 1 || val == "1"
   end
 
+  def account_addresses_payload
+    row = AccountAddressService.user_row(ActiveRecord::Base.connection, current_user.id)
+    addr = AccountAddressService.shipping_hash(row)
+    return [] unless addr
+    [{
+      id: "account",
+      first_name: addr[:firstName],
+      last_name: addr[:lastName],
+      line_1: addr[:address1],
+      line_2: addr[:address2],
+      city: addr[:city],
+      state: addr[:state],
+      postal_code: addr[:postalCode],
+      country: addr[:country],
+      phone_number: addr[:phone],
+      primary: true,
+      complete: !AccountAddressService.missing?(row)
+    }]
+  end
   def off_shelf_reason(item)
     return "This item is only available from a gachapon" if truthy?(item["gachapon_only"])
     return "This item is only available as a consolation prize" if truthy?(item["consolation_prize"])

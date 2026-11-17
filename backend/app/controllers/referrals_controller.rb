@@ -69,9 +69,10 @@ class ReferralsController < ApplicationController
         unless conn.select_value("SELECT 1 FROM shop_items WHERE id = #{item_id}")
           raise ActiveRecord::Rollback
         end
+        shipping_json = AccountAddressService.shipping_json(AccountAddressService.user_row(conn, current_user.id))
         order_id = conn.select_value(<<~SQL).to_i
           INSERT INTO shop_orders (user_id, shop_item_id, quantity, price_per_item, total_price, shipping_address, phone, status, order_type, notes, created_at, updated_at)
-          VALUES (#{current_user.id.to_i}, #{item_id}, 1, 0, 0, NULL, #{conn.quote(current_user.phone)}, 'pending', 'referral_reward',
+          VALUES (#{current_user.id.to_i}, #{item_id}, 1, 0, 0, #{conn.quote(shipping_json)}, #{conn.quote(current_user.phone)}, 'pending', 'referral_reward',
                   #{conn.quote("Referral reward: #{milestone[:count]} verified referrals")}, NOW(), NOW())
           RETURNING id
         SQL

@@ -80,7 +80,7 @@
 				throw new Error(data.error);
 			}
 
-			goto('/dashboard');
+			goto(`/projects/${selectedProject.id}?submitted=1`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : $t.submit.failedToSubmit;
 		} finally {

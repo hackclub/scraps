@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import ProjectPlaceholder from '$lib/components/ProjectPlaceholder.svelte';
-	import NewsCarousel from '$lib/components/NewsCarousel.svelte';
+	import NewsBox from '$lib/components/NewsBox.svelte';
+	import StreakCard from '$lib/components/StreakCard.svelte';
 	import CreateProjectModal from '$lib/components/CreateProjectModal.svelte';
 	import { getUser, requireLogin } from '$lib/auth-client';
 	import { projectsStore, fetchProjects, addProject } from '$lib/stores';
@@ -10,19 +11,13 @@
 	import { t } from '$lib/i18n';
 	import { Plus } from '@lucide/svelte';
 
-	const greetingPhrases = $derived([
-		$t.dashboard.greetings.readyToScrap,
-		$t.dashboard.greetings.timeToBuild,
-		$t.dashboard.greetings.whatWillYouShip,
-		$t.dashboard.greetings.letTheScrapBegin,
-		$t.dashboard.greetings.hackAway,
-		$t.dashboard.greetings.makeSomethingFun,
-		$t.dashboard.greetings.createShipRepeat,
-		$t.dashboard.greetings.keepOnScrapping
-	]);
-
-	let phraseIndex = Math.floor(Math.random() * 8);
-	let randomPhrase = $derived(greetingPhrases[phraseIndex]);
+	const greetingPhrases = $derived(Object.values($t.dashboard.greetings));
+	const helloSeed = Math.random();
+	const phraseSeed = Math.random();
+	let randomHello = $derived(
+		$t.dashboard.hellos[Math.floor(helloSeed * $t.dashboard.hellos.length)]
+	);
+	let randomPhrase = $derived(greetingPhrases[Math.floor(phraseSeed * greetingPhrases.length)]);
 
 	let showCreateModal = $state(false);
 	let user = $state<Awaited<ReturnType<typeof getUser>>>(null);
@@ -42,20 +37,25 @@
 	<title>dashboard - scraps</title>
 </svelte:head>
 
-<div class="mx-auto max-w-6xl px-6 pt-24 pb-24 md:px-12">
+<div class="mx-auto max-w-6xl px-6 pt-24 pb-24 md:px-12 md:pt-32">
 	<!-- Greeting -->
-	{#if user}
-		<h1 class="mb-2 text-4xl font-bold md:text-5xl">
-			{$t.dashboard.hello.replace(
-				'{name}',
-				(user.username || 'friend').trim().split(/\s+/)[0].toLocaleLowerCase()
-			)}
-		</h1>
-		<p class="mb-8 text-lg text-gray-600">{randomPhrase}</p>
-	{/if}
+	<div class="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+		<div class="min-w-0">
+			{#if user}
+				<h1 class="mb-2 text-4xl font-bold md:text-5xl">
+					{randomHello.replace(
+						'{name}',
+						(user.username || 'friend').trim().split(/\s+/)[0].toLocaleLowerCase()
+					)}
+				</h1>
+				<p class="text-lg text-gray-600">{randomPhrase}</p>
+			{/if}
+		</div>
+		<NewsBox />
+	</div>
 
 	<!-- Projects Section -->
-	<div class="mb-12">
+	<div class="mb-8">
 		<div class="scrollbar-black flex gap-6 overflow-x-auto pb-4">
 			{#if canCreateProject}
 				<a
@@ -107,8 +107,7 @@
 		</div>
 	</div>
 
-	<!-- News Carousel -->
-	<NewsCarousel />
+	<StreakCard />
 </div>
 
 {#if canCreateProject}

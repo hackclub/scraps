@@ -290,7 +290,7 @@
 			}
 
 			window.dispatchEvent(new CustomEvent('tutorial:project-submitted'));
-			goto(`/projects/${project.id}${isAdminUser ? '?view=public' : ''}`);
+			goto(`/projects/${project.id}?submitted=1${isAdminUser ? '&view=public' : ''}`);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to submit project';
 		} finally {

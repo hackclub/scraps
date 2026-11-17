@@ -61,8 +61,10 @@ Rails.application.routes.draw do
     post   "orders/:id/address",           to: "shop#set_address"
     post   "orders/:id/size",              to: "shop#set_order_size"
     get    "addresses",                    to: "shop#addresses"
+    post   "addresses/resync",             to: "shop#resync_addresses"
     get    "daily",                        to: "shop#daily_picks"
     get    "retained",                     to: "shop#retained_items"
+    post   "suggestions",                  to: "shop#suggest_item"
     post   "retained/:id",                 to: "shop#retain_item"
     delete "retained/:id",                 to: "shop#unretain_item"
     get    "gachapons",                    to: "shop#gachapons"
@@ -107,6 +109,11 @@ Rails.application.routes.draw do
     put    "settings",          to: "user#update_settings"
   end
 
+  scope :streak do
+    get  "/",     to: "streak#show"
+    post "claim", to: "streak#claim"
+  end
+
   # Hackatime
   scope :hackatime do
     get "projects", to: "hackatime#projects"
@@ -125,6 +132,9 @@ Rails.application.routes.draw do
     post   "sync-airtable",                   to: "admin#sync_airtable"
     post   "fix-negative-balances",           to: "admin#fix_negative_balances"
     get    "unified-duplicates",              to: "admin#unified_duplicates"
+    get    "raffle-tickets",                  to: "admin#raffle_tickets"
+    get    "item-suggestions",                to: "admin#item_suggestions"
+    delete "item-suggestions/:id",            to: "admin#delete_item_suggestion"
     post   "recalculate-shop-pricing",        to: "admin#recalculate_shop_pricing"
     get    "site-settings",                   to: "admin#site_settings"
     put    "site-settings/:key",              to: "admin#update_site_setting"
@@ -169,6 +179,7 @@ Rails.application.routes.draw do
     get    "orders",                          to: "admin#orders"
     get    "orders/needs-info-count",         to: "admin#orders_needs_info_count"
     get    "orders/:id",                      to: "admin#show_order"
+    post   "orders/fulfill",                  to: "admin#fulfill_orders"
     patch  "orders/:id",                      to: "admin#update_order"
     patch  "orders/:id/notes",                to: "admin#update_order_notes"
     get    "orders/:id/undo-preview",         to: "admin#undo_order_preview"

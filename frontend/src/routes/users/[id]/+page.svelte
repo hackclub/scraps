@@ -30,6 +30,8 @@
 		githubUrl: string | null;
 		hours: number;
 		status: string;
+		queuePosition: number | null;
+		queueTotal: number | null;
 		createdAt: string;
 	}
 
@@ -329,6 +331,10 @@
 											>
 												<Clock size={12} />
 												{$t.profile.underReview}
+												{#if project.queuePosition && project.queueTotal}
+													<span class="mx-0.5 h-3 border-l-2 border-blue-600"></span>
+													#{project.queuePosition}/{project.queueTotal}
+												{/if}
 											</span>
 										{:else}
 											<span

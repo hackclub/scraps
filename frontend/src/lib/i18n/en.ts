@@ -78,7 +78,20 @@ export default {
 		faq: 'frequently asked questions'
 	},
 	dashboard: {
-		hello: 'hello, {name}',
+		hellos: [
+			'hello {name}',
+			'hi {name}',
+			'hallo {name}',
+			'hiiiiii {name}',
+			"'ello {name}",
+			'hey {name}!',
+			'howdy {name}',
+			'yo {name}',
+			'heyo {name}',
+			'oh hey, {name}',
+			'welcome back, {name}',
+			'ahoy {name}'
+		],
 		greetings: {
 			readyToScrap: 'ready to scrap?',
 			timeToBuild: 'time to build something silly',
@@ -87,7 +100,17 @@ export default {
 			hackAway: 'hack away!',
 			makeSomethingFun: 'make something fun',
 			createShipRepeat: 'create, ship, repeat',
-			keepOnScrapping: 'keep on scrapping'
+			keepOnScrapping: 'keep on scrapping',
+			whatAreWeBreaking: 'what are we breaking today?',
+			shipFirst: 'ship first, polish later',
+			nobodyAskedFor: 'go make something nobody asked for',
+			hoursForPrizes: 'log some hours, roll some prizes',
+			shopMissesYou: 'the shop misses you',
+			smallProjectBigFun: 'small project, big fun',
+			oneMoreCommit: 'just one more commit...',
+			buildItWeird: 'build it weird, ship it anyway',
+			ideasIn: 'ideas in, projects out',
+			refineryWarm: 'the refinery is warmed up'
 		},
 		newProject: 'new project',
 		tier: 'tier',
@@ -185,6 +208,7 @@ export default {
 		result: 'result'
 	},
 	refinery: {
+		notInShop: 'not in your shop',
 		refinery: 'refinery',
 		upgradeYourLuck: 'upgrade your luck',
 		maxed: 'maxed',
@@ -327,7 +351,20 @@ export default {
 		afterAddingAddress: 'after adding an address, refresh this page to select it.',
 		loadingAddresses: 'loading addresses...',
 		confirmShippingAddress: 'confirm shipping address',
-		failedToSaveAddress: 'Failed to save address'
+		failedToSaveAddress: 'Failed to save address',
+		confirmItsRight: "we'll ship it to your hack club auth address below. check it's right, then confirm.",
+		yourAuthAddress: 'your address from hack club auth',
+		readOnlyHint:
+			"this comes from hack club auth and can't be edited on scraps. if anything is wrong, change it on hack club auth, then hit resync.",
+		changeOnAuth: 'change it on hack club auth',
+		resync: 'resync',
+		resyncing: 'resyncing...',
+		resynced: 'address updated from hack club auth',
+		resyncFailed: "couldn't resync, try again",
+		incompleteNotice:
+			'your hack club auth account is missing your legal name, address or phone. add it there, then hit resync.',
+		noAddressNotice:
+			"you don't have an address on hack club auth yet. add one there, then hit resync."
 	},
 	settings: {
 		settings: 'settings',

@@ -5,6 +5,7 @@
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
 	import GachaponPull from '$lib/components/GachaponPull.svelte';
 	import GachaponDetailModal from '$lib/components/GachaponDetailModal.svelte';
+	import SuggestItemButton from '$lib/components/SuggestItemButton.svelte';
 	import { API_URL } from '$lib/config';
 	import { getUser } from '$lib/auth-client';
 	import {
@@ -730,6 +731,8 @@
 		onDone={finishConsolationReveal}
 	/>
 {/if}
+
+<SuggestItemButton />
 
 <a
 	href="/orders"

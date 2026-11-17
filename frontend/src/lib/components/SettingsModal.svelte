@@ -4,6 +4,7 @@
 	import { API_URL } from '$lib/config';
 	import { t } from '$lib/i18n';
 	import { showToast, onboardingSandbox } from '$lib/stores';
+	import AccountAddressCard from './AccountAddressCard.svelte';
 
 	let { onClose }: { onClose: () => void } = $props();
 
@@ -12,13 +13,6 @@
 	let error = $state<string | null>(null);
 
 	let preferredName = $state('');
-	let phone = $state('');
-	let addressLine1 = $state('');
-	let addressLine2 = $state('');
-	let addressCity = $state('');
-	let addressState = $state('');
-	let addressPostalCode = $state('');
-	let addressCountry = $state('');
 
 	onMount(async () => {
 		try {
@@ -26,13 +20,6 @@
 			if (res.ok) {
 				const data = await res.json();
 				preferredName = data.preferredName ?? '';
-				phone = data.phone ?? '';
-				addressLine1 = data.addressLine1 ?? '';
-				addressLine2 = data.addressLine2 ?? '';
-				addressCity = data.addressCity ?? '';
-				addressState = data.addressState ?? '';
-				addressPostalCode = data.addressPostalCode ?? '';
-				addressCountry = data.addressCountry ?? '';
 			} else {
 				error = $t.settings.failedToLoad;
 			}
@@ -57,16 +44,7 @@
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				credentials: 'include',
-				body: JSON.stringify({
-					preferredName,
-					phone,
-					addressLine1,
-					addressLine2,
-					addressCity,
-					addressState,
-					addressPostalCode,
-					addressCountry
-				})
+				body: JSON.stringify({ preferredName })
 			});
 			if (!res.ok) throw new Error();
 			showToast($t.settings.saved, 'success');
@@ -127,68 +105,8 @@
 
 				<div class="border-t-2 border-dashed border-gray-300 pt-5">
 					<p class="mb-1 font-bold">{$t.settings.yourAddress}</p>
-					<p class="mb-3 text-xs text-gray-500">{$t.settings.addressHint}</p>
 
-					<div class="space-y-3">
-						<label class="block text-xs font-bold text-gray-600">
-							{$t.address.addressLine1}
-							<input
-								type="text"
-								bind:value={addressLine1}
-								class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-							/>
-						</label>
-						<label class="block text-xs font-bold text-gray-600">
-							{$t.address.addressLine2}
-							<input
-								type="text"
-								bind:value={addressLine2}
-								class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-							/>
-						</label>
-						<div class="grid grid-cols-3 gap-2">
-							<label class="text-xs font-bold text-gray-600">
-								{$t.address.city}
-								<input
-									type="text"
-									bind:value={addressCity}
-									class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-								/>
-							</label>
-							<label class="text-xs font-bold text-gray-600">
-								{$t.address.state}
-								<input
-									type="text"
-									bind:value={addressState}
-									class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-								/>
-							</label>
-							<label class="text-xs font-bold text-gray-600">
-								{$t.address.postalCode}
-								<input
-									type="text"
-									bind:value={addressPostalCode}
-									class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-								/>
-							</label>
-						</div>
-						<label class="block text-xs font-bold text-gray-600">
-							{$t.address.country}
-							<input
-								type="text"
-								bind:value={addressCountry}
-								class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-							/>
-						</label>
-						<label class="block text-xs font-bold text-gray-600">
-							{$t.address.phone}
-							<input
-								type="tel"
-								bind:value={phone}
-								class="mt-1 w-full rounded-lg border-2 border-black px-3 py-2 text-sm focus:border-dashed focus:outline-none"
-							/>
-						</label>
-					</div>
+					<AccountAddressCard />
 				</div>
 
 				<div class="border-t-2 border-dashed border-gray-300 pt-5">

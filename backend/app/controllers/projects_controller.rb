@@ -189,6 +189,8 @@ class ProjectsController < ApplicationController
 
     display_status = project["status"] == "pending_admin_approval" ? "waiting_for_review" : project["status"]
 
+    queue = project["status"] == "waiting_for_review" ? ReviewQueueService.positions(conn, [project["id"]])[project["id"].to_i] : nil
+
     render_json({
       project: {
         id: project["id"].to_i,
@@ -213,7 +215,9 @@ class ProjectsController < ApplicationController
         effective_hours: eff[:effective_hours],
         deducted_hours: eff[:deducted_hours],
         created_at: project["created_at"],
-        updated_at: project["updated_at"]
+        updated_at: project["updated_at"],
+        queue_position: queue&.dig(:position),
+        queue_total: queue&.dig(:total)
       },
       owner: project["user_id"] ? { id: project["user_id"].to_i, username: project["owner_username"], avatar: project["owner_avatar"] } : nil,
       is_owner: is_owner,
