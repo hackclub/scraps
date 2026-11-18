@@ -180,7 +180,9 @@
 <nav
 	class="fixed top-0 right-0 left-0 z-50 hidden items-center justify-between bg-white/90 px-6 py-4 backdrop-blur-sm md:flex md:px-8 lg:px-12 xl:px-24 2xl:px-64"
 >
-	{#if isLoggedIn}
+	{#if isLoggedIn && isInAdminSection}
+		<span class="hidden"></span>
+	{:else if isLoggedIn}
 		<a href="/dashboard" class="shrink-0">
 			<img src="/images/scraps_logo.png" alt="scraps" class="h-13 md:h-18" />
 		</a>
@@ -528,8 +530,9 @@
 					<Spool size={20} class="text-gray-300" />
 					<div class="h-6 w-8 animate-pulse rounded bg-gray-200"></div>
 				</div>
-				<!-- Skeleton for profile -->
-				<div class="h-10 w-10 animate-pulse rounded-full border-4 border-black bg-gray-200"></div>
+				{#if !isInAdminSection}
+					<div class="h-10 w-10 animate-pulse rounded-full border-4 border-black bg-gray-200"></div>
+				{/if}
 			{:else if user}
 				<div data-tutorial="scraps-counter" class="relative">
 					<button
@@ -541,65 +544,67 @@
 					</button>
 				</div>
 
-				<div class="profile-menu-container relative">
-					<button
-						onclick={toggleProfileMenu}
-						class="h-10 w-10 cursor-pointer overflow-hidden rounded-full border-4 border-black transition-all duration-200 hover:border-dashed"
-					>
-						{#if user.avatar}
-							<img
-								src={user.avatar}
-								alt={user.username || 'Profile'}
-								class="h-full w-full object-cover"
-							/>
-						{:else}
+				{#if !isInAdminSection}
+					<div class="profile-menu-container relative">
+						<button
+							onclick={toggleProfileMenu}
+							class="h-10 w-10 cursor-pointer overflow-hidden rounded-full border-4 border-black transition-all duration-200 hover:border-dashed"
+						>
+							{#if user.avatar}
+								<img
+									src={user.avatar}
+									alt={user.username || 'Profile'}
+									class="h-full w-full object-cover"
+								/>
+							{:else}
+								<div
+									class="flex h-full w-full items-center justify-center bg-black text-lg font-bold text-white"
+								>
+									{(user.username || user.email || '?').charAt(0).toUpperCase()}
+								</div>
+							{/if}
+						</button>
+
+						{#if showProfileMenu}
 							<div
-								class="flex h-full w-full items-center justify-center bg-black text-lg font-bold text-white"
+								class="absolute top-14 right-0 z-50 min-w-48 overflow-hidden rounded-2xl border-4 border-black bg-white"
 							>
-								{(user.username || user.email || '?').charAt(0).toUpperCase()}
+								<div class="border-b-2 border-black px-4 py-3">
+									<p class="truncate font-bold">{user.username || 'user'}</p>
+									<p class="truncate text-sm text-gray-500">{user.email}</p>
+								</div>
+								<a
+									href="/referrals"
+									onclick={closeProfileMenu}
+									class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100 {currentPath ===
+									'/referrals'
+										? 'bg-gray-100'
+										: ''}"
+								>
+									<Users size={18} />
+									<span class="font-bold">{$t.nav.referrals}</span>
+								</a>
+								<button
+									onclick={() => {
+										showSettings = true;
+										closeProfileMenu();
+									}}
+									class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100"
+								>
+									<Settings size={18} />
+									<span class="font-bold">{$t.nav.settings}</span>
+								</button>
+								<button
+									onclick={handleLogout}
+									class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-gray-100"
+								>
+									<LogOut size={18} />
+									<span class="font-bold">{$t.nav.logout}</span>
+								</button>
 							</div>
 						{/if}
-					</button>
-
-					{#if showProfileMenu}
-						<div
-							class="absolute top-14 right-0 z-50 min-w-48 overflow-hidden rounded-2xl border-4 border-black bg-white"
-						>
-							<div class="border-b-2 border-black px-4 py-3">
-								<p class="truncate font-bold">{user.username || 'user'}</p>
-								<p class="truncate text-sm text-gray-500">{user.email}</p>
-							</div>
-							<a
-								href="/referrals"
-								onclick={closeProfileMenu}
-								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100 {currentPath ===
-								'/referrals'
-									? 'bg-gray-100'
-									: ''}"
-							>
-								<Users size={18} />
-								<span class="font-bold">{$t.nav.referrals}</span>
-							</a>
-							<button
-								onclick={() => {
-									showSettings = true;
-									closeProfileMenu();
-								}}
-								class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100"
-							>
-								<Settings size={18} />
-								<span class="font-bold">{$t.nav.settings}</span>
-							</button>
-							<button
-								onclick={handleLogout}
-								class="flex w-full cursor-pointer items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-gray-100"
-							>
-								<LogOut size={18} />
-								<span class="font-bold">{$t.nav.logout}</span>
-							</button>
-						</div>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{:else}
