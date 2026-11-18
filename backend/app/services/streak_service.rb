@@ -6,7 +6,7 @@ module StreakService
   HISTORY_WEEKS = 5
   REWARDS_START = Date.new(2026, 11, 17)
   REWARDS = {
-    2 => { kind: "spool", title: "your choice of a shop item!", tickets: 1 },
+    2 => { kind: "spool", title: "shop slot item of your choice", tickets: 1 },
     5 => { kind: "roll", title: "random amount of scraps", tickets: 2 },
     7 => { kind: "week", title: "+100 scraps", tickets: 3, scraps: 100 }
   }.freeze

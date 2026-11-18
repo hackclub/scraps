@@ -2,7 +2,7 @@ class AdminController < ApplicationController
   class GachaponError < StandardError; end
 
   before_action :authenticate_reviewer, only: %i[budget stats users show_user update_notes projects_index update_project_notes reviews show_review submit_review sync_hours]
-  before_action :authenticate_admin, only: %i[update_role user_bonuses delete_bonus orders orders_needs_info_count show_order update_order fulfill_orders update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs fix_negative_balances unship_project user_timeline sync_airtable unified_duplicates recalculate_shop_pricing site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist raffle_tickets item_suggestions delete_item_suggestion]
+  before_action :authenticate_admin, only: %i[update_role user_bonuses delete_bonus orders orders_needs_info_count show_order update_order fulfill_orders update_order_notes delete_order restore_order undo_order_preview undo_order reject_all_orders adjust_balance shop_items create_shop_item update_shop_item delete_shop_item gachapons create_gachapon update_gachapon delete_gachapon news_index create_news update_news delete_news compute_pricing compute_roll_costs unship_project user_timeline unified_duplicates site_settings update_site_setting login_allowlist login_allowlist_users add_login_allowlist delete_login_allowlist raffle_tickets item_suggestions delete_item_suggestion]
   before_action :authenticate_creator, only: %i[delete_user]
 
   def site_settings
@@ -1328,21 +1328,6 @@ class AdminController < ApplicationController
     render_json({ results: results })
   end
 
-  def fix_negative_balances
-    all_users = ActiveRecord::Base.connection.select_all("SELECT id FROM users").to_a
-    fixed = []
-    all_users.each do |u|
-      bal = ScrapsService.get_user_scraps_balance(u["id"].to_i)[:balance]
-      if bal < 0
-        deficit = bal.abs
-        ActiveRecord::Base.connection.execute("INSERT INTO user_bonuses (user_id, amount, reason, given_by, created_at) VALUES (#{u['id'].to_i}, #{deficit}, 'negative_balance_fix', #{current_user.id}, NOW())")
-        fixed << { user_id: u["id"].to_i, deficit: deficit }
-      end
-    end
-    render_json({ success: true, fixed_count: fixed.length, fixed: fixed })
-  end
-
-
   def unship_project
     project_id = params[:id].to_i
     reason = params[:reason].to_s.strip.presence || "Project has been unshipped by an admin."
@@ -1417,20 +1402,6 @@ class AdminController < ApplicationController
 
     result = HackatimeSyncJob.perform_now(project_id)
     render_json({ hours: result[:hours], updated: result[:updated] })
-  end
-
-  def sync_airtable
-    AirtableSyncJob.perform_later
-
-    user_ids = User.where.not(role: "banned").order(:id).pluck(:id)
-    user_ids.each_with_index do |uid, i|
-      AirtableUserSyncJob.set(wait: (i * 0.4).seconds).perform_later(uid)
-    end
-
-    shipped = ActiveRecord::Base.connection.select_value(
-      "SELECT COUNT(*) FROM projects WHERE status = 'shipped' AND (deleted = 0 OR deleted IS NULL)"
-    ).to_i
-    render_json({ success: true, usersQueued: user_ids.size, shippedProjects: shipped })
   end
 
   # --- Login allowlist ---
@@ -1550,11 +1521,6 @@ class AdminController < ApplicationController
     playable_urls = projects.map { |p| p["playable_url"] }.compact.to_set
     matches = search_unified_airtable_batch(code_urls, playable_urls) rescue []
     render_json({ total_checked: code_urls.size + playable_urls.size, non_scraps_matches: matches })
-  end
-
-  def recalculate_shop_pricing
-    count = ShopPricingService.update_all_items
-    render_json({ success: true, updated_count: count })
   end
 
   def delete_user

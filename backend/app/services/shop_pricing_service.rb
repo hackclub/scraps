@@ -90,20 +90,4 @@ module ShopPricingService
     end
     best / scraps_price
   end
-
-  def self.update_all_items
-    conn = ActiveRecord::Base.connection
-    items = conn.select_all("SELECT id, price, base_probability FROM shop_items").to_a
-    items.each do |item|
-      pricing = compute_item_pricing(item["price"].to_f / ScrapsService::SCRAPS_PER_DOLLAR, item["base_probability"]&.to_i)
-      conn.execute(<<~SQL)
-        UPDATE shop_items
-        SET base_upgrade_cost = #{pricing[:base_upgrade_cost]},
-            boost_amount = #{pricing[:boost_amount]},
-            updated_at = NOW()
-        WHERE id = #{item['id'].to_i}
-      SQL
-    end
-    items.length
-  end
 end

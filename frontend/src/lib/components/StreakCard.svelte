@@ -49,7 +49,7 @@
 		spool: {
 			icon: Spool,
 			day: 'tue',
-			label: 'your choice of a shop item!'
+			label: 'shop slot item of your choice'
 		},
 		roll: {
 			icon: Dices,

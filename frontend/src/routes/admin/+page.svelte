@@ -10,10 +10,8 @@
 		ShieldAlert,
 		Coins,
 		XCircle,
-		RefreshCw,
 		ShoppingCart,
 		DollarSign,
-		Calculator,
 		SearchCheck,
 		MessageSquare,
 		Link,
@@ -56,23 +54,7 @@
 	let isAdmin = $state(false);
 	let blocked = $state(false);
 
-	// Fix balances state
-	let fixingBalances = $state(false);
-	let fixResult = $state<{
-		fixedCount: number;
-		fixed: { userId: number; username: string | null; deficit: number }[];
-	} | null>(null);
-	let fixError = $state<string | null>(null);
 
-	// YSWS sync state
-	let yswsSyncing = $state(false);
-	let yswsResult = $state<{ synced: number; failed: number; total: number } | null>(null);
-	let yswsError = $state<string | null>(null);
-
-	// Shop pricing recalculation state
-	let pricingRecalcing = $state(false);
-	let pricingResult = $state<{ updatedCount: number } | null>(null);
-	let pricingError = $state<string | null>(null);
 
 	// Unified duplicates state
 	interface DuplicateRecord {
@@ -125,98 +107,6 @@
 			exploreError = 'Failed to update explore setting';
 		} finally {
 			exploreSaving = false;
-		}
-	}
-
-	async function fixNegativeBalances() {
-		fixingBalances = true;
-		fixResult = null;
-		fixError = null;
-		try {
-			const res = await fetch(`${API_URL}/admin/fix-negative-balances`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			const data = await res.json();
-			if (data.error) {
-				fixError = data.error;
-			} else {
-				fixResult = data;
-			}
-		} catch (_e) {
-			fixError = 'Failed to fix negative balances';
-		} finally {
-			fixingBalances = false;
-		}
-	}
-
-	async function recalculateShopPricing() {
-		pricingRecalcing = true;
-		pricingResult = null;
-		pricingError = null;
-		try {
-			const res = await fetch(`${API_URL}/admin/recalculate-shop-pricing`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			const data = await res.json();
-			if (data.error) {
-				pricingError = data.error;
-			} else {
-				pricingResult = data;
-			}
-		} catch {
-			pricingError = 'Failed to recalculate shop pricing';
-		} finally {
-			pricingRecalcing = false;
-		}
-	}
-
-	async function syncYSWS() {
-		yswsSyncing = true;
-		yswsResult = null;
-		yswsError = null;
-		try {
-			const res = await fetch(`${API_URL}/admin/sync-ysws`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			const data = await res.json();
-			if (data.error) {
-				yswsError = data.error;
-			} else {
-				yswsResult = data;
-			}
-		} catch {
-			yswsError = 'Failed to sync projects to YSWS';
-		} finally {
-			yswsSyncing = false;
-		}
-	}
-
-	let airtableSyncing = $state(false);
-	let airtableResult = $state<{ usersQueued: number; shippedProjects: number } | null>(null);
-	let airtableError = $state<string | null>(null);
-
-	async function syncAirtable() {
-		airtableSyncing = true;
-		airtableResult = null;
-		airtableError = null;
-		try {
-			const res = await fetch(`${API_URL}/admin/sync-airtable`, {
-				method: 'POST',
-				credentials: 'include'
-			});
-			const data = await res.json();
-			if (data.error) {
-				airtableError = data.error;
-			} else {
-				airtableResult = data;
-			}
-		} catch {
-			airtableError = 'Failed to queue airtable sync';
-		} finally {
-			airtableSyncing = false;
 		}
 	}
 
@@ -746,114 +636,6 @@
 				<span class="text-xl font-bold">→</span>
 			</a>
 
-			<!-- Sync to YSWS -->
-			<div class="mb-6 rounded-2xl border-4 border-black p-6">
-				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-					<div>
-						<h3 class="flex items-center gap-2 text-lg font-bold">
-							<RefreshCw size={20} />
-							sync projects to YSWS
-						</h3>
-						<p class="text-sm text-gray-500">
-							submit all submitted/pending/shipped projects to the YSWS fraud API
-						</p>
-					</div>
-					<button
-						onclick={syncYSWS}
-						disabled={yswsSyncing}
-						class="cursor-pointer rounded-full bg-black px-6 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-					>
-						{yswsSyncing ? 'syncing...' : 'sync now'}
-					</button>
-				</div>
-
-				{#if yswsError}
-					<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{yswsError}</div>
-				{/if}
-
-				{#if yswsResult}
-					<div class="mt-4 rounded-lg bg-green-50 p-4">
-						<p class="font-bold text-green-700">
-							synced {yswsResult.synced} of {yswsResult.total} project{yswsResult.total !== 1
-								? 's'
-								: ''}
-							{#if yswsResult.failed > 0}
-								<span class="text-red-600">({yswsResult.failed} failed)</span>
-							{/if}
-						</p>
-					</div>
-				{/if}
-			</div>
-
-			<!-- Recalculate Shop Pricing -->
-			<div class="mb-6 rounded-2xl border-4 border-black p-6">
-				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-					<div>
-						<h3 class="flex items-center gap-2 text-lg font-bold">
-							<Calculator size={20} />
-							recalculate shop pricing
-						</h3>
-						<p class="text-sm text-gray-500">
-							recalculates probability, upgrade cost, multiplier & boost for all shop items based on
-							current price/stock. runs automatically on server startup.
-						</p>
-					</div>
-					<button
-						onclick={recalculateShopPricing}
-						disabled={pricingRecalcing}
-						class="cursor-pointer rounded-full bg-black px-6 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-					>
-						{pricingRecalcing ? 'recalculating...' : 'recalculate'}
-					</button>
-				</div>
-
-				{#if pricingError}
-					<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{pricingError}</div>
-				{/if}
-
-				{#if pricingResult}
-					<div class="mt-4 rounded-lg bg-green-50 p-4">
-						<p class="font-bold text-green-700">
-							updated pricing for {pricingResult.updatedCount} shop item{pricingResult.updatedCount !==
-							1
-								? 's'
-								: ''}
-						</p>
-					</div>
-				{/if}
-			</div>
-
-			<div class="mb-6 rounded-2xl border-4 border-black p-6">
-				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-					<div>
-						<h3 class="flex items-center gap-2 text-lg font-bold">
-							<RefreshCw size={20} />
-							sync airtable
-						</h3>
-						<p class="text-sm text-gray-500">
-							push every user to Users and every shipped project to YSWS Project Submission
-						</p>
-					</div>
-					<button
-						onclick={syncAirtable}
-						disabled={airtableSyncing}
-						class="cursor-pointer rounded-full bg-black px-6 py-2 font-bold text-white transition-all hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-					>
-						{airtableSyncing ? 'queueing...' : 'sync now'}
-					</button>
-				</div>
-				{#if airtableError}
-					<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{airtableError}</div>
-				{/if}
-				{#if airtableResult}
-					<div class="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">
-						queued {airtableResult.usersQueued.toLocaleString()} users (~{Math.ceil(
-							(airtableResult.usersQueued * 0.4) / 60
-						)} min) and {airtableResult.shippedProjects.toLocaleString()} shipped projects
-					</div>
-				{/if}
-			</div>
-
 			<!-- Check Unified Airtable Duplicates -->
 			<div class="mb-6 rounded-2xl border-4 border-black p-6">
 				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -934,52 +716,6 @@
 							<div class="rounded-lg bg-green-50 p-4">
 								<p class="font-bold text-green-700">no scraps URLs found in other YSWS programs</p>
 							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
-
-			<!-- Fix Negative Balances -->
-			<div class="rounded-2xl border-4 border-black p-6">
-				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-					<div>
-						<h3 class="flex items-center gap-2 text-lg font-bold">
-							<ShieldAlert size={20} />
-							fix negative balances
-						</h3>
-						<p class="text-sm text-gray-500">
-							gives a bonus to all users with negative scraps balance to bring them to 0
-						</p>
-					</div>
-					<button
-						onclick={fixNegativeBalances}
-						disabled={fixingBalances}
-						class="cursor-pointer rounded-full bg-red-600 px-6 py-2 font-bold text-white transition-all hover:bg-red-700 disabled:opacity-50"
-					>
-						{fixingBalances ? 'running...' : 'run fix'}
-					</button>
-				</div>
-
-				{#if fixError}
-					<div class="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{fixError}</div>
-				{/if}
-
-				{#if fixResult}
-					<div class="mt-4 rounded-lg bg-green-50 p-4">
-						<p class="font-bold text-green-700">
-							fixed {fixResult.fixedCount} user{fixResult.fixedCount !== 1 ? 's' : ''}
-						</p>
-						{#if fixResult.fixed.length > 0}
-							<ul class="mt-2 space-y-1 text-sm text-green-800">
-								{#each fixResult.fixed as u}
-									<li>
-										<span class="font-medium">{u.username ?? `User #${u.userId}`}</span>
-										| awarded {u.deficit} scraps
-									</li>
-								{/each}
-							</ul>
-						{:else}
-							<p class="mt-1 text-sm text-green-600">no users had negative balances</p>
 						{/if}
 					</div>
 				{/if}

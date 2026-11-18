@@ -129,13 +129,10 @@ Rails.application.routes.draw do
     get    "stats",                           to: "admin#stats"
     get    "config",                          to: "admin#pricing_config"
     get    "budget",                          to: "admin#budget"
-    post   "sync-airtable",                   to: "admin#sync_airtable"
-    post   "fix-negative-balances",           to: "admin#fix_negative_balances"
     get    "unified-duplicates",              to: "admin#unified_duplicates"
     get    "raffle-tickets",                  to: "admin#raffle_tickets"
     get    "item-suggestions",                to: "admin#item_suggestions"
     delete "item-suggestions/:id",            to: "admin#delete_item_suggestion"
-    post   "recalculate-shop-pricing",        to: "admin#recalculate_shop_pricing"
     get    "site-settings",                   to: "admin#site_settings"
     put    "site-settings/:key",              to: "admin#update_site_setting"
 
