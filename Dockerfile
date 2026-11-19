@@ -8,7 +8,7 @@
 
 # Make sure RUBY_VERSION matches backend/.ruby-version. Declared before the first FROM
 # since ARGs used in a FROM instruction must be declared at the top of the file.
-ARG RUBY_VERSION=3.4.7
+ARG RUBY_VERSION=3.4.13
 
 # ---- Frontend build ----
 FROM oven/bun:1.3.8 AS frontend
