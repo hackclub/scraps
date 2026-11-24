@@ -5,6 +5,7 @@
 	import { showToast } from '$lib/stores';
 	import AccountAddressCard, { type AccountAddress } from './AccountAddressCard.svelte';
 	import type { Snippet } from 'svelte';
+	import { type PastOrder, findAddressConflicts } from '$lib/address';
 
 	let {
 		orderId,
@@ -25,7 +26,54 @@
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 
+	let pastOrders = $state<PastOrder[] | null>(null);
+	let checking = $state(false);
+	let awaitingConfirm = $state(false);
+
 	let canSubmit = $derived(!!address?.complete);
+	let conflicts = $derived(
+		address && pastOrders
+			? findAddressConflicts(
+					{
+						address1: address.line1 ?? '',
+						address2: address.line2,
+						city: address.city ?? '',
+						state: address.state ?? '',
+						postalCode: address.postalCode ?? '',
+						country: address.country ?? ''
+					},
+					pastOrders,
+					orderId
+				)
+			: []
+	);
+	let showConflicts = $derived(awaitingConfirm && conflicts.length > 0);
+
+	async function loadPastOrders() {
+		if (pastOrders) return;
+		try {
+			const res = await fetch(`${API_URL}/shop/orders`, { credentials: 'include' });
+			const data = res.ok ? await res.json() : [];
+			pastOrders = Array.isArray(data) ? data : [];
+		} catch (e) {
+			console.error('Failed to load past orders:', e);
+			pastOrders = [];
+		}
+	}
+
+	async function handleConfirm() {
+		if (!canSubmit) return;
+		if (!awaitingConfirm) {
+			checking = true;
+			await loadPastOrders();
+			checking = false;
+			if (conflicts.length > 0) {
+				awaitingConfirm = true;
+				return;
+			}
+		}
+		await handleSubmit();
+	}
 
 	async function handleSubmit() {
 		if (!canSubmit) return;
@@ -97,14 +145,44 @@
 
 		<AccountAddressCard bind:address bind:loaded />
 
+		{#if showConflicts}
+			<div
+				class="mt-4 rounded-lg border-2 border-yellow-600 bg-yellow-50 p-3 text-sm text-yellow-800"
+				role="alert"
+			>
+				<p class="font-bold">{$t.address.conflictTitle}</p>
+				<p class="mt-1">
+					{conflicts.length === 1
+						? $t.address.conflictOneOrder
+						: $t.address.conflictManyOrders.replace('{count}', String(conflicts.length))}
+				</p>
+				<ul class="mt-2 flex flex-col gap-1 text-xs">
+					{#each conflicts as c (c.id)}
+						<li>
+							<span class="font-bold">{c.itemName}</span>
+							· {c.isFulfilled ? $t.address.conflictFulfilled : $t.address.conflictNotShipped}
+							· {c.address}
+						</li>
+					{/each}
+				</ul>
+				<p class="mt-2 text-xs">{$t.address.conflictHint}</p>
+			</div>
+		{/if}
+
 		{#if loaded}
 			<div class="mt-6">
 				<button
-					onclick={handleSubmit}
-					disabled={loading || !canSubmit}
+					onclick={handleConfirm}
+					disabled={loading || checking || !canSubmit}
 					class="w-full cursor-pointer rounded-full bg-black px-4 py-2 font-bold text-white transition-all duration-200 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					{loading ? $t.common.saving : $t.address.confirmShippingAddress}
+					{loading
+						? $t.common.saving
+						: checking
+							? $t.address.checkingPastOrders
+							: showConflicts
+								? $t.address.yesAddressIsRight
+								: $t.address.confirmShippingAddress}
 				</button>
 			</div>
 		{/if}

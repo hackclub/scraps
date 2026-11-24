@@ -5,11 +5,12 @@ module StreakService
   SYNC_EVERY_MINUTES = 5
   HISTORY_WEEKS = 5
   REWARDS_START = Date.new(2026, 11, 17)
-  REWARDS = {
-    2 => { kind: "spool", title: "shop slot item of your choice", tickets: 1 },
-    5 => { kind: "roll", title: "random amount of scraps", tickets: 2 },
-    7 => { kind: "week", title: "+100 scraps", tickets: 3, scraps: 100 }
-  }.freeze
+  HOUR_EVERY_DAY_START = Date.new(2026, 11, 23)
+  SPOOL = { kind: "spool", title: "shop slot item of your choice", tickets: 1 }.freeze
+  ROLL = { kind: "roll", title: "random amount of scraps", tickets: 2 }.freeze
+  WEEK = { kind: "week", title: "+100 scraps", tickets: 3, scraps: 100 }.freeze
+  LEGACY_REWARDS = { 2 => SPOOL, 5 => ROLL, 7 => WEEK }.freeze
+  REWARDS = { 3 => SPOOL, 6 => ROLL, 7 => WEEK }.freeze
   MYSTERY_SCRAPS = { 10 => 60, 25 => 30, 50 => 10 }.freeze
   TICKET = { kind: "ticket", title: "raffle ticket", tickets: 1 }.freeze
   BASE = { kind: "base", tickets: 1 }.freeze
@@ -119,18 +120,27 @@ module StreakService
       t == ws || weekly_run(t - 1, secs) >= (t - ws).to_i
     end
 
+    def big_for(d)
+      (d >= HOUR_EVERY_DAY_START ? REWARDS : LEGACY_REWARDS)[d.cwday]
+    end
+
+    def hour_every_day?(d)
+      d >= HOUR_EVERY_DAY_START
+    end
+
+    def needs_streak?(d, big)
+      !hour_every_day?(d) || big[:kind] == WEEK[:kind]
+    end
+
     def parts_for(d, secs)
       t = today
       return [] if d > t
-      big = REWARDS[d.cwday]
+      big = big_for(d)
       parts = []
       parts << BASE if secs[d].to_i >= GOAL
       if secs[d].to_i >= BONUS
-        if !big
-          parts << HOUR
-        elsif weekly_run(d, secs) >= (d - week_start(d)).to_i + 1
-          parts << big
-        end
+        parts << HOUR if !big || hour_every_day?(d)
+        parts << big if big && (!needs_streak?(d, big) || weekly_run(d, secs) >= (d - week_start(d)).to_i + 1)
       end
       parts
     end
@@ -138,29 +148,28 @@ module StreakService
     def reward_for(d, secs, claims)
       return nil if d < REWARDS_START
       t = today
-      big = REWARDS[d.cwday]
+      big = big_for(d)
       r = big || TICKET
       done = claims.key?(d) ? claims[d] : {}
       unlocked = parts_for(d, secs)
       pending = unlocked.reject { |p| done.key?(p[:kind]) }
       window = d >= monday(t) - 7
-      bonus_kind = big ? big[:kind] : HOUR[:kind]
       slot_state = lambda do |kind, possible|
         next "claimed" if done.key?(kind)
         next(window ? "claimable" : "expired") if unlocked.any? { |p| p[:kind] == kind }
         next(possible ? "upcoming" : "lost") if d >= t
         "lost"
       end
+      slots = [{ slot: "base", kind: "ticket", state: slot_state.call(BASE[:kind], true) }]
+      slots << { slot: "bonus", kind: "ticket", state: slot_state.call(HOUR[:kind], true) } if !big || hour_every_day?(d)
+      slots << { slot: "big", kind: big[:kind], state: slot_state.call(big[:kind], !needs_streak?(d, big) || monday(d) > monday(t) || alive?(secs)) } if big
       info = {
         kind: r[:kind],
         title: r[:title],
         claimed: done.values.join(", ").presence,
         pending: pending.map { |p| p[:kind] },
         tickets: pending.sum { |p| p[:tickets] },
-        slots: [
-          { slot: "base", kind: "ticket", state: slot_state.call(BASE[:kind], true) },
-          { slot: "bonus", kind: big ? big[:kind] : "ticket", state: slot_state.call(bonus_kind, !big || monday(d) > monday(t) || alive?(secs)) }
-        ]
+        slots: slots
       }
       if pending.any?
         return info.merge(state: "claimable") if d >= monday(t) - 7
@@ -168,7 +177,7 @@ module StreakService
       end
       return info.merge(state: "claimed") if done.any?
       if d >= t
-        return info.merge(state: "upcoming") if !big || monday(d) > monday(t)
+        return info.merge(state: "upcoming") if !big || hour_every_day?(d) || monday(d) > monday(t)
         return info.merge(state: alive?(secs) ? "upcoming" : "lost")
       end
       info.merge(state: "lost")

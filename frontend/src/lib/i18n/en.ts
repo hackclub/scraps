@@ -352,7 +352,8 @@ export default {
 		loadingAddresses: 'loading addresses...',
 		confirmShippingAddress: 'confirm shipping address',
 		failedToSaveAddress: 'Failed to save address',
-		confirmItsRight: "we'll ship it to your hack club auth address below. check it's right, then confirm.",
+		confirmItsRight:
+			"we'll ship it to your hack club auth address below. check it's right, then confirm.",
 		yourAuthAddress: 'your address from hack club auth',
 		readOnlyHint:
 			"this comes from hack club auth and can't be edited on scraps. if anything is wrong, change it on hack club auth, then hit resync.",
@@ -364,7 +365,19 @@ export default {
 		incompleteNotice:
 			'your hack club auth account is missing your legal name, address or phone. add it there, then hit resync.',
 		noAddressNotice:
-			"you don't have an address on hack club auth yet. add one there, then hit resync."
+			"you don't have an address on hack club auth yet. add one there, then hit resync.",
+		checkingPastOrders: 'checking your past orders...',
+		conflictTitle: 'are you sure this is the right address?',
+		conflictOneOrder: 'you have 1 other order that went to a different address:',
+		conflictManyOrders: 'you have {count} other orders that went to a different address:',
+		conflictFulfilled: 'shipped',
+		conflictNotShipped: 'not shipped yet',
+		conflictHint:
+			"if the address above is wrong, update it on hack club auth, then hit resync to check again. if it's right (you moved, for example), confirm it below.",
+		yesAddressIsRight: 'yes, this address is right',
+		orderBought: 'bought',
+		orderWon: 'won',
+		orderConsolation: 'consolation prize'
 	},
 	settings: {
 		settings: 'settings',

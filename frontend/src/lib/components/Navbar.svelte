@@ -23,8 +23,11 @@
 		Menu,
 		X,
 		ChevronDown,
-		Settings
+		Settings,
+		Moon,
+		Sun
 	} from '@lucide/svelte';
+	import { getTheme, setTheme } from '$lib/theme';
 	import { logout, getUser, userScrapsStore } from '$lib/auth-client';
 	import { t } from '$lib/i18n';
 	import { API_URL } from '$lib/config';
@@ -47,6 +50,16 @@
 	let showProfileMenu = $state(false);
 	let showScrapsHistory = $state(false);
 	let showSettings = $state(false);
+	let isDark = $state(false);
+
+	onMount(() => {
+		isDark = getTheme() === 'dark';
+	});
+
+	function toggleTheme() {
+		isDark = !isDark;
+		setTheme(isDark ? 'dark' : 'light');
+	}
 	let showMobileMenu = $state(false);
 	let showMoreMenu = $state(false);
 	let activeSection = $state('home');
@@ -178,7 +191,9 @@
 
 <!-- Desktop navbar -->
 <nav
-	class="fixed top-0 right-0 left-0 z-50 hidden items-center justify-between bg-white/90 px-6 py-4 backdrop-blur-sm md:flex md:px-8 lg:px-12 xl:px-24 2xl:px-64"
+	class="fixed top-0 right-0 left-0 z-50 hidden items-center {isLoggedIn && isInAdminSection
+		? 'justify-center'
+		: 'justify-between'} bg-white/90 px-6 py-4 backdrop-blur-sm md:flex md:px-8 lg:px-12 xl:px-24 2xl:px-64"
 >
 	{#if isLoggedIn && isInAdminSection}
 		<span class="hidden"></span>
@@ -525,14 +540,15 @@
 	{#if !isHomePage}
 		<div class="flex shrink-0 items-center gap-4">
 			{#if loading}
-				<!-- Skeleton for scraps -->
-				<div class="flex items-center gap-2 rounded-full border-4 border-black px-6 py-2">
-					<Spool size={20} class="text-gray-300" />
-					<div class="h-6 w-8 animate-pulse rounded bg-gray-200"></div>
-				</div>
 				{#if !isInAdminSection}
+					<div class="flex items-center gap-2 rounded-full border-4 border-black px-6 py-2">
+						<Spool size={20} class="text-gray-300" />
+						<div class="h-6 w-8 animate-pulse rounded bg-gray-200"></div>
+					</div>
 					<div class="h-10 w-10 animate-pulse rounded-full border-4 border-black bg-gray-200"></div>
 				{/if}
+			{:else if user && isInAdminSection}
+				<span class="hidden"></span>
 			{:else if user}
 				<div data-tutorial="scraps-counter" class="relative">
 					<button
@@ -593,6 +609,13 @@
 								>
 									<Settings size={18} />
 									<span class="font-bold">{$t.nav.settings}</span>
+								</button>
+								<button
+									onclick={toggleTheme}
+									class="flex w-full cursor-pointer items-center gap-2 border-b-2 border-black px-4 py-3 text-left transition-colors hover:bg-gray-100"
+								>
+									{#if isDark}<Sun size={18} />{:else}<Moon size={18} />{/if}
+									<span class="font-bold">{isDark ? 'light mode' : 'dark mode'}</span>
 								</button>
 								<button
 									onclick={handleLogout}
@@ -940,6 +963,13 @@
 					>
 						<Settings size={20} />
 						<span class="text-lg font-bold">{$t.nav.settings}</span>
+					</button>
+					<button
+						onclick={toggleTheme}
+						class="flex cursor-pointer items-center gap-3 rounded-full border-4 border-black px-4 py-3 text-left transition-all duration-300 hover:border-dashed"
+					>
+						{#if isDark}<Sun size={20} />{:else}<Moon size={20} />{/if}
+						<span class="text-lg font-bold">{isDark ? 'light mode' : 'dark mode'}</span>
 					</button>
 				</div>
 				<div class="flex items-center justify-between gap-2">

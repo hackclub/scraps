@@ -1,0 +1,33 @@
+name: scraps-local
+
+services:
+  redis:
+    image: redis:7
+
+  app:
+    build: .
+    ports:
+      - "3000:80"
+    command: ["./bin/thrust", "./bin/rails", "server", "-p", "3000"]
+    env_file:
+      - backend/.env
+      - backend/.env.docker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      FRONTEND_URL: http://localhost:3000
+      RUN_SIDEKIQ: "false"
+      ASSUME_SSL: "true"
+      AIRTABLE_TOKEN: ""
+      AIRTABLE_BASE_ID: ""
+      AIRTABLE_PROJECTS_TABLE_ID: ""
+      AIRTABLE_USERS_TABLE_ID: ""
+      UNIFIED_AIRTABLE_TOKEN: ""
+      UNIFIED_AIRTABLE_BASE_ID: ""
+      UNIFIED_AIRTABLE_TABLE_ID: ""
+      SLACK_BOT_TOKEN: ""
+      SLACK_ACTIVITY_CHANNEL_ID: ""
+    volumes:
+      - ./backend/config/master.key:/rails/config/master.key:ro
+      - ./backend/tmp/ca-bundle.pem:/certs/ca-bundle.pem:ro
+    depends_on:
+      - redis

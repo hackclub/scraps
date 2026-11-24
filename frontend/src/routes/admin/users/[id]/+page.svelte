@@ -676,7 +676,7 @@
 					<div class="flex flex-col gap-2">
 						{#if targetUser.slackId}
 							<a
-								href="https://hackclub.slack.com/team/{targetUser.slackId}"
+								href="https://app.slack.com/client/E09V59WQY1E/{targetUser.slackId}"
 								target="_blank"
 								rel="noopener noreferrer"
 								title={targetUser.slackId}

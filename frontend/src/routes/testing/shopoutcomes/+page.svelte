@@ -33,11 +33,43 @@
 	// The GET for saved addresses hits the real endpoint so the form still
 	// pre-fills with your actual address, same as production.
 	let restoreFetch: (() => void) | null = null;
+	let fakeOldAddressOrder = $state(true);
+	const fakePastOrders = [
+		{
+			id: 1,
+			status: 'pending',
+			orderType: 'purchase',
+			createdAt: '2026-09-03T12:00:00Z',
+			isFulfilled: true,
+			itemName: 'Stickers',
+			shippingAddress: JSON.stringify({
+				firstName: 'Old',
+				lastName: 'Address',
+				address1: '88 Oak Ave',
+				address2: null,
+				city: 'Shelbyville',
+				state: 'IL',
+				postalCode: '62565',
+				country: 'US',
+				phone: null
+			})
+		}
+	];
 	function installAddressSubmitMock() {
 		const original = window.fetch.bind(window);
 		window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url =
 				typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString();
+			if (
+				fakeOldAddressOrder &&
+				(!init?.method || init.method === 'GET') &&
+				/\/shop\/orders$/.test(url)
+			) {
+				return new Response(JSON.stringify(fakePastOrders), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' }
+				});
+			}
 			if (init?.method === 'POST' && /\/shop\/orders\/[^/]+\/address$/.test(url)) {
 				await new Promise((r) => setTimeout(r, 400));
 				return new Response(JSON.stringify({ success: true }), {
@@ -245,6 +277,10 @@
 			<p class="mb-3 text-sm text-gray-600">
 				No reveal in prod: goes straight to the shipping-address step.
 			</p>
+			<label class="mb-3 flex cursor-pointer items-center gap-2 text-sm">
+				<input type="checkbox" bind:checked={fakeOldAddressOrder} />
+				pretend I have a past order at a different address
+			</label>
 			<button
 				onclick={simulateWin}
 				class="w-full cursor-pointer rounded-full border-4 border-black bg-black px-4 py-2 font-bold text-white transition-all hover:bg-gray-800"

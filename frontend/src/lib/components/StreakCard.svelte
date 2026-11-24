@@ -22,7 +22,7 @@
 		state: RewardState;
 		claimed?: string | null;
 		pending: string[];
-		slots: { slot: 'base' | 'bonus'; kind: Reward['kind']; state: RewardState }[];
+		slots: { slot: 'base' | 'bonus' | 'big'; kind: Reward['kind']; state: RewardState }[];
 	};
 	type StreakDay = {
 		date: string;
@@ -46,22 +46,10 @@
 	type ShopItem = { id: number; name: string; image: string };
 
 	const meta = {
-		spool: {
-			icon: Spool,
-			day: 'tue',
-			label: 'shop slot item of your choice'
-		},
-		roll: {
-			icon: Dices,
-			day: 'fri',
-			label: 'random amount of scraps'
-		},
-		week: {
-			icon: Trophy,
-			day: 'sun',
-			label: '+100 scraps'
-		},
-		ticket: { icon: Ticket, day: '', label: 'raffle ticket' }
+		spool: { icon: Spool, label: 'shop slot item of your choice' },
+		roll: { icon: Dices, label: 'random amount of scraps' },
+		week: { icon: Trophy, label: '+100 scraps' },
+		ticket: { icon: Ticket, label: 'raffle ticket' }
 	};
 
 	const hypeLines = [
@@ -86,11 +74,13 @@
 	const REWARDS_START = '2026-11-17';
 	const GOAL = 30;
 	const BONUS = 60;
-	const BIG: Record<number, { kind: Reward['kind']; tickets: number; scraps?: number }> = {
-		2: { kind: 'spool', tickets: 1 },
-		5: { kind: 'roll', tickets: 2 },
-		7: { kind: 'week', tickets: 3, scraps: 100 }
-	};
+	const HOUR_EVERY_DAY_START = '2026-11-23';
+	type Big = { kind: Reward['kind']; tickets: number; scraps?: number };
+	const SPOOL: Big = { kind: 'spool', tickets: 1 };
+	const ROLL: Big = { kind: 'roll', tickets: 2 };
+	const WEEK: Big = { kind: 'week', tickets: 3, scraps: 100 };
+	const LEGACY_BIG: Record<number, Big> = { 2: SPOOL, 5: ROLL, 7: WEEK };
+	const BIG: Record<number, Big> = { 3: SPOOL, 6: ROLL, 7: WEEK };
 	const ROLL_ODDS: [number, number][] = [
 		[10, 60],
 		[25, 30],
@@ -124,6 +114,15 @@
 		const m = mondayOf(s);
 		return m > REWARDS_START ? m : REWARDS_START;
 	}
+	function hourEveryDay(d: string) {
+		return d >= HOUR_EVERY_DAY_START;
+	}
+	function bigFor(d: string): Big | undefined {
+		return (hourEveryDay(d) ? BIG : LEGACY_BIG)[cwday(d)];
+	}
+	function needsStreak(d: string, big: Big) {
+		return !hourEveryDay(d) || big.kind === 'week';
+	}
 
 	function simState(sm: Sim): Streak {
 		const t = sm.today;
@@ -140,18 +139,19 @@
 		const alive = t === ws || run(addDays(t, -1)) >= diffDays(t, ws);
 		const parts = (d: string): Part[] => {
 			if (d > t) return [];
-			const big = BIG[cwday(d)];
+			const big = bigFor(d);
 			const out: Part[] = [];
 			if (mins(d) >= GOAL) out.push({ kind: 'base', tickets: 1 });
 			if (mins(d) >= BONUS) {
-				if (!big) out.push({ kind: 'hour', tickets: 1 });
-				else if (run(d) >= diffDays(d, weekStartOf(d)) + 1) out.push(big);
+				if (!big || hourEveryDay(d)) out.push({ kind: 'hour', tickets: 1 });
+				if (big && (!needsStreak(d, big) || run(d) >= diffDays(d, weekStartOf(d)) + 1))
+					out.push(big);
 			}
 			return out;
 		};
 		const rewardFor = (d: string): Reward | null => {
 			if (d < REWARDS_START) return null;
-			const big = BIG[cwday(d)];
+			const big = bigFor(d);
 			const kind = big?.kind ?? 'ticket';
 			const done = sm.claims[d] ?? {};
 			const unlocked = parts(d);
@@ -171,11 +171,21 @@
 				tickets: pending.reduce((a, p) => a + p.tickets, 0),
 				slots: [
 					{ slot: 'base' as const, kind: 'ticket' as const, state: slotState('base', true) },
-					{
-						slot: 'bonus' as const,
-						kind,
-						state: slotState(big?.kind ?? 'hour', !big || mondayOf(d) > mondayOf(t) || alive)
-					}
+					...(!big || hourEveryDay(d)
+						? [{ slot: 'bonus' as const, kind: 'ticket' as const, state: slotState('hour', true) }]
+						: []),
+					...(big
+						? [
+								{
+									slot: 'big' as const,
+									kind: big.kind,
+									state: slotState(
+										big.kind,
+										!needsStreak(d, big) || mondayOf(d) > mondayOf(t) || alive
+									)
+								}
+							]
+						: [])
 				]
 			};
 			const anyDone = Object.keys(done).length > 0;
@@ -185,7 +195,8 @@
 			}
 			if (anyDone) return { ...info, state: 'claimed' };
 			if (d >= t) {
-				if (!big || mondayOf(d) > mondayOf(t)) return { ...info, state: 'upcoming' };
+				if (!big || hourEveryDay(d) || mondayOf(d) > mondayOf(t))
+					return { ...info, state: 'upcoming' };
 				return { ...info, state: alive ? 'upcoming' : 'lost' };
 			}
 			return { ...info, state: 'lost' };
@@ -481,7 +492,7 @@
 		if (detail) justClaimed = detail;
 	}
 
-	let tip = $state<{ x: number; y: number; label: string } | null>(null);
+	let tip = $state<{ x: number; y: number; hour: boolean; big: string | null } | null>(null);
 
 	function showTip(e: Event, rw: Reward) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -489,7 +500,8 @@
 		tip = {
 			x: Math.min(Math.max(r.left + r.width / 2, half + 8), window.innerWidth - half - 8),
 			y: r.top,
-			label: meta[rw.kind].label
+			hour: rw.slots.some((s) => s.slot === 'bonus'),
+			big: rw.slots.find((s) => s.slot === 'big') ? meta[rw.kind].label : null
 		};
 	}
 
@@ -626,6 +638,12 @@
 							: 'tickets'}{/if}
 				</span>
 			</div>
+			<a
+				href="/raffle"
+				class="mt-2 inline-flex items-center justify-center gap-1 rounded-full border-2 border-black bg-black px-3 py-1 text-sm font-bold text-white transition-all hover:bg-gray-800"
+			>
+				choose where to raffle!
+			</a>
 		</div>
 
 		<div class="min-w-0">
@@ -708,7 +726,9 @@
 												onblur={() => (tip = null)}
 												aria-label={sl.slot === 'base'
 													? '30 min: raffle ticket'
-													: `1 hour: ${meta[sl.kind].label}`}
+													: sl.slot === 'bonus'
+														? '1 hour: raffle ticket'
+														: `1 hour bonus: ${meta[sl.kind].label}`}
 												class="relative flex {sl.slot === 'base'
 													? 'h-5 w-5'
 													: 'h-6 w-6'} items-center justify-center rounded-full transition-transform {badgeClass(
@@ -742,7 +762,15 @@
 		role="tooltip"
 	>
 		<p class="text-gray-700"><span class="font-bold">30 min:</span> raffle ticket</p>
-		<p class="text-gray-700"><span class="font-bold">1 hour:</span> {tip.label}</p>
+		{#if tip.hour}
+			<p class="text-gray-700"><span class="font-bold">1 hour:</span> raffle ticket</p>
+		{/if}
+		{#if tip.big}
+			<p class="text-gray-700">
+				<span class="font-bold">bonus:</span>
+				{tip.big}
+			</p>
+		{/if}
 	</div>
 {/if}
 
@@ -772,9 +800,7 @@
 						{kind === 'ticket' ? 'raffle ticket' : claiming.reward.title}
 					</h2>
 					<p class="text-sm text-gray-600">
-						{kind === 'ticket' ? 'daily ticket' : `${meta[kind].day} reward`} · {shortDate(
-							claiming.day.date
-						)}
+						{kind === 'ticket' ? 'daily ticket' : 'bonus'} · {shortDate(claiming.day.date)}
 					</p>
 				</div>
 			</div>

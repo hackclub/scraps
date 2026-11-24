@@ -3,6 +3,11 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<script>
+			try {
+				if (localStorage.getItem('theme') === 'dark') document.documentElement.dataset.theme = 'dark';
+			} catch (e) {}
+		</script>
 		%sveltekit.head%
 		<!-- Privacy-friendly analytics by Plausible -->
 		<script async src="https://plausible.io/js/pa-ErYm33hXc9JTpucacih3j.js"></script>

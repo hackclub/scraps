@@ -20,18 +20,13 @@
 	import { API_URL } from '$lib/config';
 	import { showToast } from '$lib/stores';
 	import { t } from '$lib/i18n';
-
-	interface ShippingAddress {
-		firstName: string;
-		lastName: string;
-		address1: string;
-		address2: string | null;
-		city: string;
-		state: string;
-		postalCode: string;
-		country: string;
-		phone: string | null;
-	}
+	import {
+		type ShippingAddress,
+		parseShippingAddress,
+		addressKey,
+		orderVerb,
+		findAddressConflicts
+	} from '$lib/address';
 
 	interface Order {
 		id: number;
@@ -77,21 +72,8 @@
 		itemImage: string;
 	}
 
-	function parseShippingAddress(addr: string | null): ShippingAddress | null {
-		if (!addr) return null;
-		try {
-			return JSON.parse(addr);
-		} catch {
-			return null;
-		}
-	}
-
-	function addressKey(raw: string | null): string {
-		const a = parseShippingAddress(raw);
-		if (!a) return '';
-		return [a.address1, a.address2, a.city, a.state, a.postalCode, a.country]
-			.map((v) => (v ?? '').trim().toLowerCase())
-			.join('|');
+	function keyOf(raw: string | null): string {
+		return addressKey(parseShippingAddress(raw));
 	}
 
 	function formatName(addr: ShippingAddress): string {
@@ -148,15 +130,20 @@
 	let openCount = $derived(openOthers.length + (order && isOpen(order) ? 1 : 0));
 	let sameAddressOthers = $derived(
 		order
-			? openOthers.filter((o) => addressKey(o.shippingAddress) === addressKey(order!.shippingAddress))
+			? openOthers.filter((o) => keyOf(o.shippingAddress) === keyOf(order!.shippingAddress))
 			: []
 	);
 	let differentAddressOthers = $derived(
 		order
-			? openOthers.filter((o) => addressKey(o.shippingAddress) !== addressKey(order!.shippingAddress))
+			? openOthers.filter((o) => keyOf(o.shippingAddress) !== keyOf(order!.shippingAddress))
 			: []
 	);
 	let bulkCount = $derived(sameAddressOthers.length + (order && isOpen(order) ? 1 : 0));
+	let conflictingAddressOrders = $derived(
+		order
+			? findAddressConflicts(parseShippingAddress(order.shippingAddress), order.otherOrders)
+			: []
+	);
 
 	onMount(async () => {
 		try {
@@ -497,383 +484,408 @@
 	{:else}
 		{@const StatusIcon = getStatusIcon(order.status)}
 		<div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-		<div
-			class="overflow-hidden rounded-3xl border-4 {order.hackatimeBanned
-				? 'border-red-500 bg-red-50'
-				: 'border-black bg-white'} shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
-		>
-			<div class="flex flex-wrap items-center gap-4 p-6">
-				<img
-					src={order.itemImage}
-					alt={order.itemName}
-					class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
-				/>
-				<div class="min-w-0 flex-1">
-					<h1 class="text-2xl font-bold md:text-3xl">{order.itemName}</h1>
-					<div class="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-						<a href="/admin/users/{order.userId}" class="font-bold hover:underline"
-							>@{order.username}</a
-						>
-						<span class="text-gray-400">•</span>
-						<span>{formatDate(order.createdAt)}</span>
-						<span class="text-gray-400">•</span>
-						<span class="font-bold">{order.totalPrice} scraps</span>
-						{#if order.quantity > 1}
-							<span class="text-gray-400">•</span>
-							<span class="font-bold text-gray-500">×{order.quantity}</span>
-						{/if}
-						{#if order.size}
-							<span class="text-gray-400">•</span>
-							<span
-								class="rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold text-black"
-								>size {order.size}</span
+			<div
+				class="overflow-hidden rounded-3xl border-4 {order.hackatimeBanned
+					? 'border-red-500 bg-red-50'
+					: 'border-black bg-white'} shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+			>
+				<div class="flex flex-wrap items-center gap-4 p-6">
+					<img
+						src={order.itemImage}
+						alt={order.itemName}
+						class="h-16 w-16 shrink-0 rounded-lg border-2 border-black object-cover"
+					/>
+					<div class="min-w-0 flex-1">
+						<h1 class="text-2xl font-bold md:text-3xl">{order.itemName}</h1>
+						<div class="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+							<a href="/admin/users/{order.userId}" class="font-bold hover:underline"
+								>@{order.username}</a
 							>
+							<span class="text-gray-400">•</span>
+							<span>{formatDate(order.createdAt)}</span>
+							<span class="text-gray-400">•</span>
+							<span class="font-bold">{order.totalPrice} scraps</span>
+							{#if order.quantity > 1}
+								<span class="text-gray-400">•</span>
+								<span class="font-bold text-gray-500">×{order.quantity}</span>
+							{/if}
+							{#if order.size}
+								<span class="text-gray-400">•</span>
+								<span
+									class="rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold text-black"
+									>size {order.size}</span
+								>
+							{/if}
+						</div>
+					</div>
+					<div class="flex shrink-0 flex-wrap items-center gap-2">
+						<span
+							class="inline-flex items-center gap-1 rounded-full border-2 px-2 py-0.5 text-xs font-bold {getStatusColor(
+								order.status
+							)}"
+						>
+							<StatusIcon size={12} />
+							{order.status}
+						</span>
+						{#if order.isFulfilled}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border-2 border-green-600 bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700"
+							>
+								<Check size={12} />
+								fulfilled{order.fulfilledByUsername
+									? ` by @${order.fulfilledByUsername}`
+									: ''}{order.fulfilledAt ? ` on ${formatDate(order.fulfilledAt)}` : ''}
+							</span>
+						{/if}
+						{#if order.hackatimeBanned}
+							<span
+								class="inline-flex items-center gap-1 rounded-full border-2 border-red-600 bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700"
+							>
+								<ShieldAlert size={12} />
+								ht banned
+							</span>
 						{/if}
 					</div>
 				</div>
-				<div class="flex shrink-0 flex-wrap items-center gap-2">
-					<span
-						class="inline-flex items-center gap-1 rounded-full border-2 px-2 py-0.5 text-xs font-bold {getStatusColor(
-							order.status
-						)}"
-					>
-						<StatusIcon size={12} />
-						{order.status}
-					</span>
-					{#if order.isFulfilled}
-						<span
-							class="inline-flex items-center gap-1 rounded-full border-2 border-green-600 bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700"
-						>
-							<Check size={12} />
-							fulfilled{order.fulfilledByUsername
-								? ` by @${order.fulfilledByUsername}`
-								: ''}{order.fulfilledAt ? ` on ${formatDate(order.fulfilledAt)}` : ''}
-						</span>
-					{/if}
+
+				<div class="border-t-4 border-dashed border-gray-200 p-6">
 					{#if order.hackatimeBanned}
-						<span
-							class="inline-flex items-center gap-1 rounded-full border-2 border-red-600 bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700"
+						<p
+							class="mb-4 rounded-xl border-2 border-red-500 bg-red-100 p-3 text-sm font-bold text-red-700"
 						>
-							<ShieldAlert size={12} />
-							ht banned
-						</span>
+							this user is hackatime banned: do not fulfill
+						</p>
 					{/if}
-				</div>
-			</div>
 
-			<div class="border-t-4 border-dashed border-gray-200 p-6">
-				{#if order.hackatimeBanned}
-					<p
-						class="mb-4 rounded-xl border-2 border-red-500 bg-red-100 p-3 text-sm font-bold text-red-700"
-					>
-						this user is hackatime banned: do not fulfill
-					</p>
-				{/if}
+					<div class="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+						<div class="min-w-0 flex-1 text-sm">
+							{#if order.notes}
+								<p class="mb-3 text-gray-600"><strong>Notes:</strong> {order.notes}</p>
+							{/if}
 
-				<div class="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-					<div class="min-w-0 flex-1 text-sm">
-						{#if order.notes}
-							<p class="mb-3 text-gray-600"><strong>Notes:</strong> {order.notes}</p>
-						{/if}
-
-						{#if parseShippingAddress(order.shippingAddress)}
-							{@const addr = parseShippingAddress(order.shippingAddress)!}
-							<div class="rounded-xl border-2 border-gray-300 bg-white p-4">
-								<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
-									shipping address <span class="text-gray-400 normal-case"
-										>(double-click to copy)</span
+							{#if parseShippingAddress(order.shippingAddress)}
+								{@const addr = parseShippingAddress(order.shippingAddress)!}
+								{#if conflictingAddressOrders.length > 0}
+									<div
+										class="mb-3 rounded-xl border-2 border-yellow-600 bg-yellow-50 p-3 text-xs text-yellow-800"
 									>
-								</p>
-								<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-									<span class="font-bold text-gray-500">name</span>
-									<span
-										class="cursor-copy hover:underline"
-										ondblclick={() => copyField(formatName(addr))}>{formatName(addr)}</span
-									>
-									<span class="font-bold text-gray-500">address 1</span>
-									<span
-										class="cursor-copy hover:underline"
-										ondblclick={() => copyField(addr.address1)}>{addr.address1}</span
-									>
-									{#if addr.address2}
-										<span class="font-bold text-gray-500">address 2</span>
+										<p class="mb-1 font-bold">
+											are you sure this is the right address? @{order.username} has {conflictingAddressOrders.length}
+											other order{conflictingAddressOrders.length === 1 ? '' : 's'} with a different address:
+										</p>
+										<ul class="flex flex-col gap-0.5">
+											{#each conflictingAddressOrders as c (c.id)}
+												<li>
+													<a href="/admin/orders/{c.id}" class="font-bold hover:underline"
+														>#{c.id}</a
+													>
+													{c.itemName} · {orderVerb(c.orderType, $t.address)}
+													{formatDate(c.createdAt)}{c.isFulfilled ? ' (fulfilled)' : ''}: {c.address}
+												</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
+								<div class="rounded-xl border-2 border-gray-300 bg-white p-4">
+									<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
+										shipping address <span class="text-gray-400 normal-case"
+											>(double-click to copy)</span
+										>
+									</p>
+									<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+										<span class="font-bold text-gray-500">name</span>
 										<span
 											class="cursor-copy hover:underline"
-											ondblclick={() => copyField(addr.address2!)}>{addr.address2}</span
+											ondblclick={() => copyField(formatName(addr))}>{formatName(addr)}</span
 										>
-									{/if}
-									<span class="font-bold text-gray-500">city</span>
-									<span class="cursor-copy hover:underline" ondblclick={() => copyField(addr.city)}
-										>{addr.city}</span
-									>
-									<span class="font-bold text-gray-500">state</span>
-									<span class="cursor-copy hover:underline" ondblclick={() => copyField(addr.state)}
-										>{addr.state}</span
-									>
-									<span class="font-bold text-gray-500">zip</span>
-									<span
-										class="cursor-copy hover:underline"
-										ondblclick={() => copyField(addr.postalCode)}>{addr.postalCode}</span
-									>
-									<span class="font-bold text-gray-500">country</span>
-									<span
-										class="cursor-copy hover:underline"
-										ondblclick={() => copyField(addr.country)}>{addr.country}</span
-									>
-									{#if order.phone || addr.phone}
-										<span class="font-bold text-gray-500">phone</span>
+										<span class="font-bold text-gray-500">address 1</span>
 										<span
 											class="cursor-copy hover:underline"
-											ondblclick={() => copyField((order?.phone || addr.phone)!)}
-											>{order.phone || addr.phone}</span
+											ondblclick={() => copyField(addr.address1)}>{addr.address1}</span
 										>
-									{/if}
-									{#if order.email}
-										<span class="font-bold text-gray-500">email</span>
+										{#if addr.address2}
+											<span class="font-bold text-gray-500">address 2</span>
+											<span
+												class="cursor-copy hover:underline"
+												ondblclick={() => copyField(addr.address2!)}>{addr.address2}</span
+											>
+										{/if}
+										<span class="font-bold text-gray-500">city</span>
 										<span
 											class="cursor-copy hover:underline"
-											ondblclick={() => copyField(order?.email!)}>{order.email}</span
+											ondblclick={() => copyField(addr.city)}>{addr.city}</span
 										>
-									{/if}
+										<span class="font-bold text-gray-500">state</span>
+										<span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(addr.state)}>{addr.state}</span
+										>
+										<span class="font-bold text-gray-500">zip</span>
+										<span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(addr.postalCode)}>{addr.postalCode}</span
+										>
+										<span class="font-bold text-gray-500">country</span>
+										<span
+											class="cursor-copy hover:underline"
+											ondblclick={() => copyField(addr.country)}>{addr.country}</span
+										>
+										{#if order.phone || addr.phone}
+											<span class="font-bold text-gray-500">phone</span>
+											<span
+												class="cursor-copy hover:underline"
+												ondblclick={() => copyField((order?.phone || addr.phone)!)}
+												>{order.phone || addr.phone}</span
+											>
+										{/if}
+										{#if order.email}
+											<span class="font-bold text-gray-500">email</span>
+											<span
+												class="cursor-copy hover:underline"
+												ondblclick={() => copyField(order?.email!)}>{order.email}</span
+											>
+										{/if}
+									</div>
 								</div>
-							</div>
-						{:else if order.orderType === 'win'}
-							<div class="rounded-xl border-2 border-yellow-300 bg-yellow-100 p-4">
-								<p class="font-bold text-yellow-700">no shipping address provided</p>
-							</div>
-						{/if}
-						{#if (order.phone || order.email) && !parseShippingAddress(order.shippingAddress)}
+							{:else if order.orderType === 'win'}
+								<div class="rounded-xl border-2 border-yellow-300 bg-yellow-100 p-4">
+									<p class="font-bold text-yellow-700">no shipping address provided</p>
+								</div>
+							{/if}
+							{#if (order.phone || order.email) && !parseShippingAddress(order.shippingAddress)}
+								<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
+									<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+										{#if order.phone}
+											<span class="font-bold text-gray-500">phone</span>
+											<span
+												class="cursor-copy hover:underline"
+												ondblclick={() => copyField(order?.phone!)}>{order.phone}</span
+											>
+										{/if}
+										{#if order.email}
+											<span class="font-bold text-gray-500">email</span>
+											<span
+												class="cursor-copy hover:underline"
+												ondblclick={() => copyField(order?.email!)}>{order.email}</span
+											>
+										{/if}
+									</div>
+								</div>
+							{/if}
+
 							<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
-								<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-									{#if order.phone}
-										<span class="font-bold text-gray-500">phone</span>
-										<span
-											class="cursor-copy hover:underline"
-											ondblclick={() => copyField(order?.phone!)}>{order.phone}</span
-										>
-									{/if}
-									{#if order.email}
-										<span class="font-bold text-gray-500">email</span>
-										<span
-											class="cursor-copy hover:underline"
-											ondblclick={() => copyField(order?.email!)}>{order.email}</span
-										>
-									{/if}
-								</div>
-							</div>
-						{/if}
-
-						<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
-							<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
-								internal notes (admins only)
-							</p>
-							<textarea
-								bind:value={notesInput}
-								placeholder="anything weird about this order? leave a note for other admins"
-								rows="2"
-								class="w-full rounded-lg border-2 border-black px-3 py-2 text-sm transition-all duration-200 placeholder:text-gray-400 focus:border-dashed focus:outline-none"
-							></textarea>
-							<button
-								onclick={saveOrderNotes}
-								disabled={notesLoading}
-								class="mt-2 cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-							>
-								{notesLoading ? 'saving...' : 'save note'}
-							</button>
-						</div>
-
-						<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
-							<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
-								note to user (sent via slack dm once fulfilled)
-							</p>
-							{#if order.slackId}
+								<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
+									internal notes (admins only)
+								</p>
 								<textarea
-									bind:value={userNoteInput}
-									placeholder="e.g. sorry for the wait! sizing ran small so we bumped you up a size"
+									bind:value={notesInput}
+									placeholder="anything weird about this order? leave a note for other admins"
 									rows="2"
 									class="w-full rounded-lg border-2 border-black px-3 py-2 text-sm transition-all duration-200 placeholder:text-gray-400 focus:border-dashed focus:outline-none"
 								></textarea>
 								<button
-									onclick={saveUserNote}
-									disabled={userNoteLoading}
-									class="mt-2 flex cursor-pointer items-center gap-1 rounded-full border-2 border-black px-3 py-1 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+									onclick={saveOrderNotes}
+									disabled={notesLoading}
+									class="mt-2 cursor-pointer rounded-full border-2 border-black px-3 py-1 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
 								>
-									<Mail size={12} />
-									{userNoteLoading ? 'saving...' : 'save note'}
+									{notesLoading ? 'saving...' : 'save note'}
 								</button>
-							{:else}
-								<p class="text-xs text-gray-400">no slack account linked for this user</p>
-							{/if}
-						</div>
-					</div>
-
-					<!-- Actions -->
-					<div class="flex shrink-0 flex-col gap-3 md:w-48">
-						{#if !order.isFulfilled && !isInactive}
-							<input
-								type="text"
-								placeholder="tracking # (optional)"
-								bind:value={trackingInput}
-								class="w-full rounded-lg border-2 border-black px-3 py-2 text-sm font-bold transition-all duration-200 placeholder:text-gray-400 focus:border-dashed focus:outline-none"
-							/>
-						{:else if order.trackingNumber}
-							<div class="rounded-lg border-2 border-gray-300 bg-gray-50 px-3 py-2 text-sm">
-								<p class="text-xs font-bold text-gray-500 uppercase">tracking</p>
-								<p class="font-bold break-all">
-									{#if order.trackingNumber.startsWith('ltr!')}
-										<a
-											href="https://mail.hackclub.com/back_office/letters/{order.trackingNumber}"
-											target="_blank"
-											rel="noopener noreferrer"
-											class="text-blue-600 hover:underline"
-										>
-											{order.trackingNumber}
-										</a>
-									{:else}
-										{order.trackingNumber}
-									{/if}
-								</p>
 							</div>
-						{/if}
-						{#if !isInactive || order.isFulfilled}
-							<button
-								onclick={toggleFulfilled}
-								disabled={actionLoading}
-								class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 {order.isFulfilled
-									? 'bg-gray-200 hover:border-dashed hover:bg-gray-300'
-									: 'bg-green-500 text-white hover:border-dashed hover:bg-green-600'}"
-							>
-								{#if order.isFulfilled}
-									<X size={16} />
-									{$t.admin.unfulfill}
+
+							<div class="mt-2 rounded-xl border-2 border-gray-300 bg-white p-4">
+								<p class="mb-2 text-xs font-bold text-gray-500 uppercase">
+									note to user (sent via slack dm once fulfilled)
+								</p>
+								{#if order.slackId}
+									<textarea
+										bind:value={userNoteInput}
+										placeholder="e.g. sorry for the wait! sizing ran small so we bumped you up a size"
+										rows="2"
+										class="w-full rounded-lg border-2 border-black px-3 py-2 text-sm transition-all duration-200 placeholder:text-gray-400 focus:border-dashed focus:outline-none"
+									></textarea>
+									<button
+										onclick={saveUserNote}
+										disabled={userNoteLoading}
+										class="mt-2 flex cursor-pointer items-center gap-1 rounded-full border-2 border-black px-3 py-1 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+									>
+										<Mail size={12} />
+										{userNoteLoading ? 'saving...' : 'save note'}
+									</button>
 								{:else}
-									<Check size={16} />
-									{$t.admin.fulfill}
+									<p class="text-xs text-gray-400">no slack account linked for this user</p>
 								{/if}
-							</button>
-						{/if}
-						{#if canUndo}
+							</div>
+						</div>
+
+						<!-- Actions -->
+						<div class="flex shrink-0 flex-col gap-3 md:w-48">
+							{#if !order.isFulfilled && !isInactive}
+								<input
+									type="text"
+									placeholder="tracking # (optional)"
+									bind:value={trackingInput}
+									class="w-full rounded-lg border-2 border-black px-3 py-2 text-sm font-bold transition-all duration-200 placeholder:text-gray-400 focus:border-dashed focus:outline-none"
+								/>
+							{:else if order.trackingNumber}
+								<div class="rounded-lg border-2 border-gray-300 bg-gray-50 px-3 py-2 text-sm">
+									<p class="text-xs font-bold text-gray-500 uppercase">tracking</p>
+									<p class="font-bold break-all">
+										{#if order.trackingNumber.startsWith('ltr!')}
+											<a
+												href="https://mail.hackclub.com/back_office/letters/{order.trackingNumber}"
+												target="_blank"
+												rel="noopener noreferrer"
+												class="text-blue-600 hover:underline"
+											>
+												{order.trackingNumber}
+											</a>
+										{:else}
+											{order.trackingNumber}
+										{/if}
+									</p>
+								</div>
+							{/if}
+							{#if !isInactive || order.isFulfilled}
+								<button
+									onclick={toggleFulfilled}
+									disabled={actionLoading}
+									class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black px-4 py-2 font-bold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 {order.isFulfilled
+										? 'bg-gray-200 hover:border-dashed hover:bg-gray-300'
+										: 'bg-green-500 text-white hover:border-dashed hover:bg-green-600'}"
+								>
+									{#if order.isFulfilled}
+										<X size={16} />
+										{$t.admin.unfulfill}
+									{:else}
+										<Check size={16} />
+										{$t.admin.fulfill}
+									{/if}
+								</button>
+							{/if}
+							{#if canUndo}
+								<button
+									onclick={openUndo}
+									class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-black px-3 py-2 font-bold transition-all duration-200 hover:border-dashed"
+								>
+									<Undo2 size={16} />
+									undo purchase
+								</button>
+							{/if}
 							<button
-								onclick={openUndo}
-								class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-black px-3 py-2 font-bold transition-all duration-200 hover:border-dashed"
+								onclick={() => (confirmDelete = true)}
+								class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-red-600 px-3 py-2 font-bold text-red-600 transition-all duration-200 hover:border-dashed"
+								title="delete order"
 							>
-								<Undo2 size={16} />
-								undo purchase
+								<Trash2 size={16} />
+								delete order
 							</button>
-						{/if}
-						<button
-							onclick={() => (confirmDelete = true)}
-							class="flex w-full cursor-pointer items-center justify-center gap-1 rounded-full border-4 border-red-600 px-3 py-2 font-bold text-red-600 transition-all duration-200 hover:border-dashed"
-							title="delete order"
-						>
-							<Trash2 size={16} />
-							delete order
-						</button>
+						</div>
 					</div>
 				</div>
 			</div>
-		</div>
 
-		<aside
-			class="rounded-3xl border-4 border-black bg-white p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] lg:sticky lg:top-24"
-		>
-			<h2 class="mb-1 text-lg font-bold">other orders from @{order.username}</h2>
-			<p class="mb-3 text-xs text-gray-500">
-				{openCount} unfulfilled in total, including this one{trackingInput.trim()
-					? `. fulfilling uses tracking # ${trackingInput.trim()}`
-					: ''}
-			</p>
-			{#if differentAddressOthers.length > 0}
-				<div class="mb-3 rounded-xl border-2 border-yellow-600 bg-yellow-50 p-2 text-xs text-yellow-800">
-					<p class="mb-1 font-bold">
-						{differentAddressOthers.length} ship{differentAddressOthers.length === 1 ? 's' : ''} to a
-						different address, not included in fulfill all:
-					</p>
-					<ul class="flex flex-col gap-0.5">
-						{#each differentAddressOthers as d (d.id)}
-							<li>
-								<a href="/admin/orders/{d.id}" class="font-bold hover:underline">#{d.id}</a>
-								{d.itemName}{d.size ? ` (${d.size})` : ''}
+			<aside
+				class="rounded-3xl border-4 border-black bg-white p-4 shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] lg:sticky lg:top-24"
+			>
+				<h2 class="mb-1 text-lg font-bold">other orders from @{order.username}</h2>
+				<p class="mb-3 text-xs text-gray-500">
+					{openCount} unfulfilled in total, including this one{trackingInput.trim()
+						? `. fulfilling uses tracking # ${trackingInput.trim()}`
+						: ''}
+				</p>
+				{#if differentAddressOthers.length > 0}
+					<div
+						class="mb-3 rounded-xl border-2 border-yellow-600 bg-yellow-50 p-2 text-xs text-yellow-800"
+					>
+						<p class="mb-1 font-bold">
+							{differentAddressOthers.length} ship{differentAddressOthers.length === 1 ? 's' : ''} to
+							a different address, not included in fulfill all:
+						</p>
+						<ul class="flex flex-col gap-0.5">
+							{#each differentAddressOthers as d (d.id)}
+								<li>
+									<a href="/admin/orders/{d.id}" class="font-bold hover:underline">#{d.id}</a>
+									{d.itemName}{d.size ? ` (${d.size})` : ''}
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+				{#if bulkCount > 1}
+					<button
+						onclick={fulfillAll}
+						disabled={bulkLoading || actionLoading}
+						class="mb-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-green-500 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+					>
+						<Check size={16} />
+						{bulkLoading ? 'fulfilling...' : `fulfill all ${bulkCount} (1 DM)`}
+					</button>
+				{/if}
+				{#if order.otherOrders.length === 0}
+					<p class="text-sm text-gray-400">no other orders</p>
+				{:else}
+					<ul class="flex flex-col gap-2">
+						{#each order.otherOrders as other (other.id)}
+							{@const OtherIcon = getStatusIcon(other.status)}
+							<li
+								class="rounded-xl border-2 p-2 {isOpen(other)
+									? 'border-black'
+									: 'border-gray-200 opacity-60'}"
+							>
+								<div class="flex items-center gap-2">
+									<img
+										src={other.itemImage}
+										alt={other.itemName}
+										class="h-10 w-10 shrink-0 rounded-lg border-2 border-black object-cover"
+									/>
+									<a href="/admin/orders/{other.id}" class="min-w-0 flex-1 hover:underline">
+										<p class="truncate text-sm font-bold">{other.itemName}</p>
+										<p class="text-xs text-gray-500">
+											#{other.id}{other.quantity > 1 ? ` • ×${other.quantity}` : ''}{other.size
+												? ` • size ${other.size}`
+												: ''}
+										</p>
+									</a>
+								</div>
+								<div class="mt-2 flex flex-wrap items-center gap-1">
+									<span
+										class="inline-flex items-center gap-1 rounded-full border-2 px-2 py-0.5 text-xs font-bold {getStatusColor(
+											other.status
+										)}"
+									>
+										<OtherIcon size={12} />
+										{other.status}
+									</span>
+									{#if other.isFulfilled}
+										<span
+											class="inline-flex items-center gap-1 rounded-full border-2 border-green-600 bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700"
+										>
+											<Check size={12} />
+											fulfilled
+										</span>
+									{/if}
+									{#if isOpen(other) && keyOf(other.shippingAddress) !== keyOf(order.shippingAddress)}
+										<span
+											class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-700"
+										>
+											different address
+										</span>
+									{/if}
+									{#if isOpen(other)}
+										<button
+											onclick={() => fulfillOne(other)}
+											disabled={bulkLoading || fulfillingId === other.id}
+											class="ml-auto cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
+										>
+											{fulfillingId === other.id ? '...' : $t.admin.fulfill}
+										</button>
+									{/if}
+								</div>
 							</li>
 						{/each}
 					</ul>
-				</div>
-			{/if}
-			{#if bulkCount > 1}
-				<button
-					onclick={fulfillAll}
-					disabled={bulkLoading || actionLoading}
-					class="mb-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-4 border-black bg-green-500 px-4 py-2 font-bold text-white transition-all duration-200 hover:border-dashed hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					<Check size={16} />
-					{bulkLoading ? 'fulfilling...' : `fulfill all ${bulkCount} (1 DM)`}
-				</button>
-			{/if}
-			{#if order.otherOrders.length === 0}
-				<p class="text-sm text-gray-400">no other orders</p>
-			{:else}
-				<ul class="flex flex-col gap-2">
-					{#each order.otherOrders as other (other.id)}
-						{@const OtherIcon = getStatusIcon(other.status)}
-						<li
-							class="rounded-xl border-2 p-2 {isOpen(other)
-								? 'border-black'
-								: 'border-gray-200 opacity-60'}"
-						>
-							<div class="flex items-center gap-2">
-								<img
-									src={other.itemImage}
-									alt={other.itemName}
-									class="h-10 w-10 shrink-0 rounded-lg border-2 border-black object-cover"
-								/>
-								<a href="/admin/orders/{other.id}" class="min-w-0 flex-1 hover:underline">
-									<p class="truncate text-sm font-bold">{other.itemName}</p>
-									<p class="text-xs text-gray-500">
-										#{other.id}{other.quantity > 1 ? ` • ×${other.quantity}` : ''}{other.size
-											? ` • size ${other.size}`
-											: ''}
-									</p>
-								</a>
-							</div>
-							<div class="mt-2 flex flex-wrap items-center gap-1">
-								<span
-									class="inline-flex items-center gap-1 rounded-full border-2 px-2 py-0.5 text-xs font-bold {getStatusColor(
-										other.status
-									)}"
-								>
-									<OtherIcon size={12} />
-									{other.status}
-								</span>
-								{#if other.isFulfilled}
-									<span
-										class="inline-flex items-center gap-1 rounded-full border-2 border-green-600 bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700"
-									>
-										<Check size={12} />
-										fulfilled
-									</span>
-								{/if}
-								{#if isOpen(other) && addressKey(other.shippingAddress) !== addressKey(order.shippingAddress)}
-									<span
-										class="rounded-full border-2 border-yellow-600 bg-yellow-100 px-2 py-0.5 text-xs font-bold text-yellow-700"
-									>
-										different address
-									</span>
-								{/if}
-								{#if isOpen(other)}
-									<button
-										onclick={() => fulfillOne(other)}
-										disabled={bulkLoading || fulfillingId === other.id}
-										class="ml-auto cursor-pointer rounded-full border-2 border-black px-2 py-0.5 text-xs font-bold transition-all duration-200 hover:border-dashed disabled:cursor-not-allowed disabled:opacity-50"
-									>
-										{fulfillingId === other.id ? '...' : $t.admin.fulfill}
-									</button>
-								{/if}
-							</div>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</aside>
+				{/if}
+			</aside>
 		</div>
 	{/if}
 </div>
