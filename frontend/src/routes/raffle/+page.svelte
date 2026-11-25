@@ -55,23 +55,70 @@
 	let now = $state(Date.now());
 	let tickets = $state<number | null>(null);
 	let placed = $state<Record<number, number>>({});
+	let openWeeks = $state<number[]>([]);
+	let error = $state<string | null>(null);
+	let latest: Record<number, number> = {};
 	let timer: ReturnType<typeof setInterval> | undefined;
 
 	let placedTotal = $derived(Object.values(placed).reduce((a, b) => a + b, 0));
 	let ticketsLeft = $derived(Math.max(0, (tickets ?? 0) - placedTotal));
 
 	function canPlace(w: { n: number; tbd: boolean }): boolean {
-		return !w.tbd && drawDate(w.n).getTime() > now;
+		return !w.tbd && openWeeks.includes(w.n) && drawDate(w.n).getTime() > now;
+	}
+
+	function applyState(data: {
+		tickets?: number;
+		placed?: Record<string, number>;
+		openWeeks?: number[];
+	}) {
+		tickets = data.tickets ?? 0;
+		placed = Object.fromEntries(Object.entries(data.placed ?? {}).map(([k, v]) => [Number(k), v]));
+		openWeeks = data.openWeeks ?? [];
+	}
+
+	async function loadRaffle() {
+		const res = await fetch(`${API_URL}/raffle`, { credentials: 'include' });
+		if (res.ok) applyState(await res.json());
+	}
+
+	async function save(n: number, count: number) {
+		const id = (latest[n] ?? 0) + 1;
+		latest[n] = id;
+		error = null;
+		try {
+			const res = await fetch(`${API_URL}/raffle/${n}`, {
+				method: 'PUT',
+				credentials: 'include',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ tickets: count })
+			});
+			const data = await res.json();
+			if (latest[n] !== id) return;
+			if (!res.ok) {
+				error = data.error ?? 'could not save your tickets';
+				await loadRaffle();
+				return;
+			}
+			applyState(data);
+		} catch (e) {
+			if (latest[n] !== id) return;
+			error = 'could not save your tickets';
+			console.error('Failed to save raffle tickets:', e);
+			await loadRaffle();
+		}
 	}
 
 	function add(n: number) {
 		if (ticketsLeft <= 0) return;
 		placed[n] = (placed[n] ?? 0) + 1;
+		save(n, placed[n]);
 	}
 
 	function remove(n: number) {
 		if (!placed[n]) return;
 		placed[n] -= 1;
+		save(n, placed[n]);
 	}
 
 	let nextWeek = $derived(weeks.find((w) => drawDate(w.n).getTime() > now) ?? null);
@@ -93,8 +140,7 @@
 			return;
 		}
 		try {
-			const res = await fetch(`${API_URL}/streak`, { credentials: 'include' });
-			if (res.ok) tickets = (await res.json()).tickets ?? 0;
+			await loadRaffle();
 		} catch (e) {
 			console.error('Failed to load raffle tickets:', e);
 		}
@@ -128,6 +174,9 @@
 				? 'ticket'
 				: 'tickets'} left{/if}
 	</div>
+	{#if error}
+		<p class="mb-6 font-bold text-red-600">{error}</p>
+	{/if}
 
 	<div
 		class="mb-8 rounded-2xl border-4 border-black bg-white p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]"

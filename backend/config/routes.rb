@@ -114,6 +114,11 @@ Rails.application.routes.draw do
     post "claim", to: "streak#claim"
   end
 
+  scope :raffle do
+    get "/",     to: "raffle#show"
+    put ":week", to: "raffle#update"
+  end
+
   # Hackatime
   scope :hackatime do
     get "projects", to: "hackatime#projects"
