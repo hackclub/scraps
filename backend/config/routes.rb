@@ -115,8 +115,8 @@ Rails.application.routes.draw do
   end
 
   scope :raffle do
-    get "/",     to: "raffle#show"
-    put ":week", to: "raffle#update"
+    get "entries",       to: "raffle#show"
+    put "entries/:week", to: "raffle#update"
   end
 
   # Hackatime

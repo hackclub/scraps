@@ -23,7 +23,9 @@ module RaffleService
       tickets = conn.select_value("SELECT raffle_tickets FROM users WHERE id = #{uid}").to_i
       placed = conn.select_all("SELECT week, tickets FROM raffle_entries WHERE user_id = #{uid} AND tickets > 0")
         .to_h { |r| [r["week"].to_s, r["tickets"].to_i] }
-      { tickets: tickets, placed: placed, open_weeks: (1..WEEKS).select { |w| open?(w) } }
+      totals = conn.select_all("SELECT week, SUM(tickets) AS tickets, COUNT(*) AS people FROM raffle_entries WHERE tickets > 0 GROUP BY week")
+        .to_h { |r| [r["week"].to_s, { tickets: r["tickets"].to_i, people: r["people"].to_i }] }
+      { tickets: tickets, placed: placed, totals: totals, open_weeks: (1..WEEKS).select { |w| open?(w) } }
     end
 
     def set(user, week, count)

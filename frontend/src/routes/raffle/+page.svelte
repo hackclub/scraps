@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { ArrowLeft, Ticket, ImageIcon, Plus, Minus } from '@lucide/svelte';
+	import { ArrowLeft, Ticket, ImageIcon, Plus, Minus, Lock, Users } from '@lucide/svelte';
 	import { API_URL } from '$lib/config';
 	import { getUser, requireLogin } from '$lib/auth-client';
 
@@ -56,9 +56,11 @@
 	let tickets = $state<number | null>(null);
 	let placed = $state<Record<number, number>>({});
 	let openWeeks = $state<number[]>([]);
+	let totals = $state<Record<number, { tickets: number; people: number }>>({});
 	let error = $state<string | null>(null);
 	let latest: Record<number, number> = {};
 	let timer: ReturnType<typeof setInterval> | undefined;
+	let poll: ReturnType<typeof setInterval> | undefined;
 
 	let placedTotal = $derived(Object.values(placed).reduce((a, b) => a + b, 0));
 	let ticketsLeft = $derived(Math.max(0, (tickets ?? 0) - placedTotal));
@@ -71,15 +73,31 @@
 		tickets?: number;
 		placed?: Record<string, number>;
 		openWeeks?: number[];
+		totals?: Record<string, { tickets: number; people: number }>;
 	}) {
 		tickets = data.tickets ?? 0;
 		placed = Object.fromEntries(Object.entries(data.placed ?? {}).map(([k, v]) => [Number(k), v]));
 		openWeeks = data.openWeeks ?? [];
+		totals = Object.fromEntries(Object.entries(data.totals ?? {}).map(([k, v]) => [Number(k), v]));
 	}
 
 	async function loadRaffle() {
-		const res = await fetch(`${API_URL}/raffle`, { credentials: 'include' });
+		const res = await fetch(`${API_URL}/raffle/entries`, { credentials: 'include' });
 		if (res.ok) applyState(await res.json());
+	}
+
+	async function refreshTotals() {
+		try {
+			const res = await fetch(`${API_URL}/raffle/entries`, { credentials: 'include' });
+			if (!res.ok) return;
+			const data = await res.json();
+			totals = Object.fromEntries(
+				Object.entries(data.totals ?? {}).map(([k, v]) => [Number(k), v])
+			) as Record<number, { tickets: number; people: number }>;
+			openWeeks = data.openWeeks ?? [];
+		} catch (e) {
+			console.error('Failed to refresh raffle totals:', e);
+		}
 	}
 
 	async function save(n: number, count: number) {
@@ -87,7 +105,7 @@
 		latest[n] = id;
 		error = null;
 		try {
-			const res = await fetch(`${API_URL}/raffle/${n}`, {
+			const res = await fetch(`${API_URL}/raffle/entries/${n}`, {
 				method: 'PUT',
 				credentials: 'include',
 				headers: { 'Content-Type': 'application/json' },
@@ -134,6 +152,7 @@
 
 	onMount(async () => {
 		timer = setInterval(() => (now = Date.now()), 1000);
+		poll = setInterval(refreshTotals, 30_000);
 		const user = await getUser();
 		if (!user) {
 			requireLogin();
@@ -146,7 +165,10 @@
 		}
 	});
 
-	onDestroy(() => clearInterval(timer));
+	onDestroy(() => {
+		clearInterval(timer);
+		clearInterval(poll);
+	});
 </script>
 
 <svelte:head>
@@ -262,7 +284,21 @@
 						>
 							<Plus size={16} />
 						</button>
+						{#if drawn && placed[w.n]}
+							<span class="flex items-center gap-1 text-sm font-bold">
+								<Lock size={14} /> locked in
+							</span>
+						{/if}
 					</div>
+					{#if !w.tbd}
+						<p class="mt-3 flex items-center gap-1 text-sm text-gray-600">
+							<Users size={14} />
+							{totals[w.n]?.tickets ?? 0}
+							{(totals[w.n]?.tickets ?? 0) === 1 ? 'ticket' : 'tickets'} entered by
+							{totals[w.n]?.people ?? 0}
+							{(totals[w.n]?.people ?? 0) === 1 ? 'person' : 'people'}
+						</p>
+					{/if}
 				</div>
 				{#if w.tbd}
 					<div
