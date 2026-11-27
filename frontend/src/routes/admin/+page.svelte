@@ -134,7 +134,18 @@
 	let raffle = $state<{
 		total: number;
 		users: { id: number; username: string | null; avatar: string | null; tickets: number }[];
+		weeks: Record<
+			string,
+			{
+				drawAt: string;
+				open: boolean;
+				total: number;
+				entries: { id: number; username: string | null; tickets: number; updatedAt: string }[];
+			}
+		>;
 	} | null>(null);
+	let raffleView = $state<'owned' | '1' | '2' | '3' | '4'>('1');
+	let raffleWeek = $derived(raffle && raffleView !== 'owned' ? raffle.weeks[raffleView] : null);
 
 	type Suggestion = {
 		id: number;
@@ -477,10 +488,58 @@
 			<div class="mb-6 rounded-2xl border-4 border-black p-6">
 				<div class="mb-3 flex items-center justify-between">
 					<h3 class="text-lg font-bold">raffle tickets</h3>
-					<span class="text-sm text-gray-500">{raffle ? `${raffle.total} total` : ''}</span>
+					<span class="text-sm text-gray-500"
+						>{#if raffleWeek}{raffleWeek.total} placed by {raffleWeek.entries.length} people{:else if raffle}{raffle.total}
+							owned{/if}</span
+					>
+				</div>
+				<div class="mb-3 flex flex-wrap gap-2">
+					{#each ['1', '2', '3', '4', 'owned'] as const as v (v)}
+						<button
+							class="cursor-pointer rounded-full border-2 border-black px-3 py-1 text-sm font-bold {raffleView ===
+							v
+								? 'bg-black text-white'
+								: 'hover:bg-gray-100'}"
+							onclick={() => (raffleView = v)}>{v === 'owned' ? 'owned' : `week ${v}`}</button
+						>
+					{/each}
 				</div>
 				{#if !raffle}
 					<p class="text-sm text-gray-500">loading...</p>
+				{:else if raffleWeek}
+					<p class="mb-2 text-xs text-gray-500">
+						draw {new Date(raffleWeek.drawAt).toLocaleString()} · {raffleWeek.open ? 'open' : 'closed'}
+					</p>
+					{#if raffleWeek.entries.length === 0}
+						<p class="text-sm text-gray-500">no tickets placed this week</p>
+					{:else}
+						<div class="max-h-80 overflow-y-auto">
+							<table class="w-full text-sm">
+								<thead>
+									<tr class="border-b-2 border-black text-left">
+										<th class="py-1">user</th>
+										<th class="py-1 text-right">tickets</th>
+										<th class="py-1 text-right">odds</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each raffleWeek.entries as e (e.id)}
+										<tr class="border-b border-gray-200">
+											<td class="py-1">
+												<a href="/admin/users/{e.id}" class="hover:underline"
+													>{e.username ?? `user #${e.id}`}</a
+												>
+											</td>
+											<td class="py-1 text-right font-bold">{e.tickets}</td>
+											<td class="py-1 text-right text-gray-500"
+												>{((e.tickets / raffleWeek.total) * 100).toFixed(1)}%</td
+											>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
 				{:else if raffle.users.length === 0}
 					<p class="text-sm text-gray-500">nobody has tickets yet</p>
 				{:else}

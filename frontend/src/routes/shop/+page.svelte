@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import ShopItemModal from '$lib/components/ShopItemModal.svelte';
 	import AddressSelectModal from '$lib/components/AddressSelectModal.svelte';
@@ -183,6 +183,18 @@
 	}
 
 	let dailyDate = $state('');
+	let dailyResetsAt = $state<number | null>(null);
+	let now = $state(Date.now());
+	let clock: ReturnType<typeof setInterval> | undefined;
+	let resetIn = $derived.by(() => {
+		if (dailyResetsAt === null) return null;
+		const ms = Math.max(0, dailyResetsAt - now);
+		const h = Math.floor(ms / 3_600_000);
+		const m = Math.floor((ms % 3_600_000) / 60_000);
+		const sec = Math.floor((ms % 60_000) / 1000);
+		return `${h}h ${String(m).padStart(2, '0')}m ${String(sec).padStart(2, '0')}s`;
+	});
+	let resetRefetched = false;
 	let dailyItems = $state<ShopItem[]>([]);
 	let dailyLoading = $state(true);
 	let revealed = $state(false);
@@ -208,6 +220,8 @@
 			if (res.ok) {
 				const data = await res.json();
 				dailyDate = data.date;
+				dailyResetsAt = data.resetsAt ? new Date(data.resetsAt).getTime() : null;
+				resetRefetched = false;
 				dailyItems = data.items ?? [];
 				try {
 					revealed = localStorage.getItem(seenKey(dailyDate)) === '1';
@@ -385,7 +399,19 @@
 		refreshPendingAddress();
 	}
 
+	onDestroy(() => clearInterval(clock));
+
 	onMount(async () => {
+		clock = setInterval(() => {
+			now = Date.now();
+			if (dailyResetsAt !== null && now >= dailyResetsAt && !resetRefetched) {
+				resetRefetched = true;
+				setTimeout(() => {
+					fetchDaily();
+					fetchShopItems(true);
+				}, 5000);
+			}
+		}, 1000);
 		await getUser();
 		fetchShopItems();
 		fetchDaily();
@@ -437,6 +463,9 @@
 				<h2 class="mb-1 flex items-center gap-2 text-2xl font-bold">
 					<Sparkles size={22} /> today's picks
 				</h2>
+				{#if resetIn}
+					<p class="mb-1 text-sm font-bold">new picks in {resetIn} (resets at midnight ET)</p>
+				{/if}
 				<p class="mb-4 text-sm text-gray-600">
 					Drag one down into <strong>your shop</strong> to keep it forever, even after today | or drag
 					one back up here to let it go.

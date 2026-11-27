@@ -1507,9 +1507,22 @@ class AdminController < ApplicationController
     rows = ActiveRecord::Base.connection.select_all(
       "SELECT id, username, avatar, raffle_tickets FROM users WHERE raffle_tickets > 0 ORDER BY raffle_tickets DESC, id ASC"
     ).to_a
+    entries = ActiveRecord::Base.connection.select_all(
+      "SELECT e.week, u.id, u.username, e.tickets, e.updated_at FROM raffle_entries e JOIN users u ON u.id = e.user_id WHERE e.tickets > 0 ORDER BY e.week ASC, e.tickets DESC, u.id ASC"
+    ).to_a
+    weeks = (1..RaffleService::WEEKS).to_h do |w|
+      list = entries.select { |r| r["week"].to_i == w }
+      [w.to_s, {
+        drawAt: RaffleService.draw_at(w),
+        open: RaffleService.open?(w),
+        total: list.sum { |r| r["tickets"].to_i },
+        entries: list.map { |r| { id: r["id"].to_i, username: r["username"], tickets: r["tickets"].to_i, updatedAt: r["updated_at"] } }
+      }]
+    end
     render_json({
       total: rows.sum { |r| r["raffle_tickets"].to_i },
-      users: rows.map { |r| { id: r["id"].to_i, username: r["username"], avatar: r["avatar"], tickets: r["raffle_tickets"].to_i } }
+      users: rows.map { |r| { id: r["id"].to_i, username: r["username"], avatar: r["avatar"], tickets: r["raffle_tickets"].to_i } },
+      weeks: weeks
     })
   end
 

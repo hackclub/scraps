@@ -51,7 +51,9 @@ class ShopController < ApplicationController
       FROM shop_items si WHERE si.id IN (#{ids.join(',')})
     SQL
 
-    render_json({ date: Date.current.to_s, items: hydrate_items(rows) })
+    today = StreakService.today
+    resets_at = (today + 1).in_time_zone(StreakService.zone).iso8601
+    render_json({ date: today.to_s, resets_at: resets_at, items: hydrate_items(rows) })
   end
 
   def retained_items
@@ -1023,9 +1025,10 @@ class ShopController < ApplicationController
 
   def daily_pick_ids_for(user)
     conn = ActiveRecord::Base.connection
-    shuffled = Rails.cache.fetch("shop:daily:v3:#{Date.current}", expires_in: 1.hour) do
+    today = StreakService.today
+    shuffled = Rails.cache.fetch("shop:daily:v3:#{today}", expires_in: 1.hour) do
       pool = conn.select_all("SELECT id FROM shop_items WHERE count != 0 AND gachapon_only = false AND consolation_prize = false AND hidden = false").map { |r| r["id"].to_i }
-      seed = Digest::MD5.hexdigest(Date.current.to_s).to_i(16) % (2**31)
+      seed = Digest::MD5.hexdigest(today.to_s).to_i(16) % (2**31)
       pool.shuffle(random: Random.new(seed)).first(DAILY_PICKS_BASE + DAILY_PICKS_REFERRAL_BONUS)
     end
     extra = user && conn.select_value("SELECT 1 FROM referral_reward_claims WHERE user_id = #{user.id.to_i} AND reward = 'daily_picks'")
